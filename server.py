@@ -162,7 +162,7 @@ if __name__ == "__main__":
         print("ERROR: GEMINI_API_KEY missing. Put it in .env")
         sys.exit(1)
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"ATS Resume Dashboard  http://127.0.0.1:{PORT}")
+    print(f"Jobilly.AI Resume Dashboard  http://127.0.0.1:{PORT}")
     print("Gemini proxy          /api/gemini")
     print("Press Ctrl+C to stop.")
     try:

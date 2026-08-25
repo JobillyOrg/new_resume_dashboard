@@ -388,16 +388,28 @@
     return (h >>> 0).toString(36);
   }
 
+  function cleanJobTitle(title) {
+    let t = String(title || '').replace(/\s+/g, ' ').trim();
+    t = t.replace(/\s*[—–\-|:•]+\s*(primary\s+)?responsibilit(y|ies)\b.*$/i, '');
+    t = t.replace(/\s+(primary\s+)?responsibilit(y|ies)\s*$/i, '');
+    t = t.replace(/\s*[—–\-|:•]+\s*(job description|overview|requirements|qualifications|duties|about (us|the role|the company)|who we are|what (you.?ll|we)|how to apply|equal opportunity|benefits|salary)\b.*$/i, '');
+    t = t.replace(/\s*[—–\-|:•]+\s*why\b.*$/i, '');
+    t = t.replace(/\s*\?+\s*$/g, '');
+    return t.replace(/\s{2,}/g, ' ').trim();
+  }
+
   function extractJdTitle(jd) {
     const labeled = jd.match(/(?:job title|position title|role title)\s*[:\-]\s*([^\n]{3,70})/i);
-    if (labeled) return labeled[1].trim();
+    if (labeled) return cleanJobTitle(labeled[1]);
     const hiring = jd.match(/(?:seeking|hiring|looking for)\s+an?\s+([A-Z][A-Za-z\s\/\-]{3,55}?)(?:\s+to\b|\s+who\b|\s+with\b|[,\n])/);
-    if (hiring) return hiring[1].trim();
-    const skip = /^(about|job summary|overview|description|we are|responsibilities|requirements|what we|salary|benefits|location)/i;
+    if (hiring) return cleanJobTitle(hiring[1]);
+    const skip = /^(about|job summary|overview|description|we are|responsibilities|primary responsibilities|requirements|what we|salary|benefits|location|why\b)/i;
     for (const line of jd.split('\n').map(l => l.trim()).filter(Boolean).slice(0, 18)) {
-      if (line.length < 4 || line.length > 60 || skip.test(line)) continue;
-      const w = line.split(/\s+/);
-      if (w.length >= 2 && w.length <= 7 && /^[A-Z]/.test(line)) return line;
+      if (line.length < 4 || line.length > 120 || skip.test(line)) continue;
+      const cleaned = cleanJobTitle(line);
+      if (!cleaned || skip.test(cleaned) || cleaned.length < 4 || cleaned.length > 80 || /\?/.test(cleaned)) continue;
+      const w = cleaned.split(/\s+/);
+      if (w.length >= 2 && w.length <= 7 && /^[A-Z]/.test(cleaned)) return cleaned;
     }
     return '';
   }
@@ -834,6 +846,7 @@
     buildCompactRewriteContext,
     jdHash,
     extractJdTitle,
+    cleanJobTitle,
     detectRole,
     buildRoleSkillSet,
     keywordInText: kwOrAliasInText,
