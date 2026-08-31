@@ -2,6 +2,7 @@
 """Local static server + Gemini proxy for the ATS resume dashboard."""
 from __future__ import annotations
 
+import base64
 import json
 import os
 import sys
@@ -9,6 +10,8 @@ import urllib.error
 import urllib.request
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+from resume_extract import extract_resume_text
 
 ROOT = Path(__file__).resolve().parent
 ENV_PATH = ROOT / ".env"
@@ -116,6 +119,7 @@ class Handler(SimpleHTTPRequestHandler):
                 {
                     "ok": True,
                     "gemini": bool(API_KEY),
+                    "extractResume": True,
                     "project": os.environ.get("GEMINI_PROJECT", ""),
                     "keyName": os.environ.get("GEMINI_KEY_NAME", ""),
                 },
@@ -124,7 +128,11 @@ class Handler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path.split("?", 1)[0] != "/api/gemini":
+        path = self.path.split("?", 1)[0]
+        if path == "/api/extract-resume":
+            self._handle_extract_resume()
+            return
+        if path != "/api/gemini":
             self.send_error(404)
             return
         length = int(self.headers.get("Content-Length") or 0)
@@ -148,6 +156,29 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as exc:  # noqa: BLE001
             self._json(502, {"ok": False, "error": str(exc)})
 
+    def _handle_extract_resume(self) -> None:
+        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            data = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+        except json.JSONDecodeError:
+            self._json(400, {"ok": False, "error": "Invalid JSON body"})
+            return
+
+        file_name = (data.get("fileName") or data.get("filename") or "resume.txt").strip()
+        raw_b64 = data.get("data") or data.get("base64") or ""
+        if not raw_b64:
+            self._json(400, {"ok": False, "error": "data (base64 file content) is required"})
+            return
+        try:
+            raw = base64.b64decode(raw_b64)
+            text = extract_resume_text(file_name, raw)
+            if len(text.strip()) < 40:
+                self._json(400, {"ok": False, "error": "Very little text was found in that file. Try another export."})
+                return
+            self._json(200, {"ok": True, "text": text, "fileName": file_name, "chars": len(text)})
+        except Exception as exc:  # noqa: BLE001
+            self._json(400, {"ok": False, "error": str(exc)})
+
     def _json(self, status: int, payload: dict) -> None:
         raw = json.dumps(payload).encode("utf-8")
         self.send_response(status)
@@ -164,6 +195,7 @@ if __name__ == "__main__":
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     print(f"Jobilly.AI Resume Dashboard  http://127.0.0.1:{PORT}")
     print("Gemini proxy          /api/gemini")
+    print("Resume extract        /api/extract-resume")
     print("Press Ctrl+C to stop.")
     try:
         server.serve_forever()

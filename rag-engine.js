@@ -76,6 +76,45 @@
     { label: 'Ansible', terms: ['ansible'] },
     { label: 'JavaScript', terms: ['javascript', 'typescript'] },
     { label: 'React', terms: ['react', 'react.js'] },
+    { label: 'TensorFlow', terms: ['tensorflow', 'tf'] },
+    { label: 'PyTorch', terms: ['pytorch', 'torch'] },
+    { label: 'scikit-learn', terms: ['scikit-learn', 'sklearn', 'scikit learn'] },
+    { label: 'Keras', terms: ['keras'] },
+    { label: 'XGBoost', terms: ['xgboost', 'xgb'] },
+    { label: 'NLP', terms: ['nlp', 'natural language processing'] },
+    { label: 'LLM', terms: ['llm', 'llms', 'large language model', 'large language models'] },
+    { label: 'LangChain', terms: ['langchain', 'lang chain'] },
+    { label: 'LlamaIndex', terms: ['llamaindex', 'llama index'] },
+    { label: 'RAG', terms: ['rag', 'retrieval-augmented generation', 'retrieval augmented', 'retrieval pipelines'] },
+    { label: 'Vector Search', terms: ['vector search', 'vector database', 'vector db'] },
+    { label: 'Embeddings', terms: ['embeddings', 'embedding models'] },
+    { label: 'Fine-tuning', terms: ['fine-tune', 'fine tuning', 'fine-tuning', 'finetuning'] },
+    { label: 'Observability', terms: ['observability', 'model monitoring'] },
+    { label: 'Responsible AI', terms: ['responsible ai', 'ai safety', 'model safety'] },
+    { label: 'MLOps', terms: ['mlops', 'ml ops'] },
+    { label: 'Hugging Face', terms: ['hugging face', 'huggingface', 'transformers'] },
+    { label: 'FastAPI', terms: ['fastapi'] },
+    { label: 'Flask', terms: ['flask'] },
+    { label: 'PostgreSQL', terms: ['postgresql', 'postgres'] },
+    { label: 'MongoDB', terms: ['mongodb', 'mongo'] },
+    { label: 'Redis', terms: ['redis'] },
+    { label: 'Routing', terms: ['routing', 'bgp', 'ospf'] },
+    { label: 'Tableau', terms: ['tableau'] },
+    { label: 'Power BI', terms: ['power bi', 'powerbi'] },
+    { label: 'S3', terms: ['s3', 'amazon s3'] },
+    { label: 'Glue', terms: ['aws glue', 'glue'] },
+    { label: 'EMR', terms: ['emr', 'amazon emr'] },
+    { label: 'Kinesis', terms: ['kinesis', 'amazon kinesis'] },
+    { label: 'Lambda', terms: ['aws lambda', 'lambda'] },
+    { label: 'Dataflow', terms: ['dataflow', 'google dataflow'] },
+    { label: 'Pub/Sub', terms: ['pub/sub', 'pubsub', 'google pub/sub'] },
+    { label: 'Composer', terms: ['cloud composer', 'composer'] },
+    { label: 'Unity Catalog', terms: ['unity catalog'] },
+    { label: 'Cypress', terms: ['cypress'] },
+    { label: 'Playwright', terms: ['playwright'] },
+    { label: 'TypeScript', terms: ['typescript', 'ts'] },
+    { label: 'Node.js', terms: ['node.js', 'nodejs', 'node'] },
+    { label: '.NET', terms: ['.net', 'dotnet', 'c#', 'csharp'] },
   ];
 
   const SKILL_FAMILY = {
@@ -92,6 +131,13 @@
     HVAC: 'datacenter', Fiber: 'datacenter', Cabling: 'datacenter', RAID: 'datacenter', DCIM: 'datacenter',
     Racks: 'datacenter', iLO: 'datacenter', 'Server Hardware': 'datacenter', Jira: 'qa', Selenium: 'qa',
     SIEM: 'security', Ansible: 'devops', JavaScript: 'swe', React: 'swe',
+    TensorFlow: 'data', PyTorch: 'data', 'scikit-learn': 'data', Keras: 'data', XGBoost: 'data',
+    NLP: 'data', LLM: 'data', LangChain: 'ml', LlamaIndex: 'ml', RAG: 'ml', 'Vector Search': 'ml',
+    Embeddings: 'ml', 'Fine-tuning': 'ml', Observability: 'ml', 'Responsible AI': 'ml', MLOps: 'data', 'Hugging Face': 'data', FastAPI: 'swe', Flask: 'swe',
+    PostgreSQL: 'data', MongoDB: 'data', Redis: 'data', Routing: 'network', Tableau: 'ba',
+    'Power BI': 'ba', S3: 'cloud', Glue: 'data', EMR: 'data', Kinesis: 'data', Lambda: 'cloud',
+    Dataflow: 'data', 'Pub/Sub': 'data', Composer: 'data', 'Unity Catalog': 'data',
+    Cypress: 'qa', Playwright: 'qa', TypeScript: 'swe', 'Node.js': 'swe', '.NET': 'swe',
   };
 
   const FAMILY_COMPAT = {
@@ -113,6 +159,7 @@
 
   const FAMILY_FALLBACK_PACK = {
     data: 'data-engineer',
+    ml: 'ai-engineer',
     support: 'it-support',
     datacenter: 'dc-tech',
     network: 'network',
@@ -230,6 +277,18 @@
       core: ['Java', 'Python', 'SQL', 'Git', 'REST API', 'Docker'],
       extra: ['Kubernetes', 'AWS', 'CI/CD', 'Linux'],
     },
+    'ml-engineer': {
+      family: 'data',
+      label: 'Machine Learning Engineer',
+      core: ['Python', 'Machine Learning', 'SQL', 'TensorFlow', 'PyTorch', 'scikit-learn', 'Git'],
+      extra: ['AWS', 'Apache Spark', 'Docker', 'MLOps', 'NLP', 'LLM', 'Kubernetes', 'Airflow', 'FastAPI', 'XGBoost'],
+    },
+    'ai-engineer': {
+      family: 'ml',
+      label: 'AI / LLM Engineer',
+      core: ['Python', 'LLM', 'PyTorch', 'LangChain', 'RAG', 'Machine Learning', 'Embeddings', 'Git'],
+      extra: ['LlamaIndex', 'Vector Search', 'Fine-tuning', 'Transformers', 'Hugging Face', 'MLOps', 'NLP', 'FastAPI', 'Docker', 'AWS', 'Observability', 'Responsible AI'],
+    },
   };
 
   const EXPANSIONS = {
@@ -266,6 +325,20 @@
     'raid': ['RAID'],
     'ilo': ['iLO', 'iDRAC', 'IPMI'],
     'idrac': ['iLO', 'iDRAC'],
+    'tensorflow': ['TensorFlow'],
+    'pytorch': ['PyTorch'],
+    'sklearn': ['scikit-learn'],
+    'scikit learn': ['scikit-learn'],
+    'postgres': ['PostgreSQL'],
+    'power bi': ['Power BI'],
+    'powerbi': ['Power BI'],
+    'node.js': ['Node.js'],
+    'nodejs': ['Node.js'],
+    'hugging face': ['Hugging Face'],
+    'huggingface': ['Hugging Face'],
+    'large language model': ['LLM'],
+    'large language models': ['LLM'],
+    'natural language processing': ['NLP'],
   };
 
   const STOP = new Set([
@@ -399,36 +472,110 @@
   }
 
   function extractJdTitle(jd) {
-    const labeled = jd.match(/(?:job title|position title|role title)\s*[:\-]\s*([^\n]{3,70})/i);
+    const labeled = jd.match(/(?:job title|position title|role title|title)\s*[:\-]\s*([^\n]{3,70})/i);
     if (labeled) return cleanJobTitle(labeled[1]);
-    const hiring = jd.match(/(?:seeking|hiring|looking for)\s+an?\s+([A-Z][A-Za-z\s\/\-]{3,55}?)(?:\s+to\b|\s+who\b|\s+with\b|[,\n])/);
+    const hiring = jd.match(/(?:seeking|hiring|looking for)\s+an?\s+([A-Z][A-Za-z\s\/\-&]{3,55}?)(?:\s+to\b|\s+who\b|\s+with\b|[,\n])/i);
     if (hiring) return cleanJobTitle(hiring[1]);
-    const skip = /^(about|job summary|overview|description|we are|responsibilities|primary responsibilities|requirements|what we|salary|benefits|location|why\b)/i;
-    for (const line of jd.split('\n').map(l => l.trim()).filter(Boolean).slice(0, 18)) {
-      if (line.length < 4 || line.length > 120 || skip.test(line)) continue;
+    const pipe = jd.match(/^[^\n|]{2,45}\|\s*([^\n]{4,70})/m);
+    if (pipe) {
+      const t = cleanJobTitle(pipe[1]);
+      if (t && !marketingLine(t)) return t;
+    }
+    const rolePhrase = jd.match(/\b([A-Z][A-Za-z0-9\s\/&-]{2,48}(?:Engineer|Technician|Architect|Analyst|Developer|Specialist|Administrator|Consultant|Manager|Lead|Director)s?)\b/);
+    if (rolePhrase) {
+      const t = cleanJobTitle(rolePhrase[1]);
+      if (t && !marketingLine(t)) return t;
+    }
+    const skip = /^(about|the opportunity|job summary|overview|description|we are|responsibilities|primary responsibilities|requirements|what we|what you|salary|benefits|location|why\b|how to apply)/i;
+    for (const line of jd.split('\n').map(l => l.trim()).filter(Boolean).slice(0, 24)) {
+      if (line.length < 4 || line.length > 120 || skip.test(line) || marketingLine(line)) continue;
       const cleaned = cleanJobTitle(line);
-      if (!cleaned || skip.test(cleaned) || cleaned.length < 4 || cleaned.length > 80 || /\?/.test(cleaned)) continue;
+      if (!cleaned || skip.test(cleaned) || marketingLine(cleaned) || cleaned.length < 4 || cleaned.length > 80 || /\?/.test(cleaned)) continue;
       const w = cleaned.split(/\s+/);
-      if (w.length >= 2 && w.length <= 7 && /^[A-Z]/.test(cleaned)) return cleaned;
+      if (w.length >= 2 && w.length <= 8 && /^[A-Z]/.test(cleaned)) return cleaned;
     }
     return '';
   }
 
+  function marketingLine(line) {
+    const t = String(line || '').trim();
+    if (!t || t.length > 90) return true;
+    return /\b(is revolutioniz|leading provider|our mission|we(?:'| a)re hiring|join our team|transforming|healthcare industry|world.?class|fast.?growing|equal opportunity|software, hardware, and network)\b/i.test(t);
+  }
+
+  function escapeReg(s) {
+    return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function termInJd(jd, term) {
+    const raw = String(term || '').trim();
+    if (!raw || raw.length < 2) return false;
+    const t = raw.toLowerCase();
+    return new RegExp('(?<![a-z0-9])' + escapeReg(t) + '(?![a-z0-9])', 'i').test(String(jd || ''));
+  }
+
+  function resolveSkillLabel(term) {
+    const x = cleanSkillPhrase(term).toLowerCase();
+    if (!x) return '';
+    for (const s of SKILL_KB) {
+      if (s.label.toLowerCase() === x) return s.label;
+      for (const t of s.terms) {
+        if (t.trim().toLowerCase() === x) return s.label;
+      }
+    }
+    const c = cleanSkillPhrase(term);
+    return isSkillKeyword(c) ? c : '';
+  }
+
+  function scanSkillKbInJd(jd) {
+    const found = new Map();
+    const jdText = String(jd || '');
+    for (const skill of SKILL_KB) {
+      for (const term of [skill.label, ...skill.terms]) {
+        const t = String(term || '').trim();
+        if (t.length < 2) continue;
+        if (termInJd(jdText, t)) {
+          found.set(skill.label, (found.get(skill.label) || 0) + 14);
+          break;
+        }
+      }
+    }
+    return found;
+  }
+
+  const JD_SECTION_RE = /^(requirements?|qualifications?|responsibilities|skills?|technical skills?|key skills?|must have|nice to have|minimum qualifications?|preferred qualifications?|what you(?:'|')?ll need|what we(?:'|')?re looking for|you bring|technologies?|tools?|experience|education|about (?:the role|us)|job summary|overview)\b/i;
+  const JD_REQUIRED_RE = /required|must have|minimum qualifications?|essential|mandatory/i;
+  const JD_PREFERRED_RE = /preferred|nice to have|bonus|plus|desired/i;
+
   function extractDirectTerms(jd) {
     const found = new Map();
     const add = (term, weight) => {
-      const t = cleanSkillPhrase(term);
-      if (!isSkillKeyword(t)) return;
-      const key = t.toLowerCase();
-      found.set(key, { term: t, weight: (found.get(key)?.weight || 0) + weight });
+      const label = resolveSkillLabel(term);
+      if (!label) return;
+      const key = label.toLowerCase();
+      found.set(key, { term: label, weight: (found.get(key)?.weight || 0) + weight });
     };
-    for (const line of jd.split('\n')) {
-      if (/^[-•*▸]/.test(line.trim()) || /,/.test(line)) {
-        line.replace(/^[-•*▸]\s*/, '').split(/[,;|]/).forEach(p => add(p, 3));
+    const jdText = String(jd || '');
+    for (const line of jdText.split('\n')) {
+      const trimmed = line.trim();
+      if (/^[-•*▸]/.test(trimmed) || /,|;/.test(trimmed)) {
+        trimmed.replace(/^[-•*▸]\s*/, '').split(/[,;|]/).forEach(p => add(p, 4));
+      }
+      const inline = trimmed.match(/(?:experience with|proficient in|familiar with|knowledge of|working with|using|expertise in|strong)\s+([^.;:\n]{2,60})/gi) || [];
+      inline.forEach(chunk => {
+        const payload = chunk.replace(/^(experience with|proficient in|familiar with|knowledge of|working with|using|expertise in|strong)\s+/i, '');
+        payload.split(/,|;|\band\b/i).forEach(p => add(p, 3));
+      });
+    }
+    const tech = jdText.match(/\b(?:[A-Z][a-zA-Z0-9+#./]+(?:\s+[A-Z][a-zA-Z0-9+#./]+){0,2}|[A-Z]{2,}(?:\/[A-Z]+)?|C#|\.NET)\b/g) || [];
+    tech.forEach(t => add(t, 2));
+    for (const skill of SKILL_KB) {
+      for (const term of [skill.label, ...skill.terms]) {
+        const t = String(term || '').trim();
+        if (t.length < 2) continue;
+        if (termInJd(jdText, t)) add(skill.label, 5);
       }
     }
-    const tech = jd.match(/\b(?:[A-Z][a-zA-Z0-9+#./]+(?:\s+[A-Z][a-zA-Z0-9+#./]+){0,2}|[A-Z]{2,}(?:\/[A-Z]+)?|C#|\.NET)\b/g) || [];
-    tech.forEach(t => add(t, 2));
     return [...found.values()].sort((a, b) => b.weight - a.weight);
   }
 
@@ -436,7 +583,7 @@
     const chunks = [];
     let buf = [];
     for (const line of jd.split('\n').map(l => l.trim()).filter(Boolean)) {
-      if (/^(requirements?|qualifications?|responsibilities|skills|about|must have|nice to have)/i.test(line) && buf.length) {
+      if (JD_SECTION_RE.test(line) && buf.length) {
         chunks.push(buf.join(' '));
         buf = [line];
       } else {
@@ -456,62 +603,58 @@
     }));
     const bm25 = new BM25Index(kbDocs);
     const scored = new Map();
-    const jdLower = ' ' + jd.toLowerCase() + ' ';
+    const jdText = String(jd || '');
     const skillAppears = (label) => {
       const skill = SKILL_KB.find(s => s.label === label);
-      if (!skill) return isSkillKeyword(label);
-      const terms = [skill.label, ...skill.terms];
-      const literal = terms.some(term => {
-        const t = term.trim().toLowerCase();
-        return t.length >= 2 && jdLower.includes(t);
-      });
-      if (!literal) return false;
-      const skillFam = SKILL_FAMILY[label] || 'general';
-      const allowed = FAMILY_COMPAT[family];
-      if (!family || family === 'general' || !allowed || allowed.includes(skillFam)) return true;
-      const lab = skill.label.toLowerCase();
-      return lab.length >= 4 && new RegExp('(?<![a-z0-9])' + lab.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![a-z0-9])', 'i').test(jdLower);
+      if (!skill) return termInJd(jdText, label);
+      return [skill.label, ...skill.terms].some(term => termInJd(jdText, term));
     };
-    const boost = (text) => /required|must have|minimum|essential/i.test(text) ? 2.4
-      : /preferred|nice to have|bonus/i.test(text) ? 1.4 : 1;
+    const boost = (text) => JD_REQUIRED_RE.test(text) ? 2.4
+      : JD_PREFERRED_RE.test(text) ? 1.4 : 1;
 
     for (const chunk of (chunks.length ? chunks : [jd])) {
       const mult = boost(chunk);
-      for (const hit of bm25.search(chunk, 14)) {
+      for (const hit of bm25.search(chunk, 16)) {
         if (!skillAppears(hit.doc.label)) continue;
         scored.set(hit.doc.label, (scored.get(hit.doc.label) || 0) + hit.score * mult);
       }
     }
     for (const { term, weight } of extractDirectTerms(jd)) {
-      const display = cleanSkillPhrase(term);
-      if (!isSkillKeyword(display)) continue;
+      const display = resolveSkillLabel(term) || cleanSkillPhrase(term);
+      if (!display || !isSkillKeyword(display)) continue;
       const existing = [...scored.keys()].find(k => k.toLowerCase() === display.toLowerCase());
       if (existing) scored.set(existing, scored.get(existing) + weight);
       else scored.set(display, weight);
     }
-
-    for (const skill of SKILL_KB) {
-      if (skillAppears(skill.label)) scored.set(skill.label, (scored.get(skill.label) || 0) + 12);
+    for (const [label, weight] of scanSkillKbInJd(jd)) {
+      scored.set(label, (scored.get(label) || 0) + weight);
     }
 
     const title = extractJdTitle(jd);
 
     function pushUnique(list, term) {
-      const t = cleanSkillPhrase(term);
-      if (!isSkillKeyword(t)) return;
-      const kl = t.toLowerCase();
+      const label = resolveSkillLabel(term) || cleanSkillPhrase(term);
+      if (!label || !isSkillKeyword(label)) return;
+      const kl = label.toLowerCase();
       if (list.some(u => u.toLowerCase() === kl)) return;
-      list.push(t);
+      list.push(label);
     }
 
     const requiredSeed = [];
     const preferredSeed = [];
     let listMode = null;
     for (const line of jd.split('\n')) {
-      if (/required|must have|minimum qualifications/i.test(line)) listMode = 'req';
-      else if (/preferred|nice to have|bonus|plus/i.test(line)) listMode = 'pref';
-      const payload = line.includes(':') ? line.replace(/^[^:]*:\s*/, '') : line.replace(/^[-•*]\s*/, '');
-      if (!listMode) continue;
+      const trimmed = line.trim();
+      if (JD_REQUIRED_RE.test(trimmed)) listMode = 'req';
+      else if (JD_PREFERRED_RE.test(trimmed)) listMode = 'pref';
+      else if (JD_SECTION_RE.test(trimmed)) {
+        if (/required|must|minimum|essential|mandatory/i.test(trimmed)) listMode = 'req';
+        else if (/preferred|nice|bonus|desired/i.test(trimmed)) listMode = 'pref';
+      }
+      const payload = trimmed.includes(':')
+        ? trimmed.replace(/^[^:]{0,40}:\s*/, '')
+        : trimmed.replace(/^[-•*]\s*/, '');
+      if (!listMode || payload.length < 2) continue;
       payload.split(/[,;/|]/).forEach(part => {
         if (listMode === 'req') pushUnique(requiredSeed, part);
         else pushUnique(preferredSeed, part);
@@ -585,6 +728,8 @@
       { id: 'frontend', match: () => /front.?end engineer|front.?end developer|react developer/.test(t) },
       { id: 'backend', match: () => /back.?end engineer|back.?end developer/.test(t) },
       { id: 'ba', match: () => /business analyst|\bdata analyst\b/.test(t) },
+      { id: 'ai-engineer', match: () => /ml\/llm|llm engineer|ml engineer|applied ml|genai engineer|generative ai engineer|ai-native|langchain|llamaindex|retrieval-augmented|agent-based/.test(t) && /engineer|scientist|ml\b|llm|applied/.test(t) },
+      { id: 'ml-engineer', match: () => /machine learning engineer|ml engineer|applied scientist|deep learning engineer/.test(t) },
       { id: 'databricks', match: () => /databricks/.test(t) && /data engineer|data engineering/.test(t) },
       { id: 'gcp-de', match: () => /gcp|bigquery|dataflow|composer/.test(t) && /data engineer/.test(t) },
       { id: 'aws-de', match: () => (/\baws\b|glue|redshift|\bemr\b/.test(t) && /data engineer/.test(t)) },
@@ -610,6 +755,41 @@
     return { id: packId || 'generic', family, label, title: title || label, packId };
   }
 
+  function packSkillInJd(jd, term) {
+    const label = resolveSkillLabel(term);
+    if (!label) return false;
+    const skill = SKILL_KB.find(s => s.label === label);
+    if (!skill) return termInJd(jd, label);
+    return [skill.label, ...skill.terms].some(t => termInJd(jd, t));
+  }
+
+  function buildJdOnlySkillSet(jd) {
+    const role = detectRole(jd);
+    const fromJd = extractKeywordsRAG(jd, role.family);
+    return {
+      role,
+      title: fromJd.title || role.title || role.label,
+      jdPrimary: fromJd.primary || [],
+      jdSecondary: fromJd.secondary || [],
+    };
+  }
+
+  function getMarketSkillsForRole(role) {
+    const packId = role?.packId || FAMILY_FALLBACK_PACK[role?.family];
+    const pack = ROLE_PACKS[packId] || { core: [], extra: [] };
+    const out = [];
+    const seen = new Set();
+    for (const t of [...(pack.core || []), ...(pack.extra || [])]) {
+      const label = resolveSkillLabel(t) || cleanSkillPhrase(t);
+      if (!label || !isSkillKeyword(label)) continue;
+      const key = label.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(label);
+    }
+    return out;
+  }
+
   function buildRoleSkillSet(jd) {
     const role = detectRole(jd);
     const fromJd = extractKeywordsRAG(jd, role.family);
@@ -619,7 +799,7 @@
     const secondary = [];
     const seen = new Set();
     const add = (list, term, max) => {
-      const t = cleanSkillPhrase(term);
+      const t = resolveSkillLabel(term) || cleanSkillPhrase(term);
       if (!t || !isSkillKeyword(t)) return;
       const key = t.toLowerCase().replace(/s$/, '');
       if (seen.has(key)) return;
@@ -628,10 +808,21 @@
       list.push(t);
     };
     (fromJd.primary || []).forEach(t => add(primary, t, 14));
-    (fromJd.secondary || []).forEach(t => add(primary, t, 14));
-    (pack.core || []).forEach(t => add(primary.length < 14 ? primary : secondary, t, 14));
-    (pack.extra || []).forEach(t => add(secondary, t, 14));
-    const aliasMap = Object.fromEntries([...primary, ...secondary].map(k => [k, [k]]));
+    (fromJd.secondary || []).forEach(t => add(secondary, t, 14));
+    (pack.core || []).forEach(t => {
+      if (packSkillInJd(jd, t)) add(primary, t, 14);
+    });
+    (pack.extra || []).forEach(t => {
+      if (packSkillInJd(jd, t)) add(secondary, t, 14);
+    });
+    if (primary.length < 4) {
+      (pack.core || []).slice(0, 6).forEach(t => add(primary, t, 14));
+    }
+    const aliasMap = {};
+    for (const k of [...primary, ...secondary]) {
+      const skill = SKILL_KB.find(s => s.label === k);
+      aliasMap[k] = skill ? uniqTerms([skill.label, ...skill.terms]) : [k];
+    }
     return {
       role,
       title: role.title || role.label,
@@ -639,10 +830,22 @@
       secondary,
       aliasMap,
       jdSkills: fromJd.primary || [],
-      roleSkills: [...(pack.core || []), ...(pack.extra || [])],
+      roleSkills: [...(pack.core || []), ...(pack.extra || [])].filter(t => packSkillInJd(jd, t)),
       source: 'jd+role-pack',
-      confidence: 'high',
+      confidence: primary.length >= 6 ? 'high' : 'medium',
     };
+  }
+
+  function uniqTerms(list) {
+    const out = [];
+    const seen = new Set();
+    for (const t of list || []) {
+      const k = String(t || '').trim().toLowerCase();
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      out.push(String(t).trim());
+    }
+    return out;
   }
 
   function kwInText(kw, text) {
@@ -664,7 +867,7 @@
     return forms;
   }
 
-  function kwOrAliasInText(canonical, text, aliasMap) {
+  function kwOrAliasInText(canonical, text, aliasMap = {}) {
     const aliases = aliasMap[canonical] || [canonical];
     return aliases.some(a => expandKeyword(a).some(form => kwInText(form, text)));
   }
@@ -676,7 +879,7 @@
     );
   }
 
-  function computeAtsScore(jd, resume, primary, secondary, aliasMap) {
+  function computeAtsScore(jd, resume, primary, secondary, aliasMap = {}) {
     primary = (primary || []).filter(k => !isCertKeyword(k));
     secondary = (secondary || []).filter(k => !isCertKeyword(k));
     const resumeLines = normalizeLines(resume);
@@ -849,6 +1052,8 @@
     cleanJobTitle,
     detectRole,
     buildRoleSkillSet,
+    buildJdOnlySkillSet,
+    getMarketSkillsForRole,
     keywordInText: kwOrAliasInText,
     SKILL_KB,
   };

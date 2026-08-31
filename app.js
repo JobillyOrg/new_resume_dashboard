@@ -1,8 +1,9 @@
 /* Jobilly.AI Resume Dashboard */
 const SCORE_THRESHOLD = 95;
 const MAX_BOOST_PASSES = 6;
-const SKILLSET_CACHE = 'ats_skillset_v4_';
+const SKILLSET_CACHE = 'ats_skillset_v9_';
 const CERT_TERM_RE = /certif(?:y|ied|ication|ications)?|\baws certified\b|\bazure certified\b|\bgoogle cloud certified\b|\bsnowflake certified\b|\bdatabricks certified\b|\bpmp\b|\bcissp\b|\bcspo\b|\bcsm\b|\bcka\b|\bckad\b|\bcomptia\b|\bscrum master\b|\bprofessional cloud architect\b|\bsolutions architect associate\b|\bdata engineer associate\b/i;
+const JUNK_SKILL_RE = /\b(retirement|401k|401\(k\)|benefits?|insurance|dental|vision|compensation|how to apply|cover letter|submit your resume|employer-paid|disability insurance|employee assistance)\b/i;
 
 function isCertTerm(term) {
   return CERT_TERM_RE.test(String(term || ''));
@@ -10,6 +11,22 @@ function isCertTerm(term) {
 
 function dropCertTerms(list) {
   return (list || []).filter(t => t && !isCertTerm(t));
+}
+
+function filterExtractedSkills(list) {
+  return dropCertTerms(list).filter(t => {
+    const s = String(t || '').trim();
+    if (s.length < 2 || s.length > 72) return false;
+    if (JUNK_SKILL_RE.test(s)) return false;
+    if (/^(the|what|how|we|you|our|this|that)\b/i.test(s)) return false;
+    return true;
+  });
+}
+
+function termInJdText(jd, term) {
+  if (window.RAGEngine && RAGEngine.keywordInText) return RAGEngine.keywordInText(term, jd, {});
+  const t = String(term || '').trim().toLowerCase();
+  return t.length >= 2 && String(jd || '').toLowerCase().includes(t);
 }
 
 function stripCertGaps(items) {
@@ -84,11 +101,424 @@ let state = {
   filename: '',
   geminiOk: false,
   lastModel: '',
-  docFit: { fs: 1, lh: 1, pages: 1 },
+  docFit: { bodyPt: 12, lh: 1, pages: 1 },
   boldTerms: [],
   boldFinalized: false,
   preTailor: null,
+  detailAnalysisOpen: false,
+  baseResume: { text: '', fileName: '', fileType: '', updatedAt: 0 },
+  jdSessions: [],
+  activeJdId: '',
 };
+
+const WORKSPACE_KEY = 'jobilly_workspace_v1';
+let saveWorkspaceTimer = null;
+
+function newJdId() {
+  return 'jd-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+}
+
+function jdSessionLabel(jd, fallback, keywords) {
+  const meta = deriveJdSessionMeta(jd, keywords);
+  return meta.label || fallback || 'New posting';
+}
+
+function getActiveJdSession() {
+  return state.jdSessions.find(s => s.id === state.activeJdId) || state.jdSessions[0] || null;
+}
+
+function persistCurrentJdSession(keywords) {
+  const session = getActiveJdSession();
+  if (!session) return;
+  if ($('jdInput')) session.jd = $('jdInput').value;
+  session.tailoredResume = state.tailoredResume || ($('outputArea') && $('outputArea').textContent) || '';
+  syncJdSessionMeta(session, keywords || state.keywords);
+  session.updatedAt = Date.now();
+  renderResumeHistory();
+}
+
+function initDefaultWorkspace() {
+  state.baseResume = { text: '', fileName: '', fileType: '', updatedAt: 0 };
+  state.jdSessions = [{ id: newJdId(), label: 'New posting', jd: '', tailoredResume: '', updatedAt: Date.now() }];
+  state.activeJdId = state.jdSessions[0].id;
+}
+
+function saveWorkspace() {
+  const payload = {
+    baseResume: state.baseResume,
+    jdSessions: state.jdSessions,
+    activeJdId: state.activeJdId,
+    mode: state.mode,
+    track: state.track,
+  };
+  try { localStorage.setItem(WORKSPACE_KEY, JSON.stringify(payload)); } catch { /* quota */ }
+}
+
+function loadWorkspace() {
+  try {
+    const raw = localStorage.getItem(WORKSPACE_KEY);
+    if (!raw) {
+      initDefaultWorkspace();
+      return;
+    }
+    const data = JSON.parse(raw);
+    state.baseResume = data.baseResume || { text: '', fileName: '', fileType: '', updatedAt: 0 };
+    state.jdSessions = Array.isArray(data.jdSessions) && data.jdSessions.length
+      ? data.jdSessions
+      : [{ id: newJdId(), label: 'New posting', jd: '', tailoredResume: '', updatedAt: Date.now() }];
+    state.activeJdId = data.activeJdId || state.jdSessions[0].id;
+    if (data.mode) state.mode = data.mode;
+    if (data.track) state.track = data.track;
+  } catch {
+    initDefaultWorkspace();
+  }
+  if (!state.jdSessions.length) initDefaultWorkspace();
+  state.jdSessions.forEach(s => syncJdSessionMeta(s));
+}
+
+function applyBaseResumeToUi() {
+  const text = state.baseResume?.text || '';
+  if ($('resumeInput')) $('resumeInput').value = text;
+  if ($('baseResumeName')) {
+    const name = state.baseResume?.fileName;
+    $('baseResumeName').textContent = name || (text.trim() ? 'Pasted text (no file)' : 'No file loaded — paste or upload');
+  }
+}
+
+function updateJdActiveMeta() {
+  const session = getActiveJdSession();
+  const banner = $('jdActiveMeta');
+  const titleEl = $('jdActiveTitle');
+  const companyEl = $('jdActiveCompany');
+  if (!banner || !titleEl || !companyEl) return;
+  const meta = deriveJdSessionMeta(session?.jd || '', state.keywords);
+  const hasJd = String(session?.jd || '').trim().length > 0;
+  const fullTitle = session?.roleTitle || meta.fullTitle || meta.title;
+  const company = session?.company || meta.company;
+  if (!hasJd || !fullTitle) {
+    banner.classList.add('hidden');
+    return;
+  }
+  titleEl.textContent = fullTitle;
+  companyEl.textContent = company || '';
+  companyEl.classList.toggle('hidden', !company);
+  banner.classList.remove('hidden');
+}
+
+function renderJdTabs() {
+  const el = $('jdTabRow');
+  if (!el) return;
+  const canClose = state.jdSessions.length > 1;
+  el.innerHTML = state.jdSessions.map(s => {
+    const meta = deriveJdSessionMeta(s.jd, s.id === state.activeJdId ? state.keywords : null);
+    const hasJd = String(s.jd || '').trim().length > 0;
+    const fullTitle = (s.roleTitle || meta.fullTitle || meta.title || '').trim();
+    const title = formatTabJobTitle(fullTitle) || (hasJd ? 'Untitled role' : 'New posting');
+    const company = (s.company || meta.company || '').trim();
+    const tip = company ? `${company} — ${fullTitle || title}` : (fullTitle || title);
+    const hasDraft = String(s.tailoredResume || '').trim().length > 200;
+    const active = s.id === state.activeJdId;
+    return `
+    <div class="jd-tab-wrap ${active ? 'active' : ''}">
+      <button type="button" class="jd-tab ${active ? 'active' : ''}" onclick="switchJdSession('${s.id}')" title="${escapeHtml(tip).replace(/"/g, '&quot;')}">
+        <span class="jd-tab-top">
+          ${hasDraft ? '<span class="jd-tab-dot" title="Tailored draft saved"></span>' : ''}
+          <span class="jd-tab-title">${escapeHtml(title)}</span>
+        </span>
+        ${company ? `<span class="jd-tab-sub">${escapeHtml(company)}</span>` : ''}
+      </button>
+      ${canClose ? `<button type="button" class="jd-tab-close" onclick="closeJdSession('${s.id}', event)" aria-label="Remove posting" title="Remove posting">×</button>` : ''}
+    </div>`;
+  }).join('') + '<button type="button" class="jd-tab add" onclick="addJdSession()"><span class="jd-tab-add-icon">+</span> Add posting</button>';
+  updateJdActiveMeta();
+  renderResumeHistory();
+}
+
+function getHistorySessions() {
+  return state.jdSessions
+    .filter(s => String(s.tailoredResume || '').trim().length > 120)
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+}
+
+function formatHistoryDate(ts) {
+  if (!ts) return '';
+  try {
+    return new Date(ts).toLocaleString(undefined, {
+      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
+  } catch {
+    return '';
+  }
+}
+
+function renderResumeHistory() {
+  const el = $('resumeHistory');
+  if (!el) return;
+  const items = getHistorySessions();
+  if (!items.length) {
+    el.innerHTML = '<p class="rail-history-empty">Rewrite a posting to build your print history.</p>';
+    return;
+  }
+  el.innerHTML = items.map(s => {
+    const meta = deriveJdSessionMeta(s.jd);
+    const title = formatTabJobTitle(s.roleTitle || meta.fullTitle || s.label || 'Untitled role', { full: true });
+    const company = (s.company || meta.company || '').trim();
+    const active = s.id === state.activeJdId;
+    return `
+      <article class="rail-history-item ${active ? 'active' : ''}" onclick="openHistorySession('${s.id}')">
+        <div class="rail-history-title" title="${escapeHtml(title).replace(/"/g, '&quot;')}">${escapeHtml(title)}</div>
+        ${company ? `<div class="rail-history-sub">${escapeHtml(company)}</div>` : ''}
+        <div class="rail-history-meta">${escapeHtml(formatHistoryDate(s.updatedAt))}</div>
+        <div class="rail-history-actions">
+          <button type="button" class="rail-history-print" onclick="printSessionResume('${s.id}', event)">Print</button>
+        </div>
+      </article>`;
+  }).join('');
+}
+
+function openHistorySession(id) {
+  if (id === state.activeJdId) {
+    const target = $('resultsSection') || $('resumePaper');
+    if (target && !target.classList?.contains('hidden')) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    return;
+  }
+  switchJdSession(id);
+  setTimeout(() => {
+    const target = $('resultsSection') || $('resumePaper');
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 80);
+}
+
+function printSessionResume(id, event) {
+  event?.stopPropagation?.();
+  event?.preventDefault?.();
+  const session = state.jdSessions.find(s => s.id === id);
+  const content = String(session?.tailoredResume || '').trim();
+  if (!content || content.length < 50) {
+    showToast('No tailored resume to print', '#e11d48');
+    return;
+  }
+  if (id !== state.activeJdId) {
+    persistCurrentJdSession();
+    state.activeJdId = id;
+    syncUiFromActiveSession();
+  } else {
+    state.tailoredResume = content;
+    if ($('outputArea')) $('outputArea').textContent = content;
+    showFormattedResume(content);
+  }
+  printResume();
+}
+
+function syncUiFromActiveSession() {
+  const session = getActiveJdSession();
+  if (!session) return;
+  if ($('jdInput')) $('jdInput').value = session.jd || '';
+  state.tailoredResume = session.tailoredResume || '';
+  if ($('outputArea')) $('outputArea').textContent = state.tailoredResume;
+  if (state.tailoredResume) showFormattedResume(state.tailoredResume);
+  else if ($('resumePaper')) $('resumePaper').innerHTML = '';
+  state.keywords = null;
+  state.kwHash = '';
+  renderJdTabs();
+  updateCounts();
+}
+
+function switchJdSession(id) {
+  if (id === state.activeJdId) return;
+  persistCurrentJdSession();
+  state.activeJdId = id;
+  resetResultsUi(true);
+  syncUiFromActiveSession();
+}
+
+function addJdSession() {
+  persistCurrentJdSession();
+  const session = { id: newJdId(), label: 'New posting', jd: '', tailoredResume: '', updatedAt: Date.now() };
+  state.jdSessions.push(session);
+  state.activeJdId = session.id;
+  resetResultsUi(true);
+  syncUiFromActiveSession();
+  saveWorkspace();
+  if ($('jdInput')) $('jdInput').focus();
+  showToast('New posting slot added');
+}
+
+function closeJdSession(id, event) {
+  event?.stopPropagation?.();
+  event?.preventDefault?.();
+  if (state.jdSessions.length <= 1) {
+    removeActiveJdSession();
+    return;
+  }
+  persistCurrentJdSession();
+  const wasActive = id === state.activeJdId;
+  state.jdSessions = state.jdSessions.filter(s => s.id !== id);
+  if (wasActive) state.activeJdId = state.jdSessions[0].id;
+  resetResultsUi(true);
+  syncUiFromActiveSession();
+  saveWorkspace();
+  showToast('Posting removed');
+}
+
+function removeActiveJdSession() {
+  if (state.jdSessions.length <= 1) {
+    const s = getActiveJdSession();
+    if (s) {
+      s.jd = '';
+      s.tailoredResume = '';
+      s.label = 'New posting';
+      s.roleTitle = '';
+      s.company = '';
+    }
+    if ($('jdInput')) $('jdInput').value = '';
+    resetResultsUi(true);
+    syncUiFromActiveSession();
+    saveWorkspace();
+    showToast('Posting cleared');
+    return;
+  }
+  persistCurrentJdSession();
+  state.jdSessions = state.jdSessions.filter(s => s.id !== state.activeJdId);
+  state.activeJdId = state.jdSessions[0].id;
+  resetResultsUi(true);
+  syncUiFromActiveSession();
+  saveWorkspace();
+  showToast('Posting removed');
+}
+
+function scheduleSaveWorkspace() {
+  clearTimeout(saveWorkspaceTimer);
+  saveWorkspaceTimer = setTimeout(() => {
+    persistCurrentJdSession();
+    state.baseResume = {
+      ...(state.baseResume || {}),
+      text: ($('resumeInput') && $('resumeInput').value) || '',
+      updatedAt: Date.now(),
+    };
+    saveWorkspace();
+    renderJdTabs();
+  }, 400);
+}
+
+function onResumeInput() {
+  updateCounts();
+  scheduleSaveWorkspace();
+}
+
+function onJdInput() {
+  updateCounts();
+  const session = getActiveJdSession();
+  if (session && $('jdInput')) {
+    session.jd = $('jdInput').value;
+    syncJdSessionMeta(session);
+  }
+  renderJdTabs();
+  scheduleSaveWorkspace();
+}
+
+async function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const comma = result.indexOf(',');
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error || new Error('Could not read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function extractResumeOnServer(fileName, data) {
+  const res = await fetch('/api/extract-resume', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fileName, data }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (res.status === 404) {
+    throw new Error('Restart the server (start.bat or python server.py) to enable file upload, then refresh.');
+  }
+  if (!res.ok || payload.ok === false) {
+    throw new Error(payload.error || `Extract failed (HTTP ${res.status})`);
+  }
+  return payload;
+}
+
+async function handleResumeUpload(file) {
+  if (!file) return;
+  if (!/\.(pdf|doc|docx|txt)$/i.test(file.name)) {
+    showToast('Use PDF, DOC, DOCX, or TXT', '#e11d48');
+    return;
+  }
+  showAiProcessing('Reading your resume file…', 'Extracting text from ' + file.name + '…');
+  try {
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    if (ext === 'txt') {
+      const text = (await file.text()).trim();
+      if (text.length < 40) throw new Error('Very little text was found in that file. Try another export.');
+      setBaseResume(text, file.name);
+      stopAiProcessing();
+      showToast('Base resume loaded · ' + wordCount(text) + ' words');
+      return;
+    }
+    const data = await fileToBase64(file);
+    const payload = await extractResumeOnServer(file.name, data);
+    setBaseResume(payload.text, file.name);
+    stopAiProcessing();
+    showToast('Base resume loaded · ' + wordCount(payload.text) + ' words');
+  } catch (err) {
+    stopAiProcessing();
+    showToast(String(err.message || err).slice(0, 140), '#e11d48');
+  }
+}
+
+function setBaseResume(text, fileName) {
+  const ext = (fileName || '').split('.').pop().toLowerCase();
+  const normalized = normalizeContactInResume(text || '');
+  state.baseResume = {
+    text: normalized,
+    fileName: fileName || '',
+    fileType: ext || 'txt',
+    updatedAt: Date.now(),
+  };
+  applyBaseResumeToUi();
+  updateCounts();
+  state.keywords = null;
+  state.kwHash = '';
+  saveWorkspace();
+}
+
+function triggerReplaceResume() {
+  const input = $('resumeFileInput');
+  if (input) input.click();
+}
+
+function initResumeUpload() {
+  const input = $('resumeFileInput');
+  const zone = $('resumeUploadZone');
+  if (input) {
+    input.addEventListener('change', () => {
+      const file = input.files && input.files[0];
+      if (file) handleResumeUpload(file);
+      input.value = '';
+    });
+  }
+  if (zone) {
+    zone.addEventListener('click', () => { if (input) input.click(); });
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+    zone.addEventListener('drop', e => {
+      e.preventDefault();
+      zone.classList.remove('dragover');
+      const file = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) handleResumeUpload(file);
+    });
+  }
+}
 
 function $(id) { return document.getElementById(id); }
 
@@ -118,19 +548,80 @@ function setStep(n) {
 }
 
 function setProgress(pct, label, sub = '') {
-  $('progressSection').classList.remove('hidden');
-  $('progressBar').style.width = pct + '%';
-  $('progressLabel').textContent = label;
-  $('progressSub').textContent = sub;
+  if ($('progressBar')) $('progressBar').style.width = pct + '%';
+  if ($('progressLabel')) $('progressLabel').textContent = label;
+  if ($('progressSub')) $('progressSub').textContent = sub;
+  if (sub) updateAiProcessing(sub, label);
+}
+
+let screenLoadingDepth = 0;
+
+function showScreenLoading(title, sub = 'Please wait…', { showNotice = false } = {}) {
+  screenLoadingDepth += 1;
+  const overlay = $('aiProcessingOverlay');
+  if (!overlay) return;
+  overlay.classList.remove('hidden');
+  overlay.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('screen-loading');
+  if ($('aiOverlayTitle')) $('aiOverlayTitle').textContent = title;
+  if ($('aiOverlaySub')) $('aiOverlaySub').textContent = sub;
+  if ($('aiNoticeBanner')) $('aiNoticeBanner').classList.toggle('hidden', !showNotice);
+  if ($('loadingIndicator')) $('loadingIndicator').classList.add('hidden');
+}
+
+function hideScreenLoading() {
+  screenLoadingDepth = Math.max(0, screenLoadingDepth - 1);
+  if (screenLoadingDepth > 0) return;
+  const overlay = $('aiProcessingOverlay');
+  if (overlay) {
+    overlay.classList.add('hidden');
+    overlay.setAttribute('aria-hidden', 'true');
+  }
+  document.body.classList.remove('screen-loading');
+}
+
+function showAiProcessing(title, sub = 'Please wait…') {
+  showScreenLoading(title, sub, { showNotice: true });
+  if ($('progressSection')) $('progressSection').classList.add('hidden');
+  if ($('detailAnalysisBar')) $('detailAnalysisBar').classList.add('hidden');
+  if ($('detailAnalysisPanel')) $('detailAnalysisPanel').classList.add('hidden');
+  if ($('scoreSection')) $('scoreSection').classList.add('hidden');
+  if ($('optimizeBoard')) $('optimizeBoard').classList.add('hidden');
+  if ($('resultsSection')) $('resultsSection').classList.add('hidden');
+}
+
+function updateAiProcessing(sub, title) {
+  if (title && $('aiOverlayTitle')) $('aiOverlayTitle').textContent = title;
+  if (sub && $('aiOverlaySub')) $('aiOverlaySub').textContent = sub;
+}
+
+function stopAiProcessing() {
+  hideScreenLoading();
+}
+
+function setDetailAnalysisOpen(open) {
+  state.detailAnalysisOpen = !!open;
+  const panel = $('detailAnalysisPanel');
+  const btn = $('detailAnalysisBtn');
+  if (panel) panel.classList.toggle('hidden', !open);
+  if ($('scoreSection')) $('scoreSection').classList.toggle('hidden', !open);
+  if ($('optimizeBoard')) $('optimizeBoard').classList.toggle('hidden', !open);
+  if (btn) btn.textContent = open ? 'Hide detail analysis' : 'Detail analysis';
+}
+
+function toggleDetailAnalysis() {
+  setDetailAnalysisOpen(!state.detailAnalysisOpen);
+  if (state.detailAnalysisOpen && $('detailAnalysisPanel')) {
+    $('detailAnalysisPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 }
 
 function setLoading(text) {
-  $('loadingIndicator').classList.remove('hidden');
-  $('loadingText').textContent = text;
+  showScreenLoading('Working…', text || 'Please wait…');
 }
 
 function stopLoading() {
-  $('loadingIndicator').classList.add('hidden');
+  hideScreenLoading();
 }
 
 function switchTab(name, btn) {
@@ -141,9 +632,14 @@ function switchTab(name, btn) {
 }
 
 function setMode(mode) {
+  if (state.mode !== mode) {
+    state.keywords = null;
+    state.kwHash = '';
+  }
   state.mode = mode;
   $('modeIntegrity').classList.toggle('active', mode === 'integrity');
   $('modeAggressive').classList.toggle('active', mode === 'aggressive');
+  saveWorkspace();
 }
 
 function setTrack(id) {
@@ -151,6 +647,7 @@ function setTrack(id) {
   document.querySelectorAll('#trackRow .chip').forEach(c => {
     c.classList.toggle('active', c.dataset.id === id);
   });
+  saveWorkspace();
 }
 
 function cleanJobTitle(title) {
@@ -168,6 +665,250 @@ function currentHeadline() {
   const role = state.keywords && state.keywords.role;
   if (role) return cleanJobTitle(role.title || role.label || '');
   return '';
+}
+
+const COMPANY_STOP = new Set([
+  'the', 'our', 'your', 'this', 'that', 'we', 'us', 'job', 'role', 'team', 'about',
+  'join', 'company', 'employer', 'equal', 'opportunity', 'position', 'opening',
+  'hiring', 'remote', 'hybrid', 'onsite', 'full', 'time', 'contract', 'intern',
+  'fine', 'tuning', 'model', 'models', 'hands', 'machine', 'learning', 'llm', 'ml', 'ai',
+]);
+
+function isValidCompanyName(raw) {
+  const s = cleanCompanyName(raw);
+  if (!s || s.length < 3) return false;
+  const low = s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!low || COMPANY_STOP.has(low)) return false;
+  if (/^(fine|tune|tuning|engineer|developer|analyst|scientist|specialist)$/i.test(s)) return false;
+  return true;
+}
+
+const KNOWN_COMPANIES = [
+  'Amazon', 'Google', 'Alphabet', 'Microsoft', 'Meta', 'Facebook', 'Netflix', 'Apple',
+  'Stripe', 'Uber', 'Lyft', 'Airbnb', 'Salesforce', 'Oracle', 'Adobe', 'Intel',
+  'Nvidia', 'Tesla', 'JPMorgan', 'Chase', 'Goldman Sachs', 'Bank of America',
+  'Walmart', 'Target', 'Costco', 'Deloitte', 'Accenture', 'IBM', 'Cisco', 'VMware',
+  'Snowflake', 'Databricks', 'Palantir', 'Coinbase', 'Robinhood', 'Spotify',
+  'Twitter', 'LinkedIn', 'PayPal', 'Square', 'Block', 'Shopify', 'Twilio',
+  'Atlassian', 'ServiceNow', 'Workday', 'Intuit', 'Capital One', 'American Express',
+  'Boeing', 'Lockheed Martin', 'Pfizer', 'Johnson & Johnson', 'Merck', 'Novartis',
+  'Roche', 'Genentech', 'Moderna', 'CVS', 'UnitedHealth', 'Anthem', 'Cigna',
+  'Humana', 'Kaiser', 'Mayo Clinic', 'Cleveland Clinic', 'HCA', 'Epic', 'Cerner',
+];
+
+function cleanCompanyName(raw) {
+  let s = String(raw || '').trim()
+    .replace(/\b(inc|llc|ltd|corp|corporation|company|co)\.?$/i, '')
+    .replace(/[|,].*$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!s || s.length < 2) return '';
+  const low = s.toLowerCase();
+  if (COMPANY_STOP.has(low)) return '';
+  if (/^(job|role|team|the|our|your)$/i.test(s)) return '';
+  const words = s.split(' ');
+  if (words.length > 3) s = words.slice(0, 2).join(' ');
+  return s;
+}
+
+function extractCompanyFromJd(jd) {
+  const text = String(jd || '').trim();
+  if (!text) return '';
+
+  const urlMatch = text.match(/(?:https?:\/\/)?(?:www\.)?(?:careers|jobs)\.([a-z0-9-]{2,30})\./i);
+  if (urlMatch) {
+    const fromUrl = cleanCompanyName(urlMatch[1].replace(/-/g, ' '));
+    if (fromUrl) return fromUrl;
+  }
+
+  const patterns = [
+    /\bcompany\s*[:]\s*([A-Za-z0-9][A-Za-z0-9 &.'-]{1,40})/i,
+    /\bemployer\s*[:]\s*([A-Za-z0-9][A-Za-z0-9 &.'-]{1,40})/i,
+    /\borganization\s*[:]\s*([A-Za-z0-9][A-Za-z0-9 &.'-]{1,40})/i,
+    /\bat\s+([A-Z][A-Za-z0-9&.'-]{2,28})\s*,\s*we\b/,
+    /\bjoin\s+([A-Z][A-Za-z0-9&.'-]{2,28})(?:\s+(?:as|our|the|a|an)\b)/,
+    /\babout\s+((?:the\s+)?[A-Z][A-Za-z0-9&.'-]{2,28})(?:\s+(?:company|role|us|the role|our team|our mission)\b|[,\n])/,
+    /\b([A-Z][A-Za-z0-9&.'-]{2,28})\s+is\s+(?:hiring|looking|seeking)\b/,
+    /^([A-Z][A-Za-z0-9&.'-]{2,28})\s*[|–—-]\s*.+/m,
+  ];
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (m && m[1]) {
+      const cand = cleanCompanyName(m[1]);
+      if (isValidCompanyName(cand)) return cand;
+    }
+  }
+
+  const lower = text.toLowerCase();
+  for (const brand of KNOWN_COMPANIES) {
+    if (lower.includes(brand.toLowerCase())) return brand;
+  }
+  return '';
+}
+
+const JD_MARKETING_RE = /\b(is revolutioniz|leading provider|our mission|we(?:'| a)re hiring|join our team|transforming|healthcare industry|world.?class|fast.?growing|equal opportunity)\b/i;
+
+function looksLikeMarketingLine(line) {
+  const t = String(line || '').trim();
+  if (!t) return true;
+  if (t.length > 72) return true;
+  if (JD_MARKETING_RE.test(t)) return true;
+  if (/\b(about us|company overview|job description|primary responsibilities)\b/i.test(t)) return true;
+  return false;
+}
+
+const TAB_TITLE_PREFIX_RE = /^(hands[\s-]?on|experienced|passionate|talented|skilled|motivated|dynamic|dedicated|results[\s-]?driven|strong)\s+/i;
+
+function shortenVerboseTabTitle(title) {
+  const t = cleanJobTitle(title);
+  if (!t) return '';
+  const low = t.toLowerCase().replace(/centre/g, 'center');
+  if (/\b(data\s*center|linux|hw|hardware|cabling|infrastructure|colo)\b/.test(low)
+    && /\b(engineer|technician|operator|specialist)\b/.test(low)) {
+    return 'Data Center Technician';
+  }
+  if (/\b(network|noc|wan|lan)\b/.test(low) && /\b(engineer|technician|administrator|specialist)\b/.test(low)) {
+    return 'Network Technician';
+  }
+  if (/\b(help\s*desk|service\s*desk|desktop|it)\b/.test(low) && /\b(support|technician|specialist)\b/.test(low)) {
+    return 'IT Support Specialist';
+  }
+  if (/\b(ml|llm|machine learning|deep learning|nlp)\b/.test(low) && /\b(engineer|scientist|developer)\b/.test(low)) {
+    if (/\bllm\b/.test(low) && /\bml\b/.test(low)) return 'ML / LLM Engineer';
+    if (/\bllm\b/.test(low)) return 'LLM Engineer';
+    if (/\bml\b/.test(low) || /\bmachine learning\b/.test(low)) return 'ML Engineer';
+  }
+  return t.replace(TAB_TITLE_PREFIX_RE, '').replace(/\s+/g, ' ').trim();
+}
+
+function formatTabJobTitle(title, { full = false } = {}) {
+  let t = shortenVerboseTabTitle(title);
+  if (!t) return '';
+  if (!full && t.length > 34) t = t.slice(0, 31).trim() + '…';
+  return t;
+}
+
+function deriveJdSessionMeta(jd, keywords) {
+  const text = String(jd || '').trim();
+  if (!text) return { title: '', company: '', label: 'New posting', fullTitle: '' };
+
+  let rawTitle = cleanJobTitle(
+    keywords?.role?.title || keywords?.role?.label || keywords?.title || ''
+  );
+  if (!rawTitle || looksLikeMarketingLine(rawTitle)) {
+    rawTitle = window.RAGEngine?.extractJdTitle
+      ? cleanJobTitle(RAGEngine.extractJdTitle(text))
+      : '';
+  }
+  if (!rawTitle || looksLikeMarketingLine(rawTitle)) rawTitle = '';
+
+  const fullTitle = shortenVerboseTabTitle(rawTitle);
+  const title = formatTabJobTitle(rawTitle);
+  let company = extractCompanyFromJd(text);
+  if (!isValidCompanyName(company)) company = '';
+  const label = fullTitle || title || 'New posting';
+  return { title, company, label, fullTitle: fullTitle || rawTitle };
+}
+
+function syncJdSessionMeta(session, keywords) {
+  if (!session) return;
+  const meta = deriveJdSessionMeta(session.jd, keywords);
+  session.roleTitle = meta.fullTitle || meta.title;
+  session.company = meta.company;
+  session.label = meta.label;
+}
+
+function shortcutCompany(name) {
+  const s = String(name || 'company')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+  return (s || 'company').slice(0, 18);
+}
+
+function shortcutRole(title) {
+  const tokens = cleanJobTitle(title || '')
+    .split(/[\s/,&+|–—-]+/)
+    .map(t => t.trim())
+    .filter(Boolean);
+  if (!tokens.length) return 'Role';
+
+  const skip = new Set(['senior', 'sr', 'junior', 'jr', 'lead', 'staff', 'principal', 'ii', 'iii', 'iv', 'i', 'the', 'and']);
+  const acronyms = { ai: 'AI', ml: 'ML', llm: 'LLM', nlp: 'NLP', de: 'DE', se: 'SE', swe: 'SWE', iam: 'IAM', qa: 'QA', ui: 'UI', ux: 'UX', sre: 'SRE', etl: 'ETL', bi: 'BI', pm: 'PM', api: 'API' };
+  const abbrev = {
+    engineer: 'Engg', engineering: 'Engg', developer: 'Dev', development: 'Dev',
+    scientist: 'Sci', analyst: 'Anlst', architect: 'Arch', manager: 'Mgr',
+    specialist: 'Spec', consultant: 'Cons', administrator: 'Admin', associate: 'Assoc',
+    intern: 'Intern', support: 'Supp', operations: 'Ops', operational: 'Ops',
+  };
+
+  const parts = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const w = tokens[i];
+    const low = w.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!low || skip.has(low)) continue;
+
+    const next = tokens[i + 1] ? tokens[i + 1].toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+    const after = tokens[i + 2] ? tokens[i + 2].toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+    if (low === 'machine' && next === 'learning') {
+      parts.push('ML');
+      if (after === 'engineer' || after === 'engineering') parts.push('Engg');
+      i += (after === 'engineer' || after === 'engineering') ? 2 : 1;
+      continue;
+    }
+    if (low === 'artificial' && next === 'intelligence') { parts.push('AI'); i++; continue; }
+    if (low === 'data' && (next === 'engineer' || next === 'engineering')) { parts.push('DEEngg'); i++; continue; }
+    if (low === 'software' && next === 'engineer') { parts.push('SEEngg'); i++; continue; }
+    if (low === 'site' && next === 'reliability') { parts.push('SRE'); i++; continue; }
+
+    if (acronyms[low]) { parts.push(acronyms[low]); continue; }
+    if (abbrev[low]) { parts.push(abbrev[low]); continue; }
+    if (w.length <= 4 && w === w.toUpperCase()) { parts.push(w); continue; }
+    if (/^[A-Z]{2,}$/.test(w)) { parts.push(w); continue; }
+  }
+
+  const out = parts.join('').replace(/[^A-Za-z0-9]/g, '');
+  if (out) return out;
+  return tokens
+    .filter(t => !skip.has(t.toLowerCase()))
+    .map(t => t[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 10) || 'Role';
+}
+
+function extractFirstName(resumeText) {
+  const line = String(resumeText || '').split('\n').map(l => l.trim()).find(Boolean) || 'Resume';
+  const name = line.replace(/[|,].*$/, '').trim();
+  const first = (name.split(/\s+/)[0] || 'Resume').replace(/[^A-Za-z'-]/g, '');
+  if (!first) return 'Resume';
+  if (first === first.toUpperCase() && first.length > 1) {
+    return first.charAt(0) + first.slice(1).toLowerCase();
+  }
+  return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+}
+
+function buildExportBasename(resumeText, jd, keywords) {
+  const first = extractFirstName(resumeText);
+  const company = shortcutCompany(extractCompanyFromJd(jd));
+  const roleTitle = cleanJobTitle(
+    keywords?.role?.title || keywords?.role?.label || keywords?.title
+    || (window.RAGEngine && RAGEngine.extractJdTitle(jd))
+    || currentHeadline()
+    || 'Role'
+  );
+  const role = shortcutRole(roleTitle);
+  return `${first}_${company}_${role}`;
+}
+
+function updateExportFilename(resumeText) {
+  const jd = ($('jdInput') && $('jdInput').value.trim()) || '';
+  const base = buildExportBasename(resumeText, jd, state.keywords || {});
+  state.filename = `${base}.doc`;
+  if ($('suggestedFilename')) $('suggestedFilename').textContent = state.filename;
+  if ($('filenameReason')) {
+    $('filenameReason').textContent = 'Format: FirstName_company_role (e.g. John_amazon_AIEngg). Used for Word, text, and Print/PDF save.';
+  }
+  return base;
 }
 
 function parseJsonLoose(raw) {
@@ -194,22 +935,69 @@ async function callGemini(prompt, { json = false, maxTokens = 4096 } = {}) {
   return data.text || '';
 }
 
-function markGemini(ok, label) {
-  const badge = $('apiBadge');
-  badge.classList.toggle('ok', !!ok);
-  badge.classList.toggle('err', !ok);
-  badge.innerHTML = `<div class="api-dot"></div> ${label || (ok ? 'Model ready' : 'Model offline · local scoring still works')}`;
+function markGemini() {
+  /* API status badge removed from sidebar */
+}
+
+function formatPhoneUS(phone) {
+  if (!phone) return '';
+  const p = phone.trim();
+  if (/^\+1(?:\s|[(.-]|\d)/.test(p)) return p;
+  if (/^1[\s(.-]\d{3}/.test(p)) return '+' + p;
+  return '+1 ' + p.replace(/^\+?/, '');
+}
+
+function shortenLinkedIn(url) {
+  const s = String(url || '').trim();
+  const m = s.match(/(?:https?:\/\/)?(?:www\.)?(linkedin\.com\/in\/[A-Za-z0-9\-_%]+)/i);
+  return m ? m[1].toLowerCase() : s;
+}
+
+function formatContactLine(line) {
+  if (!line) return '';
+  return line.split('|').map(part => {
+    const p = part.trim();
+    if (!p) return '';
+    if (/linkedin/i.test(p)) return shortenLinkedIn(p);
+    const phoneMatch = p.match(/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/);
+    if (phoneMatch) return formatPhoneUS(phoneMatch[0]);
+    return p;
+  }).filter(Boolean).join(' | ');
+}
+
+function normalizeContactInResume(text) {
+  const lines = String(text || '').split('\n');
+  let seenName = false;
+  for (let i = 0; i < Math.min(lines.length, 8); i++) {
+    const l = lines[i].trim();
+    if (!l) continue;
+    if (!seenName) {
+      seenName = true;
+      continue;
+    }
+    if (isSectionHeader(l)) break;
+    if (/@/.test(l) || /\d{3}[\s.()-]*\d{3}/.test(l) || /linkedin/i.test(l)) {
+      const trimmed = formatContactLine(l);
+      if (trimmed !== l) lines[i] = lines[i].replace(l, trimmed);
+    }
+  }
+  return lines.join('\n');
 }
 
 function extractContactFields(resumeText) {
   const text = resumeText || '';
   const email = (text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i) || [])[0] || '';
-  const phone = (text.match(/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/) || [])[0] || '';
-  const linkedin = (text.match(/(https?:\/\/)?(www\.)?linkedin\.com\/in\/[A-Za-z0-9\-_%]+\/?/i) || [])[0] || '';
+  const rawPhone = (text.match(/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/) || [])[0] || '';
+  const rawLinkedin = (text.match(/(https?:\/\/)?(www\.)?linkedin\.com\/in\/[A-Za-z0-9\-_%]+\/?/i) || [])[0] || '';
   const locLine = text.split('\n').slice(0, 8).find(l =>
     /\b([A-Z][a-z]+,\s*[A-Z]{2}|Remote|USA|United States)\b/.test(l) && !l.includes('@')
   );
-  return { email, phone, linkedin, location: locLine ? locLine.trim() : '' };
+  return {
+    email,
+    phone: formatPhoneUS(rawPhone),
+    linkedin: shortenLinkedIn(rawLinkedin),
+    location: locLine ? locLine.trim() : '',
+  };
 }
 
 function extractRolesFromResume(resumeText) {
@@ -242,6 +1030,276 @@ function extractRolesFromResume(resumeText) {
     roles.push([prev.join(' | '), cur].filter(Boolean).join(' | '));
   }
   return roles;
+}
+
+function buildAliasMap(...lists) {
+  const terms = uniqTerms(lists.flat());
+  const aliasMap = {};
+  const kb = (window.RAGEngine && RAGEngine.SKILL_KB) || [];
+  for (const k of terms) {
+    const skill = kb.find(s => s.label.toLowerCase() === String(k).toLowerCase());
+    aliasMap[k] = skill ? uniqTerms([skill.label, ...skill.terms]) : [k];
+  }
+  return aliasMap;
+}
+
+function ensureAliasMap(kw) {
+  if (!kw) return {};
+  if (kw.aliasMap && Object.keys(kw.aliasMap).length) return kw.aliasMap;
+  kw.aliasMap = buildAliasMap(
+    kw.primary, kw.secondary, kw.jdSkills, kw.marketSkills,
+    kw.atsKeywords, kw.internetKeywords, kw.jdPrimary, kw.jdSecondary,
+    kw.internetSkills, kw.roleSkills,
+  );
+  return kw.aliasMap;
+}
+
+function buildJdAnalysisPrompt(jd, ragHints) {
+  const role = ragHints?.role || {};
+  const ragJd = uniqTerms([...(ragHints?.jdPrimary || []), ...(ragHints?.jdSecondary || [])]).join(', ');
+  return `You are an expert US job-posting analyst for resume ATS tailoring. Read the ENTIRE job description. Extract skills the way a senior recruiter would — not just literal tool names, but applied capabilities clearly required.
+
+LOCAL RAG HINTS (verify each against the JD; correct, drop, or replace bad hints):
+- RAG guessed role: ${role.label || 'unknown'} (${role.title || ''})
+- RAG keyword hints: ${ragJd || 'none'}
+
+YOUR JOB — extract from THIS posting only (not internet/market skills):
+
+1. roleTitle: exact hiring title (e.g. "ML/LLM Engineer", not a section header like "The Opportunity").
+2. roleLabel: short readable label for the role.
+3. roleFamily: one of data|ml|swe|support|network|devops|cloud|security|qa|datacenter|ba|healthcare
+4. jdPrimary: 10-16 MUST-HAVE technical skills/tools/frameworks explicitly stated or clearly required in THIS JD.
+   Include stacks like Python, PyTorch, LangChain, LlamaIndex, RAG, embeddings, vector search, fine-tuning, LLM evaluation, MLOps, etc. when the JD mentions them.
+5. jdSecondary: 4-10 secondary items FROM THE JD ONLY — domain (healthcare, biopharma), practices (responsible AI, observability, production ML), or nice-to-have tools mentioned in the posting.
+6. atsKeywords: 12-20 exact ATS phrases from THIS JD — short phrases copied or closely mirrored (e.g. "retrieval pipelines", "prompt chaining", "inference orchestration").
+
+RULES:
+- jdPrimary = hard technical skills only (languages, frameworks, platforms, ML/LLM techniques).
+- jdSecondary = domain + supporting technical themes from the JD only.
+- atsKeywords = verbatim or near-verbatim JD phrases useful for ATS matching.
+- Do NOT include market/internet skills that are not in this JD — a separate AI step handles those.
+- NO benefits, compensation, 401k, insurance, "how to apply", soft skills alone, or section headers.
+- NO certifications or degrees.
+- Use exact JD spelling when the JD names a tool (Transformers, LangChain, LlamaIndex).
+
+JOB DESCRIPTION:
+${jd.slice(0, 12000)}
+
+Return ONLY JSON:
+{
+  "roleTitle": "...",
+  "roleLabel": "...",
+  "roleFamily": "ml",
+  "jdPrimary": ["..."],
+  "jdSecondary": ["..."],
+  "atsKeywords": ["..."]
+}`;
+}
+
+function buildInternetSkillsPrompt(jd, jdAi) {
+  const roleTitle = jdAi?.roleTitle || jdAi?.roleLabel || 'this role';
+  const roleFamily = jdAi?.roleFamily || 'general';
+  const jdSkills = uniqTerms([...(jdAi?.jdPrimary || []), ...(jdAi?.jdSecondary || [])]).join(', ');
+  const domainHint = String(jd || '').slice(0, 1500);
+  return `You research US job market skill requirements using public internet sources: LinkedIn job posts, Indeed listings, Glassdoor, company career pages, Levels.fyi, and industry hiring guides.
+
+ROLE TITLE: ${roleTitle}
+ROLE FAMILY: ${roleFamily}
+SKILLS ALREADY IN THE TARGET JD (do NOT repeat these): ${jdSkills || 'none'}
+
+JD CONTEXT (for domain/industry only — do not re-extract JD skills):
+${domainHint}
+
+TASK:
+1. internetSkills: 12-18 technical skills, tools, frameworks, and platforms commonly required for "${roleTitle}" on US job boards and employer career sites — skills frequently seen on the internet for this role type but NOT already in the JD list above.
+2. internetKeywords: 8-14 multi-word phrases recruiters search for on job boards for this role (e.g. "production ML pipelines", "model deployment", "feature engineering") that are NOT already covered above.
+
+RULES:
+- Draw from typical LinkedIn/Indeed/Glassdoor postings for this exact role title and seniority.
+- Technologies, platforms, frameworks, ML/data techniques only.
+- NO soft skills, NO benefits, NO certifications, NO degrees.
+- Do NOT duplicate any skill already in the JD list above.
+- Skills should be realistic for a strong candidate in this role market — not random buzzwords.
+- Prefer tools hiring managers commonly filter for on ATS even when absent from one posting.
+
+Return ONLY JSON:
+{
+  "internetSkills": ["..."],
+  "internetKeywords": ["..."]
+}`;
+}
+
+function parseInternetSkills(parsed) {
+  if (!parsed || typeof parsed !== 'object') return null;
+  return {
+    internetSkills: filterExtractedSkills(parsed.internetSkills || parsed.marketSkills || []),
+    internetKeywords: filterExtractedSkills(parsed.internetKeywords || parsed.marketKeywords || []),
+  };
+}
+
+function mergeAiExtractions(jdAi, internetAi) {
+  if (!jdAi) return null;
+  const internetSkills = filterExtractedSkills(internetAi?.internetSkills || []);
+  const internetKeywords = filterExtractedSkills(internetAi?.internetKeywords || []);
+  return {
+    ...jdAi,
+    internetSkills,
+    internetKeywords,
+    marketSkills: internetSkills,
+    internetUsed: internetSkills.length >= 4,
+  };
+}
+
+function parseJdAnalysis(parsed) {
+  if (!parsed || typeof parsed !== 'object') return null;
+  return {
+    roleTitle: cleanJobTitle(parsed.roleTitle || parsed.title || ''),
+    roleLabel: cleanJobTitle(parsed.roleLabel || parsed.roleTitle || parsed.title || ''),
+    roleFamily: String(parsed.roleFamily || '').trim(),
+    jdPrimary: filterExtractedSkills(parsed.jdPrimary || parsed.primary || []),
+    jdSecondary: filterExtractedSkills(parsed.jdSecondary || parsed.secondary || []),
+    atsKeywords: filterExtractedSkills(parsed.atsKeywords || parsed.keywords || parsed.ats || []),
+    internetSkills: filterExtractedSkills(parsed.internetSkills || []),
+    internetKeywords: filterExtractedSkills(parsed.internetKeywords || []),
+    marketSkills: filterExtractedSkills(parsed.marketSkills || parsed.market || parsed.roleSkills || parsed.internetSkills || []),
+    internetUsed: !!parsed.internetUsed,
+  };
+}
+
+function buildJdSkillList(jd, ai, ragJd) {
+  const aiPrimary = filterExtractedSkills(ai?.jdPrimary || []);
+  const aiSecondary = filterExtractedSkills(ai?.jdSecondary || []);
+  if (aiPrimary.length >= 4) {
+    const ragExtras = filterExtractedSkills([...(ragJd.jdPrimary || []), ...(ragJd.jdSecondary || [])])
+      .filter(s => termInJdText(jd, s))
+      .filter(s => !aiPrimary.some(p => p.toLowerCase() === s.toLowerCase()))
+      .filter(s => !aiSecondary.some(p => p.toLowerCase() === s.toLowerCase()));
+    return uniqTerms([...aiPrimary, ...aiSecondary, ...ragExtras]).slice(0, 16);
+  }
+  return uniqTerms([
+    ...aiPrimary,
+    ...aiSecondary,
+    ...(ragJd.jdPrimary || []),
+    ...(ragJd.jdSecondary || []),
+  ]).filter(s => termInJdText(jd, s)).slice(0, 16);
+}
+
+function buildMarketSkillList(ai, ragJd, jdSkills) {
+  const jdSet = new Set(jdSkills.map(s => String(s).toLowerCase()));
+  const aiInternet = filterExtractedSkills(ai?.internetSkills || ai?.marketSkills || []);
+  if (aiInternet.length >= 4) {
+    return aiInternet.filter(s => !jdSet.has(s.toLowerCase())).slice(0, 16);
+  }
+  const ragMarket = window.RAGEngine ? RAGEngine.getMarketSkillsForRole(ragJd.role) : [];
+  return uniqTerms([...aiInternet, ...ragMarket])
+    .filter(s => !jdSet.has(String(s).toLowerCase()))
+    .slice(0, 14);
+}
+
+function assembleLockedSkills(jd, ragJd, ai, mode) {
+  const aiPrimary = filterExtractedSkills(ai?.jdPrimary || []);
+  const aiSecondary = filterExtractedSkills(ai?.jdSecondary || []);
+  const atsKeywords = filterExtractedSkills(ai?.atsKeywords || []);
+  const jdSkills = buildJdSkillList(jd, ai, ragJd);
+  const internetSkills = buildMarketSkillList(ai, ragJd, jdSkills);
+  const internetKeywords = filterExtractedSkills(ai?.internetKeywords || []);
+  const marketSkills = internetSkills;
+
+  const role = {
+    ...(ragJd.role || {}),
+    label: ai?.roleLabel || ragJd.role?.label || 'This role',
+    title: ai?.roleTitle || ragJd.role?.title || ragJd.role?.label || '',
+    family: ai?.roleFamily || ragJd.role?.family || 'general',
+    packId: ragJd.role?.packId,
+  };
+
+  const jdSecondaryOnly = aiSecondary.length
+    ? aiSecondary.filter(s => !aiPrimary.some(p => p.toLowerCase() === s.toLowerCase()))
+    : uniqTerms(ragJd.jdSecondary || [])
+      .filter(s => !jdSkills.some(j => j.toLowerCase() === String(s).toLowerCase()))
+      .slice(0, 8);
+
+  if (mode === 'aggressive') {
+    return {
+      role,
+      title: role.title || role.label,
+      primary: jdSkills,
+      secondary: marketSkills,
+      jdPrimary: aiPrimary.length ? aiPrimary : jdSkills.slice(0, 12),
+      jdSecondary: jdSecondaryOnly,
+      atsKeywords,
+      internetSkills,
+      internetKeywords,
+      jdSkills,
+      marketSkills,
+      roleSkills: marketSkills,
+      aliasMap: buildAliasMap(jdSkills, marketSkills, atsKeywords, internetKeywords),
+      source: ai ? 'gemini' : 'rag',
+      analysisSource: ai?.internetUsed ? 'gemini-jd+internet' : (ai ? 'gemini-jd' : 'rag'),
+      geminiUsed: !!ai,
+      internetUsed: !!ai?.internetUsed,
+      _mode: mode,
+    };
+  }
+
+  return {
+    role,
+    title: role.title || role.label,
+    primary: jdSkills,
+    secondary: jdSecondaryOnly,
+    jdPrimary: aiPrimary.length ? aiPrimary : jdSkills.slice(0, 12),
+    jdSecondary: jdSecondaryOnly,
+    atsKeywords,
+    internetSkills,
+    internetKeywords,
+    jdSkills,
+    marketSkills,
+    roleSkills: marketSkills,
+    aliasMap: buildAliasMap(jdSkills, jdSecondaryOnly, atsKeywords, internetKeywords),
+    source: ai ? 'gemini' : 'rag',
+    analysisSource: ai?.internetUsed ? 'gemini-jd+internet' : (ai ? 'gemini-jd' : 'rag'),
+    geminiUsed: !!ai,
+    internetUsed: !!ai?.internetUsed,
+    _mode: mode,
+  };
+}
+
+function skillsetCacheKey(jd) {
+  return SKILLSET_CACHE + state.mode + '_' + jdHash(jd);
+}
+
+async function analyzeJdWithAiRag(jd) {
+  const ragJd = RAGEngine.buildJdOnlySkillSet(jd);
+  let ai = null;
+  let geminiError = null;
+  let internetError = null;
+  try {
+    if (typeof setProgress === 'function') setProgress(10, 'AI is analysing the job description…', 'Extracting skills from the posting…');
+    const jdRaw = await callGemini(buildJdAnalysisPrompt(jd, ragJd), { json: true, maxTokens: 2800 });
+    const jdAi = parseJdAnalysis(parseJsonLoose(jdRaw));
+    if (!jdAi?.jdPrimary?.length) throw new Error('Gemini returned no JD skills');
+
+    let internetAi = null;
+    try {
+      if (typeof setProgress === 'function') setProgress(16, 'AI is analysing the job description…', 'Researching market skills on job boards…');
+      const netRaw = await callGemini(buildInternetSkillsPrompt(jd, jdAi), { json: true, maxTokens: 2000 });
+      internetAi = parseInternetSkills(parseJsonLoose(netRaw));
+    } catch (err) {
+      internetError = err;
+    }
+
+    ai = mergeAiExtractions(jdAi, internetAi);
+    if (!ai.internetUsed && internetError) {
+      ai.internetError = String(internetError.message || internetError).slice(0, 100);
+    }
+  } catch (err) {
+    geminiError = err;
+    ai = null;
+  }
+  const built = assembleLockedSkills(jd, ragJd, ai, state.mode);
+  built.geminiError = geminiError ? String(geminiError.message || geminiError).slice(0, 120) : null;
+  built.internetError = ai?.internetError || (internetError && !ai ? String(internetError.message || internetError).slice(0, 100) : null);
+  return built;
 }
 
 function buildScorePrompt(jd, resume, locked) {
@@ -338,13 +1396,55 @@ function missingSkillReport(keywords, resume) {
   const text = String(resume || '');
   const important = dropCertTerms(kw.primary || []).filter(k => !keywordPresent(k, text, aliasMap));
   const extra = dropCertTerms(kw.secondary || []).filter(k => !keywordPresent(k, text, aliasMap));
-  return { important, extra, all: uniqTerms([...important, ...extra]) };
+  const ats = atsPhraseReport(kw, text);
+  return {
+    important,
+    extra,
+    all: uniqTerms([...important, ...extra]),
+    atsPhrases: ats.phrases,
+    atsFound: ats.found,
+    atsMissing: ats.missing,
+  };
 }
 
 function skillsToInject(missingReport) {
   const important = dropCertTerms((missingReport && missingReport.important) || []);
   const extra = dropCertTerms((missingReport && missingReport.extra) || []);
   return state.mode === 'aggressive' ? uniqTerms([...important, ...extra]) : important;
+}
+
+function normAtsText(s) {
+  return String(s || '').toLowerCase().replace(/[-_/]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function atsPhrasePresent(phrase, text) {
+  const p = String(phrase || '').trim();
+  if (!p || p.length < 3) return false;
+  if (keywordPresent(p, text, {})) return true;
+  const np = normAtsText(p);
+  const nt = normAtsText(text);
+  if (nt.includes(np)) return true;
+  const words = np.split(' ').filter(w => w.length > 2 || /^\d+$/.test(w));
+  if (words.length <= 1) return nt.includes(np);
+  let pos = 0;
+  for (const w of words) {
+    const idx = nt.indexOf(w, pos);
+    if (idx < 0) return false;
+    pos = idx + w.length;
+  }
+  return true;
+}
+
+function atsPhraseReport(keywords, resume) {
+  const phrases = filterExtractedSkills(keywords?.atsKeywords || []);
+  const text = String(resume || '');
+  const found = phrases.filter(p => atsPhrasePresent(p, text));
+  const missing = phrases.filter(p => !atsPhrasePresent(p, text));
+  return { phrases, found, missing };
+}
+
+function atsPhrasesToInject(missingReport) {
+  return (missingReport && missingReport.atsMissing) || [];
 }
 
 function importantHrKeywords(keywords) {
@@ -355,9 +1455,7 @@ function importantHrKeywords(keywords) {
 }
 
 function summaryKeywordList(keywords) {
-  const primary = importantHrKeywords(keywords);
-  const fill = dropCertTerms(keywords?.secondary || []);
-  const list = uniqTerms([...primary, ...fill]);
+  const list = uniqTerms([...dropCertTerms(keywords?.jdSkills || keywords?.primary || [])]);
   if (list.length <= 8) return list;
   return list.slice(0, 9);
 }
@@ -416,34 +1514,38 @@ function buildRewritePrompt(jd, resume, keywords, missingReport) {
   const aggressive = state.mode === 'aggressive';
   const masterSkills = masterSkillsBlock(resume);
   const mustAdd = skillsToInject(missingReport);
+  const atsMustAdd = atsPhrasesToInject(missingReport);
+  const atsAll = filterExtractedSkills(keywords.atsKeywords || []);
   const summaryKw = summaryKeywordList(keywords);
   const rolePlan = planExperienceKeywords(resume, keywords);
   const extraBlock = extraSectionsPromptBlock(resume);
 
   const integrityBlock = aggressive
-    ? `AGGRESSIVE ATS MODE:
+    ? `STRETCH FOR THE POSTING MODE:
 - SUCCESS METRIC: ATS score must be ${SCORE_THRESHOLD}+ / 100.
-- ADD every missing skill from the ATS REPORT into SKILLS (matching master categories) AND weave each into at least one experience bullet.
+- ADD every missing JD skill AND every missing market/internet skill from the locked set into SKILLS and experience bullets.
 - MUST ADD THESE SKILLS: ${mustAdd.join(', ') || 'none — already covered'}
+- MUST WEAVE THESE JD ATS PHRASES (exact or near-verbatim from the posting): ${atsMustAdd.join(' · ') || 'none — already covered'}
 - Preserve name, contact, companies, job titles, dates, education.
-- NEVER add certifications that are not in the master resume. If the master has no certifications, omit the CERTIFICATIONS section entirely.
+- NEVER add certifications that are not in the master resume.
 - Do not invent employers, degrees, or job titles.`
-    : `INTEGRITY / HONEST MODE:
+    : `STAY TRUTHFUL MODE:
 - SUCCESS METRIC: ATS score must be ${SCORE_THRESHOLD}+ / 100.
 - Keep companies, job titles, dates, education, and ownership language honest.
-- ADD every IMPORTANT missing skill from the ATS REPORT into the existing Skills section and into experience bullets (tools/hardware only — never certifications).
-- MUST ADD THESE IMPORTANT SKILLS: ${mustAdd.join(', ') || 'none — already covered'}
-- Do NOT add certifications. If a JD certification is missing from the master resume, leave it out.
-- Do not invent employers, degrees, or fake job history.`;
+- ADD only JD-extracted skills from the locked set (not market/internet-only skills unless already on the master resume).
+- MUST ADD THESE JD SKILLS: ${mustAdd.join(', ') || 'none — already covered'}
+- MUST WEAVE THESE JD ATS PHRASES (exact or near-verbatim from the posting): ${atsMustAdd.join(' · ') || 'none — already covered'}
+- Do NOT add market-only stretch skills that are not in the JD and not on the master resume.
+- Do NOT add certifications. Do not invent employers, degrees, or fake job history.`;
 
   return `You are a US full-time resume writer. Rewrite the MASTER resume into the EXACT Anirudh Word template (Calibri, US Letter, 1 page preferred / 2 max).
 
 ${integrityBlock}
 
-LOCKED CONTACT — copy character-for-character:
+LOCKED CONTACT — use exactly these formatted values:
   Email: ${cf.email || '[copy from original]'}
-  Phone: ${cf.phone || '[copy from original]'}
-  LinkedIn: ${cf.linkedin || '[omit if none]'}
+  Phone: ${cf.phone || '[copy from original — must include +1 country code]'}
+  LinkedIn: ${cf.linkedin || '[omit if none — use short form linkedin.com/in/username, no https/www]'}
   Location: ${cf.location || '[city/state only if present — never full street address]'}
 
 ${roles.length ? `MANDATORY ROLES (${roles.length}) — output all of them:\n${roles.map((r, i) => `  ${i + 1}. ${r}`).join('\n')}` : ''}
@@ -453,16 +1555,20 @@ ${masterSkills ? `MASTER SKILLS LAYOUT — keep these category names and this or
 ${extraBlock}
 
 ROLE DETECTED: ${(keywords.role && keywords.role.label) || headline || 'from JD'}
-LOCKED SKILL SET (same every time for this JD):
-  From this JD: ${(keywords.jdSkills || primary).join(', ') || 'n/a'}
-  Typical for this role (market): ${(keywords.roleSkills || secondary).join(', ') || 'n/a'}
+LOCKED SKILL SET (${keywords.geminiUsed ? 'Gemini AI' : (keywords.analysisSource || keywords.source || 'rag')}):
+  From JD (Gemini): ${(keywords.jdPrimary || keywords.jdSkills || primary).join(', ') || 'n/a'}
+  JD secondary / domain: ${(keywords.jdSecondary || []).join(', ') || 'n/a'}
+  JD ATS phrases: ${(keywords.atsKeywords || []).join(' · ') || 'n/a'}
+  From internet / job boards (Gemini): ${(keywords.internetSkills || keywords.marketSkills || []).join(', ') || 'n/a'}
+  Internet keyword phrases: ${(keywords.internetKeywords || []).join(' · ') || 'n/a'}
+  Stretch rewrite ${aggressive ? 'includes internet skills' : 'uses JD skills only — internet skills shown for reference'}.
 Apply the 20 US full-time resume rules. Keep the master's skill categories. Add missing tools from the locked skill set into those existing lines.
 
 OUTPUT LAYOUT — match the Anirudh Word template exactly (this is how the downloaded .doc must look):
 
 Line 1: Full Name in Title Case (not ALL CAPS)
 Line 2: Target job title only — ${headline ? headline.split('|')[0].trim() : 'exact JD title'}. Never append JD section headings such as "Primary Responsibilities", "Why [Company]?", "Job Description", "Requirements", or "Duties".
-Line 3: Phone | Email | LinkedIn | City, ST   (omit any missing field; separator is " | ")
+Line 3: Phone | Email | LinkedIn | City, ST   (omit any missing field; separator is " | "; phone must start with +1; LinkedIn as linkedin.com/in/username only)
 Line 4: blank
 SUMMARY
 <one paragraph, 4-6 lines, no bullets. Written for an HR 6-second scan.>
@@ -487,6 +1593,11 @@ EXPERIENCE must keep every real company and date. Place remaining important skil
 ${formatRoleKeywordPlan(rolePlan)}
 Every important primary skill must appear in at least one experience bullet. Spread them — do not repeat the full list in every role.
 Older or shorter roles can carry fewer tools and still sound like real work.
+
+ATS PHRASES (mandatory — both modes): Every JD ATS phrase below must appear at least once across SUMMARY and EXPERIENCE. Use the posting's exact wording when possible; weave naturally, not as a comma dump.
+${atsAll.length ? atsAll.map((p, i) => `  ${i + 1}. ${p}`).join('\n') : '  none'}
+Still missing from source resume — add these: ${atsMustAdd.join(' · ') || 'none — already covered'}
+Spread phrases across roles; do not stack them all in one bullet.
 
 BOLDING: do not wrap words in ** in the output. The dashboard bolds the important JD skills after you write.
 
@@ -531,6 +1642,7 @@ function buildBoostPrompt(jd, resume, sc, keywords) {
   const suggestions = stripCertGaps(sc.improvementSuggestions || []);
   const aggressive = state.mode === 'aggressive';
   const mustAdd = aggressive ? uniqTerms([...missingP, ...missingS]) : missingP;
+  const ats = atsPhraseReport(keywords, resume);
   const summaryKw = summaryKeywordList(keywords);
   const rolePlan = planExperienceKeywords(resume, keywords);
   return `You are a precision ATS editor. The resume scored below ${SCORE_THRESHOLD}/100. Your job is to push it to ${SCORE_THRESHOLD}+. Output the complete resume.
@@ -550,11 +1662,13 @@ ${aggressive
     : `ADD every remaining IMPORTANT missing skill from the ATS REPORT into SKILLS and into experience bullets. Keep career facts honest. Do not invent employers, degrees, or certifications.`}
 
 MUST ADD THESE SKILLS: ${mustAdd.join(', ') || 'none — already covered'}
+MUST ADD THESE JD ATS PHRASES (exact or near-verbatim): ${ats.missing.join(' · ') || 'none — already covered'}
 
 CERTIFICATIONS: never add a certification that is not already on this resume. Never treat missing certs as a gap. If none exist, do not create a CERTIFICATIONS section.
 
 MISSING IMPORTANT (PRIMARY) SKILLS: ${missingP.join(', ') || 'none'}
 MISSING EXTRA (SECONDARY) SKILLS: ${missingS.join(', ') || 'none'}
+MISSING JD ATS PHRASES (${ats.missing.length}/${ats.phrases.length}): ${ats.missing.join(' · ') || 'none'}
 CURRENT RULE SCORES: ${JSON.stringify(sc.ruleScores || {})}
 POINTS STILL NEEDED: ${Math.max(0, SCORE_THRESHOLD - Number(sc.atsScore || 0))} — you must close this gap.
 Put every skill in MUST ADD into SKILLS and into at least one experience bullet using the exact spelling.
@@ -588,21 +1702,46 @@ function summaryAndExperienceText(resume) {
   return out.join('\n');
 }
 
+function buildBoldTermPool(keywords, resume) {
+  const kw = keywords || {};
+  const aggressive = state.mode === 'aggressive';
+  const pool = uniqTerms([
+    ...summaryKeywordList(kw),
+    ...importantHrKeywords(kw),
+    ...dropCertTerms(kw.jdPrimary || []),
+    ...dropCertTerms(kw.jdSecondary || []),
+    ...dropCertTerms(kw.primary || []),
+    ...dropCertTerms(kw.secondary || []),
+    ...filterExtractedSkills(kw.atsKeywords || []),
+    ...(aggressive ? dropCertTerms(kw.internetSkills || kw.marketSkills || []) : []),
+    ...filterExtractedSkills(kw.internetKeywords || []),
+    ...themeTermsFromJd(),
+    ...BOLD_TECH_FALLBACK,
+  ]);
+  return sanitizeBoldTerms(pool, resume);
+}
+
 function buildBoldPassPrompt(jd, resume, keywords) {
   const important = summaryKeywordList(keywords);
   const primary = importantHrKeywords(keywords);
+  const secondary = dropCertTerms(keywords?.jdSecondary || keywords?.secondary || []);
+  const atsPhrases = filterExtractedSkills(keywords?.atsKeywords || []);
+  const expanded = buildBoldTermPool(keywords, resume);
   const body = summaryAndExperienceText(resume) || resume;
   return `You are the final editor for keyword bolding on a tailored US resume.
-HR reads SUMMARY and EXPERIENCE. Bold only IMPORTANT JD skills — not every tool, not verbs.
+HR reads SUMMARY and EXPERIENCE. Bold JD skills, secondary domain skills, and ATS phrases — not generic verbs or filler.
 
 JOB DESCRIPTION:
 ${String(jd || '').slice(0, 3500)}
 
-MUST BOLD IN SUMMARY (8-9 important skills if they appear):
+MUST BOLD IN SUMMARY (8-12 important JD skills + ATS phrases when they appear):
 ${important.join(', ') || 'n/a'}
 
-ALSO BOLD IN EXPERIENCE when they appear (same important set, not secondary filler):
-${primary.join(', ') || 'n/a'}
+BOLD IN EXPERIENCE (must-have + secondary + ATS phrases from the posting):
+${uniqTerms([...primary, ...secondary, ...atsPhrases]).join(', ') || 'n/a'}
+
+FULL BOLD CANDIDATE LIST (bold every item below that appears verbatim in SUMMARY or EXPERIENCE):
+${expanded.slice(0, 80).join(', ') || 'n/a'}
 
 SUMMARY + EXPERIENCE TEXT:
 ${body}
@@ -612,10 +1751,11 @@ Return JSON only:
 
 Rules:
 1. Only phrases that appear verbatim in SUMMARY or EXPERIENCE. Copy spelling from the resume.
-2. Prefer the MUST BOLD list. Do not bold generic verbs (Execute, Partner, supporting, Configured, maintained).
-3. Do NOT bold company names, titles, dates, or Skills-section items.
-4. Each item is 1-5 words. Skip certifications.
-5. JSON only. Do not rewrite the resume.`;
+2. Bold generously: aim for 30-60 terms across summary and experience — every JD skill, secondary skill, and ATS phrase on the page.
+3. Prefer the FULL BOLD CANDIDATE LIST. Do not bold generic verbs (Execute, Partner, supporting, Configured, maintained).
+4. Do NOT bold company names, job titles, dates, or Skills-section items.
+5. Each item is 1-8 words. Multi-word ATS phrases are encouraged. Skip certifications.
+6. JSON only. Do not rewrite the resume.`;
 }
 
 const BOLD_GENERIC = new Set([
@@ -631,7 +1771,7 @@ function sanitizeBoldTerms(list, resume) {
   const lower = hay.toLowerCase();
   return uniqTerms(list || []).filter(t => {
     const x = String(t).trim();
-    if (x.length < 2 || x.length > 48) return false;
+    if (x.length < 2 || x.length > 64) return false;
     if (BOLD_SKIP.has(x.toLowerCase())) return false;
     if (BOLD_GENERIC.has(x.toLowerCase())) return false;
     if (/^(go|r|c|it|ai|ml|bi)$/i.test(x)) return false;
@@ -644,17 +1784,18 @@ async function finalizeBolding(jd, resume) {
   state.boldTerms = [];
   state.boldFinalized = false;
   if (!resume || resume.length < 80) return;
-  const locked = uniqTerms([...summaryKeywordList(state.keywords || {}), ...importantHrKeywords(state.keywords || {})]);
-  const seeded = sanitizeBoldTerms(locked, resume);
+  const pool = buildBoldTermPool(state.keywords || {}, resume);
+  const seeded = pool.slice();
+  const matchesPool = (term) => pool.some(k => {
+    const a = String(term).toLowerCase();
+    const b = String(k).toLowerCase();
+    return a === b || a.includes(b) || b.includes(a);
+  });
   try {
-    const raw = await callGemini(buildBoldPassPrompt(jd, resume, state.keywords || {}), { json: true, maxTokens: 1500 });
+    const raw = await callGemini(buildBoldPassPrompt(jd, resume, state.keywords || {}), { json: true, maxTokens: 2800 });
     const parsed = parseJsonLoose(raw);
     const fromGemini = sanitizeBoldTerms(parsed.bold || parsed.terms || parsed.keywords || [], resume)
-      .filter(t => locked.some(k => {
-        const a = String(t).toLowerCase();
-        const b = String(k).toLowerCase();
-        return a === b || a.includes(b) || b.includes(a);
-      }));
+      .filter(matchesPool);
     state.boldTerms = uniqTerms([...seeded, ...fromGemini]).sort((a, b) => b.length - a.length);
   } catch {
     state.boldTerms = seeded;
@@ -744,6 +1885,7 @@ function fallbackRules(parsed) {
 }
 
 function ragToUnified(jd, resume, kw) {
+  ensureAliasMap(kw);
   const r = RAGEngine.computeAtsScore(jd, resume, kw.primary, kw.secondary || [], kw.aliasMap || {});
   return {
     title: kw.title || r.title,
@@ -942,6 +2084,21 @@ function appendTermsToLine(line, terms) {
   return core + ' using ' + missing.join(', ') + punct;
 }
 
+function appendAtsPhraseToLine(line, phrase) {
+  const p = String(phrase || '').trim();
+  if (!p || atsPhrasePresent(p, line)) return line;
+  const trimmed = String(line || '').replace(/\s+$/, '');
+  const hasEnd = /[.!?]$/.test(trimmed);
+  const punct = hasEnd ? trimmed.slice(-1) : '.';
+  const core = hasEnd ? trimmed.slice(0, -1) : trimmed;
+  if (isBulletLine(core)) {
+    const mark = /^[-•*·◦▸▶]/.test(core) ? core.match(/^[-•*·◦▸▶]/)[0] : '-';
+    const body = bulletText(core).replace(/\.\s*$/, '');
+    return `${mark} ${body}, including ${p}${punct}`;
+  }
+  return `${core}, including ${p}${punct}`;
+}
+
 function polishResumeForAts(resume, keywords, masterResume) {
   if (!resume) return resume;
   const primary = dropCertTerms(keywords.primary || []);
@@ -1006,12 +2163,45 @@ function polishResumeForAts(resume, keywords, masterResume) {
     lines[idx] = appendTermsToLine(lines[idx], [kw]);
   }
 
+  let missingAts = atsPhraseReport(keywords, lines.join('\n')).missing.slice();
+  if (missingAts.length) {
+    const sumBounds = summaryBounds(lines);
+    if (sumBounds) {
+      let paraIdx = -1;
+      for (let i = sumBounds.start + 1; i < sumBounds.end; i++) {
+        if (lines[i].trim() && !isSectionHeader(lines[i]) && !isBulletLine(lines[i])) {
+          paraIdx = i;
+          break;
+        }
+      }
+      if (paraIdx >= 0) {
+        const forSummary = missingAts.splice(0, Math.min(3, Math.ceil(missingAts.length / 3)));
+        for (const phrase of forSummary) {
+          lines[paraIdx] = appendAtsPhraseToLine(lines[paraIdx], phrase);
+        }
+      }
+    }
+    const expBounds = experienceBounds(lines);
+    const atsBulletIdx = [];
+    for (let i = expBounds.start; i < expBounds.end; i++) {
+      if (isBulletLine(lines[i])) atsBulletIdx.push(i);
+    }
+    let atsBi = 0;
+    for (const phrase of missingAts) {
+      if (!atsBulletIdx.length) break;
+      const idx = atsBulletIdx[atsBi % atsBulletIdx.length];
+      atsBi += 1;
+      lines[idx] = appendAtsPhraseToLine(lines[idx], phrase);
+    }
+  }
+
   lines = trimExperienceBullets(lines, 7);
   return restoreExtraSections(lines.join('\n').replace(/\n{3,}/g, '\n\n').trim(), masterResume || '');
 }
 
 function stableScore(jd, resume, keywords, floor) {
   const kw = keywords || state.keywords || {};
+  ensureAliasMap(kw);
   const unified = ragToUnified(jd, resume, kw);
   if (!floor) return unified;
   const r = unified.ruleScores || {};
@@ -1081,33 +2271,57 @@ async function scoreWithGemini(jd, resume, { keepKeywords = false } = {}) {
   return unified;
 }
 
-function cacheKeywords(jd, keywords) {
+function cacheKeywords(jd, keywords, cacheKey) {
   const cleaned = mergeKeywordSets(keywords, {});
   cleaned.role = keywords.role || cleaned.role;
-  cleaned.jdSkills = keywords.jdSkills || [];
-  cleaned.roleSkills = keywords.roleSkills || [];
+  cleaned.jdPrimary = keywords.jdPrimary || [];
+  cleaned.jdSecondary = keywords.jdSecondary || [];
+  cleaned.atsKeywords = keywords.atsKeywords || [];
+  cleaned.internetSkills = keywords.internetSkills || keywords.marketSkills || [];
+  cleaned.internetKeywords = keywords.internetKeywords || [];
+  cleaned.jdSkills = keywords.jdSkills || cleaned.primary || [];
+  cleaned.marketSkills = keywords.marketSkills || keywords.roleSkills || cleaned.internetSkills || [];
+  cleaned.roleSkills = keywords.roleSkills || keywords.marketSkills || cleaned.internetSkills || [];
   cleaned.source = keywords.source || cleaned.source;
+  cleaned.analysisSource = keywords.analysisSource || cleaned.source;
+  cleaned.geminiUsed = !!keywords.geminiUsed;
+  cleaned.internetUsed = !!keywords.internetUsed;
+  cleaned.geminiError = keywords.geminiError || null;
+  cleaned.internetError = keywords.internetError || null;
+  cleaned._mode = keywords._mode || state.mode;
+  cleaned.title = keywords.title || cleaned.role?.title || cleaned.role?.label || '';
+  cleaned.aliasMap = keywords.aliasMap && Object.keys(keywords.aliasMap).length
+    ? keywords.aliasMap
+    : cleaned.aliasMap;
+  ensureAliasMap(cleaned);
   state.keywords = cleaned;
   state.kwHash = jdHash(jd);
-  try { localStorage.setItem(SKILLSET_CACHE + jdHash(jd), JSON.stringify(cleaned)); } catch { /* ignore */ }
+  try {
+    localStorage.setItem(cacheKey || skillsetCacheKey(jd), JSON.stringify(cleaned));
+  } catch { /* ignore */ }
 }
 
-function lockKeywordsFromJd(jd) {
+async function lockKeywordsFromJd(jd) {
   const h = jdHash(jd);
-  if (state.keywords?.primary?.length && state.kwHash === h && state.keywords.role) return state.keywords;
+  const cacheKey = skillsetCacheKey(jd);
+  if (state.keywords?.primary?.length && state.kwHash === h && state.keywords.role && state.keywords._mode === state.mode) {
+    ensureAliasMap(state.keywords);
+    return state.keywords;
+  }
   try {
-    const raw = localStorage.getItem(SKILLSET_CACHE + h);
+    const raw = localStorage.getItem(cacheKey);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed.primary && parsed.primary.length) {
+      if (parsed.primary && parsed.primary.length && parsed._mode === state.mode) {
+        ensureAliasMap(parsed);
         state.keywords = parsed;
         state.kwHash = h;
         return state.keywords;
       }
     }
   } catch { /* ignore */ }
-  const built = RAGEngine.buildRoleSkillSet(jd);
-  cacheKeywords(jd, built);
+  const built = await analyzeJdWithAiRag(jd);
+  cacheKeywords(jd, built, cacheKey);
   return state.keywords;
 }
 
@@ -1375,6 +2589,175 @@ function renderGaps(targetId, items) {
   el.innerHTML = items.map(g => `<div class="gap-item">${g}</div>`).join('');
 }
 
+function renderPlanChips(items, tone) {
+  const list = uniqTerms(items || []);
+  if (!list.length) return '<span class="rp-empty">None detected</span>';
+  return `<div class="rp-chips">${list.map(t => `<span class="rp-chip rp-${tone}">${escapeHtml(t)}</span>`).join('')}</div>`;
+}
+
+function renderPlanCard({ icon, title, count, source, body, tone }) {
+  return `
+  <section class="rp-card rp-tone-${tone}">
+    <header class="rp-card-head">
+      <div class="rp-card-title-row">
+        <span class="rp-card-icon" aria-hidden="true">${icon}</span>
+        <h4 class="rp-card-title">${escapeHtml(title)}</h4>
+        <span class="rp-count">${count}</span>
+      </div>
+      ${source ? `<p class="rp-card-source">${escapeHtml(source)}</p>` : ''}
+    </header>
+    <div class="rp-card-body">${body}</div>
+  </section>`;
+}
+
+function renderRewritePlanReport({
+  roleLabel,
+  score,
+  ats,
+  found,
+  missingImportant,
+  missingExtra,
+  jdPrimary,
+  jdSecondary,
+  jdList,
+  atsKeywords,
+  internetSkills,
+  internetKeywords,
+  srcJd,
+  srcNet,
+}) {
+  const displayRole = formatTabJobTitle(roleLabel, { full: true }) || roleLabel;
+  const mustList = jdPrimary.length ? jdPrimary : jdList;
+  const atsPct = ats.phrases.length ? Math.round((ats.found.length / ats.phrases.length) * 100) : 0;
+  const atsItems = atsKeywords.length ? atsKeywords : ats.phrases;
+
+  const gapCards = [
+    missingImportant.length ? renderPlanCard({
+      icon: '!',
+      title: 'Must-add from JD',
+      count: missingImportant.length,
+      source: 'Added in both Stay truthful and Stretch modes',
+      body: renderPlanChips(missingImportant, 'warn'),
+      tone: 'warn',
+    }) : '',
+    ats.phrases.length && ats.missing.length ? renderPlanCard({
+      icon: '¶',
+      title: 'Must-add ATS phrases',
+      count: ats.missing.length,
+      source: 'Exact wording woven into experience bullets',
+      body: renderPlanChips(ats.missing, 'ats'),
+      tone: 'ats',
+    }) : '',
+    missingExtra.length ? renderPlanCard({
+      icon: '↗',
+      title: 'Stretch-only gaps',
+      count: missingExtra.length,
+      source: state.mode === 'aggressive' ? 'Included in current Stretch rewrite' : 'Switch to Stretch mode to add these',
+      body: renderPlanChips(missingExtra, 'stretch'),
+      tone: 'stretch',
+    }) : '',
+  ].filter(Boolean).join('');
+
+  return `
+  <div class="rewrite-plan">
+    <div class="rp-hero">
+      <div class="rp-hero-left">
+        <div class="rp-hero-eyebrow">Target role for rewrite</div>
+        <h3 class="rp-hero-title">${escapeHtml(displayRole)}</h3>
+        <p class="rp-hero-sub">${state.mode === 'aggressive' ? 'Stretch mode — JD skills plus internet / market skills' : 'Stay truthful — JD skills only, no invented experience'}</p>
+      </div>
+      <div class="rp-hero-score ${score >= SCORE_THRESHOLD ? 'ok' : 'low'}">
+        <span class="rp-hero-score-val">${score}</span>
+        <span class="rp-hero-score-lbl">current match</span>
+        <span class="rp-hero-score-target">Target ${SCORE_THRESHOLD}</span>
+      </div>
+    </div>
+    <div class="rp-grid">
+      ${renderPlanCard({
+        icon: '✓',
+        title: 'JD must-have skills',
+        count: mustList.length,
+        source: srcJd,
+        body: renderPlanChips(mustList, 'jd'),
+        tone: 'jd',
+      })}
+      ${jdSecondary.length ? renderPlanCard({
+        icon: '◆',
+        title: 'JD secondary / domain',
+        count: jdSecondary.length,
+        source: srcJd,
+        body: renderPlanChips(jdSecondary, 'jd2'),
+        tone: 'jd2',
+      }) : ''}
+      ${atsItems.length ? renderPlanCard({
+        icon: '¶',
+        title: 'ATS phrases',
+        count: `${ats.found.length}/${ats.phrases.length || atsItems.length}`,
+        source: srcJd,
+        body: `
+          ${ats.phrases.length ? `
+          <div class="rp-ats-progress">
+            <div class="rp-ats-bar"><div class="rp-ats-fill" style="width:${atsPct}%"></div></div>
+            <span class="rp-ats-label">${ats.found.length} of ${ats.phrases.length} already on your resume</span>
+          </div>` : ''}
+          ${renderPlanChips(atsItems, 'ats')}
+        `,
+        tone: 'ats',
+      }) : ''}
+      ${renderPlanCard({
+        icon: '◎',
+        title: 'Internet / market skills',
+        count: internetSkills.length,
+        source: `${srcNet}${state.mode === 'aggressive' ? ' · included in rewrite' : ' · Stretch mode only'}`,
+        body: renderPlanChips(internetSkills, 'stretch'),
+        tone: 'stretch',
+      })}
+      ${internetKeywords.length ? renderPlanCard({
+        icon: '⌗',
+        title: 'Market keyword phrases',
+        count: internetKeywords.length,
+        source: srcNet,
+        body: renderPlanChips(internetKeywords, 'stretch'),
+        tone: 'stretch',
+      }) : ''}
+      ${renderPlanCard({
+        icon: '★',
+        title: 'Already on your resume',
+        count: found.length,
+        source: 'Matched before rewrite',
+        body: renderPlanChips(found, 'found'),
+        tone: 'found',
+      })}
+    </div>
+    ${gapCards ? `<div class="rp-gaps-section"><h4 class="rp-gaps-heading">What the rewrite will add</h4><div class="rp-gaps-grid">${gapCards}</div></div>` : ''}
+  </div>`;
+}
+
+function renderRewriteCta(score, roleLabel) {
+  const title = escapeHtml(formatTabJobTitle(roleLabel, { full: true }) || roleLabel);
+  if (score < SCORE_THRESHOLD) {
+    return `<div class="rp-cta rp-cta-warn">
+      <div class="rp-cta-copy">
+        <div class="rp-cta-score"><span>${score}</span><small>/100</small></div>
+        <div>
+          <strong>Below your ${SCORE_THRESHOLD} target</strong>
+          <p>Rewrite tailors your base resume for <em>${title}</em> using the skill plan above.</p>
+        </div>
+      </div>
+      <button class="btn-primary rp-cta-btn" onclick="runAnalysis()">Rewrite to ${SCORE_THRESHOLD}+</button>
+    </div>`;
+  }
+  return `<div class="rp-cta rp-cta-ok">
+    <div class="rp-cta-copy">
+      <div>
+        <strong>Already at ${score}/100</strong>
+        <p>Optional: polish the language for <em>${title}</em>.</p>
+      </div>
+    </div>
+    <button class="btn-secondary rp-cta-btn" onclick="runAnalysis()">Polish for this posting</button>
+  </div>`;
+}
+
 function renderAtsPanel(unified) {
   const sc = unified.scorecard;
   const score = unified.atsScore;
@@ -1387,13 +2770,21 @@ function renderAtsPanel(unified) {
   if ($('optimizeBoard')) $('optimizeBoard').classList.add('hidden');
   $('scoreSourceLabel').textContent = roleLabel;
   if ($('roleDetectLine')) {
-    $('roleDetectLine').textContent = `Detected role: ${roleLabel}. Skill set = this posting + typical tools for that role. Same posting → same list.`;
+    const jdSrc = kw.geminiUsed ? 'Gemini (JD)' : 'local RAG';
+    const netSrc = kw.internetUsed ? 'Gemini (internet)' : (kw.internetError ? 'internet lookup failed' : 'local RAG fallback');
+    const geminiNote = kw.geminiUsed
+      ? `Skills from posting via ${jdSrc}. Market skills from ${netSrc}.`
+      : (kw.geminiError ? `Gemini unavailable (${kw.geminiError}) — using local RAG.` : 'Using local RAG fallback.');
+    const modeNote = state.mode === 'aggressive'
+      ? 'Stay truthful = JD only · Stretch = JD + internet/market skills'
+      : 'Locked to JD skills. Switch to Stretch to also add internet/market skills.';
+    $('roleDetectLine').textContent = `Role: ${roleLabel} · ${geminiNote} ${modeNote}`;
   }
   if ($('atsDonut')) $('atsDonut').innerHTML = svgDonut(score);
   $('freeAtsScore').textContent = score;
   $('freeAtsScore').style.color = color;
   $('freeKwMatch').textContent = `${(sc.keywordsFound || []).length}/${Math.max(unified.primary.length, 1)}`;
-  $('freeKwMatchSub').textContent = 'JD + role skills found';
+  $('freeKwMatchSub').textContent = state.mode === 'aggressive' ? 'JD + internet skills found' : 'JD skills found';
   $('freeFmtCheck').textContent = sc.formatCheck || '--';
   $('freeFmtCheck').style.color = sc.formatCheck === 'PASS' ? '#16a34a' : '#d97706';
   $('freeBulletScore').textContent = `${sc.bulletsWithMetrics || 0}/${sc.bulletsTotal || 0}`;
@@ -1414,38 +2805,59 @@ function renderAtsPanel(unified) {
   if ($('atsFlow')) $('atsFlow').innerHTML = renderFlow(atsStory(unified));
   const missing = uniqTerms([...missingImportant, ...missingExtra]);
   const found = [...(sc.keywordsFound || []), ...(sc.secondaryFound || [])];
-  state.lastMissingReport = { important: missingImportant, extra: missingExtra, all: missing };
-  if ($('missingReport')) {
-    $('missingReport').innerHTML = [
-      `<div class="found-line">This report is for <strong>${roleLabel}</strong>.</div>`,
-      `<div class="found-line">Already on the source resume (${found.length}): <span style="color:#0d9488">${found.join(', ') || 'none'}</span></div>`,
-      `<div class="found-line">Must-add tools — both rewrite styles add these (${missingImportant.length}): <span style="color:#ea580c">${missingImportant.join(', ') || 'none'}</span></div>`,
-      `<div class="found-line">Stretch tools — only Stretch for the posting adds these (${missingExtra.length}): <span style="color:#7c3aed">${missingExtra.join(', ') || 'none'}</span></div>`,
-    ].join('');
-  }
+  const resumeText = ($('resumeInput') && $('resumeInput').value.trim()) || unified.resumeUsed || '';
+  const ats = atsPhraseReport(kw, resumeText);
+  state.lastMissingReport = {
+    important: missingImportant,
+    extra: missingExtra,
+    all: missing,
+    atsPhrases: ats.phrases,
+    atsFound: ats.found,
+    atsMissing: ats.missing,
+  };
   renderGaps('freeGaps', [
-    missing.length ? `The rewrite will drop missing tools into the existing Skills lines and into work-history bullets. Stay truthful: important only. Stretch: important + extra.` : 'No skill gaps against this locked set.',
+    missing.length ? `Stay truthful adds JD skills only. Stretch adds JD skills plus market/internet skills typical for ${roleLabel}.` : 'No skill gaps against this locked set.',
+    ats.phrases.length ? `ATS phrases on page: ${ats.found.length}/${ats.phrases.length}${ats.missing.length ? ' — rewrite will weave: ' + ats.missing.slice(0, 5).join(' · ') + (ats.missing.length > 5 ? '…' : '') : ''}.` : '',
     ...(sc.gaps || []).filter(g => !/keyword/i.test(g)),
   ].filter(Boolean));
-
-  const cta = $('tailorCta');
-  if (score < SCORE_THRESHOLD) {
-    cta.innerHTML = `<div class="cta-box">
-      <div class="found-line" style="color:#ea580c;margin-bottom:10px;">Score ${score}/100 is below ${SCORE_THRESHOLD}. Rewrite uses this role report.</div>
-      <button class="btn-primary" onclick="runAnalysis()">Rewrite to ${SCORE_THRESHOLD}+</button>
-    </div>`;
-  } else {
-    cta.innerHTML = `<div class="cta-box found-line" style="color:#16a34a;font-weight:600;">This already clears the 95 target. Optional: rewrite to tighten the language for this posting.</div>`;
+  if ($('missingReport')) {
+    const jdPrimary = kw.jdPrimary || [];
+    const jdSecondary = kw.jdSecondary || [];
+    const atsKeywords = kw.atsKeywords || [];
+    const internetSkills = kw.internetSkills || kw.marketSkills || [];
+    const internetKeywords = kw.internetKeywords || [];
+    const jdList = kw.jdSkills || unified.primary || [];
+    const srcJd = kw.geminiUsed ? 'Gemini AI · from JD' : 'Local RAG · from JD';
+    const srcNet = kw.internetUsed ? 'Gemini AI · job boards' : 'Local RAG fallback';
+    $('missingReport').innerHTML = renderRewritePlanReport({
+      roleLabel,
+      score,
+      ats,
+      found,
+      missingImportant,
+      missingExtra,
+      jdPrimary,
+      jdSecondary,
+      jdList,
+      atsKeywords,
+      internetSkills,
+      internetKeywords,
+      srcJd,
+      srcNet,
+    });
   }
+  const cta = $('tailorCta');
+  if (cta) cta.innerHTML = renderRewriteCta(score, roleLabel);
 }
 
 function renderResults(unified, resumeText) {
   const sc = unified.scorecard;
   const score = unified.atsScore;
   const before = state.preTailor;
-  $('scoreSection').classList.remove('hidden');
+  stopAiProcessing();
+  setDetailAnalysisOpen(false);
+  if ($('detailAnalysisBar')) $('detailAnalysisBar').classList.remove('hidden');
   $('resultsSection').classList.remove('hidden');
-  if ($('optimizeBoard')) $('optimizeBoard').classList.remove('hidden');
   $('atsScore').textContent = score;
   $('atsScore').className = 'score-value ' + (score >= 95 ? 'green' : score >= 70 ? 'yellow' : 'red');
   $('kwMatch').textContent = `${(sc.keywordsFound || []).length}/${Math.max(unified.primary.length, 10)}`;
@@ -1496,13 +2908,14 @@ function renderResults(unified, resumeText) {
   $('kwProgressBar').style.width = pct + '%';
   $('kwProgressLabel').textContent = `${matched} of ${unified.primary.length} must-have skills on the rewritten page`;
   renderTen('resultTenList', sc.tenSecondTest || {});
-  renderGaps('gapsContent', [...(sc.gaps || []), ...(sc.improvementSuggestions || []).map(s => 'Next: ' + s)]);
+  const atsAfter = atsPhraseReport(state.keywords, resumeText);
+  renderGaps('gapsContent', [
+    ...(atsAfter.phrases.length ? [`ATS phrases on page: ${atsAfter.found.length}/${atsAfter.phrases.length}${atsAfter.missing.length ? ' — still missing: ' + atsAfter.missing.join(' · ') : ' — all covered'}`] : []),
+    ...(sc.gaps || []),
+    ...(sc.improvementSuggestions || []).map(s => 'Next: ' + s),
+  ]);
 
-  const name = (resumeText.split('\n').find(l => l.trim()) || 'Resume').trim().replace(/\s+/g, '_');
-  const title = (unified.title || 'Data_Engineer').replace(/[^\w]+/g, '_');
-  state.filename = `${name}_${title}.doc`;
-  $('suggestedFilename').textContent = state.filename;
-  $('filenameReason').textContent = 'Built from the candidate name and the posting title. Use this when you upload so recruiters can find the file.';
+  updateExportFilename(resumeText);
 
   if (score < SCORE_THRESHOLD) $('boostBtn').classList.remove('hidden');
   else $('boostBtn').classList.add('hidden');
@@ -1522,7 +2935,7 @@ function getInputs() {
   const jd = $('jdInput').value.trim();
   const resume = $('resumeInput').value.trim();
   if (!jd) { showToast('Paste the posting first', '#e11d48'); return null; }
-  if (!resume) { showToast('Paste the source resume first', '#e11d48'); return null; }
+  if (!resume) { showToast('Add your base resume — upload or paste text', '#e11d48'); return null; }
   return { jd, resume };
 }
 
@@ -1534,9 +2947,18 @@ async function runAtsCheck() {
   btn.disabled = true;
   btn.textContent = 'Scoring…';
   setStep(2);
-  setLoading('Scoring the match…');
+  showAiProcessing(
+    'AI is analysing the job description…',
+    'Extracting skills from the posting and job boards…'
+  );
   try {
-    const kw = lockKeywordsFromJd(jd);
+    const kw = await lockKeywordsFromJd(jd);
+    syncJdSessionMeta(getActiveJdSession(), kw);
+    renderJdTabs();
+    updateAiProcessing('Scoring your resume against the posting…');
+    if (!kw.geminiUsed && kw.geminiError) {
+      showToast('Gemini unavailable — using local RAG for skills', '#d97706');
+    }
     const unified = stableScore(jd, resume, kw, false);
     renderAtsPanel(unified);
     const role = (kw.role && kw.role.label) || 'this role';
@@ -1546,6 +2968,7 @@ async function runAtsCheck() {
   } finally {
     btn.disabled = false;
     btn.textContent = 'Score this match';
+    stopAiProcessing();
     stopLoading();
   }
 }
@@ -1558,19 +2981,28 @@ async function runAnalysis() {
   $('scoreSection').classList.add('hidden');
   $('resultsSection').classList.add('hidden');
   if ($('optimizeBoard')) $('optimizeBoard').classList.add('hidden');
-  setLoading('Talking to the model…');
+  if ($('detailAnalysisBar')) $('detailAnalysisBar').classList.add('hidden');
+  if ($('detailAnalysisPanel')) $('detailAnalysisPanel').classList.add('hidden');
+  if ($('progressSection')) $('progressSection').classList.add('hidden');
   setStep(2);
-  setProgress(8, 'Scoring the source resume…', 'local match rubric');
+  showAiProcessing(
+    'AI is analysing the job description and rewriting your CV…',
+    'Extracting skills from the posting…'
+  );
 
   try {
-    lockKeywordsFromJd(jd);
+    await lockKeywordsFromJd(jd);
+    syncJdSessionMeta(getActiveJdSession(), state.keywords);
+    renderJdTabs();
+    if (!state.keywords.geminiUsed && state.keywords.geminiError) {
+      showToast('Gemini unavailable — using local RAG for skills', '#d97706');
+    }
     state.preTailor = snapshotScore(stableScore(jd, resume, state.keywords, false));
     const missingReport = missingSkillReport(state.keywords, resume);
     state.lastMissingReport = missingReport;
-    setProgress(28, `Skill set locked: ${(state.keywords.primary || []).slice(0, 4).join(', ')}…`, 'posting + role tools');
+    updateAiProcessing('Researching market skills on job boards…');
     setStep(3);
-    setLoading('Rewriting the page…');
-    setProgress(40, 'Rewriting the resume for this posting…', state.mode === 'aggressive' ? 'Stretch for the posting' : 'Stay truthful');
+    updateAiProcessing('Rewriting your CV for this role…');
 
     const tailored = cleanupResume(await callGemini(buildRewritePrompt(jd, resume, state.keywords, missingReport), { maxTokens: 7000 }));
     if (!tailored || tailored.length < 200) throw new Error('Rewrite was empty');
@@ -1578,8 +3010,7 @@ async function runAnalysis() {
     $('outputArea').textContent = tailored;
 
     setStep(4);
-    setProgress(78, 'Scoring the rewritten page…', `Target ${SCORE_THRESHOLD}+`);
-    setLoading('Scoring the draft…');
+    updateAiProcessing('Polishing the language…');
     let { unified, resume: polished } = await scoreTailoredResume(jd, state.tailoredResume);
     state.tailoredResume = polished;
     $('outputArea').textContent = polished;
@@ -1587,8 +3018,7 @@ async function runAnalysis() {
     let pass = 0;
     while (unified.atsScore < SCORE_THRESHOLD && pass < MAX_BOOST_PASSES) {
       pass += 1;
-      setProgress(80 + pass * 3, `Score ${unified.atsScore}/100 — tightening pass ${pass}/${MAX_BOOST_PASSES} toward ${SCORE_THRESHOLD}+…`, state.mode === 'aggressive' ? 'Stretch' : 'Truthful');
-      setLoading(`Tightening pass ${pass}…`);
+      updateAiProcessing(`Tightening the draft — pass ${pass} of ${MAX_BOOST_PASSES}…`);
       const boosted = cleanupResume(await callGemini(
         buildBoostPrompt(jd, state.tailoredResume, { ...unified.scorecard, atsScore: unified.atsScore, ruleScores: unified.ruleScores }, state.keywords || {}),
         { maxTokens: 7000 }
@@ -1601,17 +3031,17 @@ async function runAnalysis() {
     }
 
     state.scorecard = unified.scorecard;
-    setProgress(96, 'Choosing bold words in Summary and Experience…', 'emphasis pass');
-    setLoading('Finalizing emphasis…');
+    updateAiProcessing('Finalizing emphasis and formatting…');
     await finalizeBolding(jd, state.tailoredResume);
     renderResults(unified, state.tailoredResume);
-    setProgress(100, `Done — match ${unified.atsScore}/100`, state.lastModel || unified.source);
+    persistCurrentJdSession();
+    saveWorkspace();
     showToast(unified.atsScore >= SCORE_THRESHOLD
-      ? `Draft scored ${unified.atsScore}/100`
-      : `Score ${unified.atsScore}/100 — use Push the score for another pass`);
+      ? `Draft scored ${unified.atsScore}/100 — open Detail analysis for charts`
+      : `Score ${unified.atsScore}/100 — use Push the score or Detail analysis`);
   } catch (err) {
     showToast('Rewrite failed: ' + String(err.message || err).slice(0, 90), '#e11d48');
-    $('progressSection').classList.add('hidden');
+    stopAiProcessing();
   } finally {
     $('analyzeBtn').disabled = false;
     stopLoading();
@@ -1625,26 +3055,28 @@ async function boostScore() {
   const btn = $('boostBtn');
   btn.disabled = true;
   btn.textContent = 'Pushing…';
-  setProgress(15, 'Closing remaining gaps…', 'surgical edit');
-  setLoading('Tightening the draft…');
+  showAiProcessing(
+    'AI is polishing your CV…',
+    'Closing remaining gaps in the draft…'
+  );
   try {
     const boosted = cleanupResume(await callGemini(
       buildBoostPrompt(inputs.jd, state.tailoredResume, { ...state.scorecard, atsScore: state.scorecard?.atsScore }, state.keywords || {}),
       { maxTokens: 7000 }
     ));
     const nextText = boosted && boosted.length > 200 ? boosted : state.tailoredResume;
-    setProgress(70, 'Scoring the tightened draft…', '');
+    updateAiProcessing('Scoring the tightened draft…');
     const scored = await scoreTailoredResume(inputs.jd, nextText);
     state.tailoredResume = scored.resume;
     const unified = scored.unified;
     state.scorecard = unified.scorecard;
-    setProgress(90, 'Choosing bold words in Summary and Experience…', 'emphasis pass');
+    updateAiProcessing('Finalizing emphasis…');
     await finalizeBolding(inputs.jd, scored.resume);
     renderResults(unified, scored.resume);
-    setProgress(100, `Done — match ${unified.atsScore}/100`, '');
     showToast(`Pushed to ${unified.atsScore}/100`);
   } catch (err) {
     showToast('Push failed: ' + String(err.message || err).slice(0, 80), '#e11d48');
+    stopAiProcessing();
   } finally {
     btn.disabled = false;
     btn.textContent = 'Push the score';
@@ -1655,7 +3087,8 @@ async function boostScore() {
 function cleanupResume(text) {
   let t = (text || '').replace(/```(?:text|markdown)?/gi, '').trim();
   t = t.replace(/^here is[^\n]*\n+/i, '');
-  return sanitizeResumeHeadline(t).trim();
+  t = sanitizeResumeHeadline(t);
+  return normalizeContactInResume(t).trim();
 }
 
 function sanitizeResumeHeadline(text) {
@@ -1677,7 +3110,7 @@ function sanitizeResumeHeadline(text) {
   return lines.join('\n');
 }
 
-function resetAndRun() {
+function resetResultsUi(silent) {
   state.keywords = null;
   state.kwHash = '';
   state.tailoredResume = '';
@@ -1690,19 +3123,37 @@ function resetAndRun() {
   $('resultsSection').classList.add('hidden');
   $('progressSection').classList.add('hidden');
   if ($('optimizeBoard')) $('optimizeBoard').classList.add('hidden');
+  if ($('detailAnalysisBar')) $('detailAnalysisBar').classList.add('hidden');
+  if ($('detailAnalysisPanel')) $('detailAnalysisPanel').classList.add('hidden');
+  stopAiProcessing();
+  state.detailAnalysisOpen = false;
   $('outputArea').textContent = '';
   if ($('resumePaper')) $('resumePaper').innerHTML = '';
   $('analyzeBtn').disabled = false;
   if ($('rerunBtn')) $('rerunBtn').classList.add('hidden');
   setStep(1);
-  showToast('Results cleared — your posting and source resume are still here');
+  const session = getActiveJdSession();
+  if (session) session.tailoredResume = '';
+  if (!silent) showToast('Results cleared — base resume and postings are still here');
+}
+
+function resetAndRun() {
+  resetResultsUi(false);
+  saveWorkspace();
 }
 
 function clearAll() {
-  $('jdInput').value = '';
-  $('resumeInput').value = '';
+  const session = getActiveJdSession();
+  if (session) {
+    session.jd = '';
+    session.tailoredResume = '';
+    session.label = 'New posting';
+  }
+  if ($('jdInput')) $('jdInput').value = '';
   updateCounts();
   resetAndRun();
+  saveWorkspace();
+  renderJdTabs();
 }
 
 const SECTION_KEYWORDS = new Set([
@@ -1837,10 +3288,20 @@ function isRoleLine(l, section) {
 const ROLE_DATE_RE = /((?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{4}\s*[–—\-to]+\s*(?:Present|Current|(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{4}))\s*$/i;
 
 function linkify(text) {
-  return escapeHtml(text).replace(/(https?:\/\/[^\s|]+|linkedin\.com\/[^\s|]+)/gi, url => {
+  const line = formatContactLine(text);
+  const re = /(https?:\/\/[^\s|]+|linkedin\.com\/in\/[^\s|]+)/gi;
+  let out = '';
+  let last = 0;
+  let m;
+  while ((m = re.exec(line)) !== null) {
+    out += escapeHtml(line.slice(last, m.index));
+    const url = m[0];
     const href = /^https?:\/\//.test(url) ? url : 'https://' + url;
-    return `<a href="${href}">${url}</a>`;
-  });
+    const display = /linkedin/i.test(url) ? shortenLinkedIn(url) : url;
+    out += `<a href="${escapeHtml(href)}">${escapeHtml(display)}</a>`;
+    last = m.index + m[0].length;
+  }
+  return out + escapeHtml(line.slice(last));
 }
 
 function splitRoleAndDates(line) {
@@ -1938,10 +3399,17 @@ function themeTermsFromJd() {
   return BOLD_THEME_WORDS.filter(t => lower.includes(String(t).toLowerCase()));
 }
 
-function collectBoldTerms() {
+function collectBoldTerms(resumeText) {
   if (state.boldFinalized && state.boldTerms && state.boldTerms.length) {
     return state.boldTerms.slice();
   }
+  const resume = resumeText
+    || state.tailoredResume
+    || ($('outputArea') && $('outputArea').textContent)
+    || ($('resumeInput') && $('resumeInput').value)
+    || '';
+  const pool = buildBoldTermPool(state.keywords || {}, resume);
+  if (pool.length) return pool;
   const locked = uniqTerms([...summaryKeywordList(state.keywords || {}), ...importantHrKeywords(state.keywords || {})]);
   if (locked.length) {
     return locked.filter(t => {
@@ -1962,8 +3430,8 @@ function boldResumeKeywords(text) {
   let s = escapeHtml(text);
   s = s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
   let count = 0;
-  const max = state.boldFinalized ? 40 : 22;
-  for (const term of collectBoldTerms()) {
+  const max = state.boldFinalized ? 75 : 45;
+  for (const term of collectBoldTerms(text)) {
     if (count >= max) break;
     const esc = String(term).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const re = new RegExp('(?<![A-Za-z0-9+#])' + esc + '(?![A-Za-z0-9+#])', 'gi');
@@ -2036,45 +3504,67 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-function resumeCss() {
-  const { fs, lh } = state.docFit || { fs: 1, lh: 1 };
+function resumeTypeFromBody(bodyPt, lh = 1) {
   const p = (n) => (Math.round(n * 100) / 100) + 'pt';
-  const fsName = p(18 * fs);
-  const lhName = p(21.9 * fs * (1 + (lh - 1) * 0.35));
-  const fsTitle = p(14 * fs);
-  const fsRole = p(11 * fs);
-  const lhRole = p(11 * fs * (1 + (lh - 1) * 0.4));
-  const fsBody = p(10 * fs);
-  const lhBody = p(11.5 * fs * lh);
-  const spSection = p(7.1 * lh);
-  const spJob = p(1.85 * lh);
-  const spBullet = p(2.05 * lh);
-  const spBody = p(1.5 * lh);
-  const spSkill = p(1.7 * lh);
+  const scale = bodyPt / 12;
+  return {
+    fsName: p(bodyPt * 1.8),
+    lhName: p(bodyPt * 2.19 * (1 + (lh - 1) * 0.35)),
+    fsTitle: p(bodyPt * 1.4),
+    fsRole: p(bodyPt * 1.1),
+    lhRole: p(bodyPt * 1.1 * (1 + (lh - 1) * 0.4)),
+    fsBody: p(bodyPt),
+    lhBody: p(bodyPt * 1.15 * lh),
+    spSection: p(7.1 * scale * lh),
+    spJob: p(1.85 * scale * lh),
+    spBullet: p(2.05 * scale * lh),
+    spBody: p(1.5 * scale * lh),
+    spSkill: p(1.7 * scale * lh),
+  };
+}
+
+function resumeCssBlock(bodyPt, lh, sel = '') {
+  const t = resumeTypeFromBody(bodyPt, lh);
+  const s = sel ? `${sel} ` : '';
   return `
+    ${s}.r-name { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsName}; font-weight: bold; text-align: center; color: #000000; margin: 0; padding: 0; line-height: ${t.lhName}; mso-line-height-rule: exactly; }
+    ${s}.r-headline { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsTitle}; font-weight: bold; text-align: center; color: #000000; margin: 3.2pt 0 0 0; padding: 0; line-height: ${t.fsTitle}; mso-line-height-rule: exactly; }
+    ${s}.r-contact { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsBody}; text-align: center; color: #000000; margin: 0; padding: 0; line-height: ${t.lhBody}; mso-line-height-rule: exactly; }
+    ${s}.r-section { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsTitle}; font-weight: bold; color: #000000; text-transform: uppercase; letter-spacing: 0; border-bottom: 0.5pt solid #000000; margin: ${t.spSection} 0 0 4.55pt; padding: 0; line-height: ${t.fsTitle}; mso-line-height-rule: exactly; text-align: left; }
+    ${s}.r-job { width: 100%; border-collapse: collapse; margin: ${t.spJob} 0 0 0; border: none; }
+    ${s}.r-job td { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsRole}; font-weight: bold; color: #000000; padding: 0; line-height: ${t.lhRole}; vertical-align: bottom; mso-line-height-rule: exactly; border: none; text-align: left; }
+    ${s}.r-job td:first-child { padding-left: 4.55pt; }
+    ${s}.r-role { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsRole}; font-weight: bold; color: #000000; margin: ${t.spJob} 0 0 4.55pt; line-height: ${t.lhRole}; text-align: left; }
+    ${s}.r-role i, ${s}.r-job i { font-style: italic; font-weight: bold; }
+    ${s}.r-bullet { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsBody}; color: #000000; margin: 0 0 0 18pt; text-indent: -13.5pt; line-height: ${t.lhBody}; mso-line-height-rule: exactly; padding: 0; text-align: left; }
+    ${s}.r-job + .r-bullet, ${s}.r-role + .r-bullet { margin-top: ${t.spBullet}; }
+    ${s}.r-body { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsBody}; color: #000000; margin: ${t.spBody} 0 0 4.55pt; padding: 0; line-height: ${t.lhBody}; mso-line-height-rule: exactly; text-align: justify; }
+    ${s}.r-skill-line { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsBody}; color: #000000; margin: ${t.spSkill} 0 0 4.55pt; padding: 0; line-height: ${t.lhBody}; mso-line-height-rule: exactly; text-align: justify; }
+    ${s}.r-section + .r-skill-line, ${s}.r-section + .r-body { margin-top: ${t.spBody}; }
+  `;
+}
+
+function resumeCss() {
+  const fit = state.docFit || { bodyPt: 12, lh: 1, pages: 1 };
+  let css = `
     p { margin: 0; padding: 0; }
     .WordSection1 { text-align: left; }
-    .r-name { font-family: Calibri, Arial, sans-serif; font-size: ${fsName}; font-weight: bold; text-align: center; color: #000000; margin: 0; padding: 0; line-height: ${lhName}; mso-line-height-rule: exactly; }
-    .r-headline { font-family: Calibri, Arial, sans-serif; font-size: ${fsTitle}; font-weight: bold; text-align: center; color: #000000; margin: 3.2pt 0 0 0; padding: 0; line-height: ${fsTitle}; mso-line-height-rule: exactly; }
-    .r-contact { font-family: Calibri, Arial, sans-serif; font-size: ${fsBody}; text-align: center; color: #000000; margin: 0; padding: 0; line-height: ${lhBody}; mso-line-height-rule: exactly; }
     .r-rule { font-family: Calibri, Arial, sans-serif; font-size: 1pt; line-height: 1pt; mso-line-height-rule: exactly; margin: 0; padding: 0; height: 1pt; border: none; border-top: 0.5pt solid #000000; overflow: hidden; }
-    .r-section { font-family: Calibri, Arial, sans-serif; font-size: ${fsTitle}; font-weight: bold; color: #000000; text-transform: uppercase; letter-spacing: 0; border-bottom: 0.5pt solid #000000; margin: ${spSection} 0 0 4.55pt; padding: 0; line-height: ${fsTitle}; mso-line-height-rule: exactly; text-align: left; }
-    .r-job { width: 100%; border-collapse: collapse; margin: ${spJob} 0 0 0; border: none; }
-    .r-job td { font-family: Calibri, Arial, sans-serif; font-size: ${fsRole}; font-weight: bold; color: #000000; padding: 0; line-height: ${lhRole}; vertical-align: bottom; mso-line-height-rule: exactly; border: none; text-align: left; }
-    .r-job td:first-child { padding-left: 4.55pt; }
     .r-dates { text-align: right; white-space: nowrap; width: 32%; }
-    .r-role { font-family: Calibri, Arial, sans-serif; font-size: ${fsRole}; font-weight: bold; color: #000000; margin: ${spJob} 0 0 4.55pt; line-height: ${lhRole}; text-align: left; }
-    .r-role i, .r-job i { font-style: italic; font-weight: bold; }
-    .r-bullet { font-family: Calibri, Arial, sans-serif; font-size: ${fsBody}; color: #000000; margin: 0 0 0 18pt; text-indent: -13.5pt; line-height: ${lhBody}; mso-line-height-rule: exactly; padding: 0; text-align: left; }
     .r-bmark, .r-btext { text-align: left; }
-    .r-job + .r-bullet, .r-role + .r-bullet { margin-top: ${spBullet}; }
-    .r-body { font-family: Calibri, Arial, sans-serif; font-size: ${fsBody}; color: #000000; margin: ${spBody} 0 0 4.55pt; padding: 0; line-height: ${lhBody}; mso-line-height-rule: exactly; text-align: justify; }
-    .r-skill-line { font-family: Calibri, Arial, sans-serif; font-size: ${fsBody}; color: #000000; margin: ${spSkill} 0 0 4.55pt; padding: 0; line-height: ${lhBody}; mso-line-height-rule: exactly; text-align: justify; }
-    .r-section + .r-skill-line, .r-section + .r-body { margin-top: ${spBody}; }
     .r-skill-label { font-weight: bold; color: #000000; }
     b, strong { font-weight: bold; color: #000000; }
     a { color: #1a56c4; text-decoration: underline; }
+    .r-page-break { page-break-before: always; break-before: page; height: 0; margin: 0; padding: 0; border: 0; }
+    .r-page-start { page-break-before: always; break-before: page; }
+    .r-section + .r-job,
+    .r-section + .r-role,
+    .r-section + .r-bullet,
+    .r-section + .r-skill-line,
+    .r-section + .r-body { page-break-before: avoid; break-before: avoid; }
   `;
+  css += resumeCssBlock(fit.bodyPt || PAGE_FIT.BODY_AVG, fit.lh || 1);
+  return css;
 }
 
 function inchesToPx(inches) {
@@ -2086,21 +3576,21 @@ function inchesToPx(inches) {
   return px || inches * 96;
 }
 
-function applyResumeFitVars(el, fs, lh) {
+function applyResumeFitVars(el, bodyPt, lh) {
   if (!el || !el.style) return;
-  const pt = (n) => (Math.round(n * 100) / 100) + 'pt';
-  el.style.setProperty('--fs-name', pt(18 * fs));
-  el.style.setProperty('--lh-name', pt(21.9 * fs * (1 + (lh - 1) * 0.35)));
-  el.style.setProperty('--fs-title', pt(14 * fs));
-  el.style.setProperty('--fs-role', pt(11 * fs));
-  el.style.setProperty('--lh-role', pt(11 * fs * (1 + (lh - 1) * 0.4)));
-  el.style.setProperty('--fs-body', pt(10 * fs));
-  el.style.setProperty('--lh-body', pt(11.5 * fs * lh));
-  el.style.setProperty('--sp-section', pt(7.1 * lh));
-  el.style.setProperty('--sp-job', pt(1.85 * lh));
-  el.style.setProperty('--sp-bullet', pt(2.05 * lh));
-  el.style.setProperty('--sp-body', pt(1.5 * lh));
-  el.style.setProperty('--sp-skill', pt(1.7 * lh));
+  const t = resumeTypeFromBody(bodyPt, lh);
+  el.style.setProperty('--fs-name', t.fsName);
+  el.style.setProperty('--lh-name', t.lhName);
+  el.style.setProperty('--fs-title', t.fsTitle);
+  el.style.setProperty('--fs-role', t.fsRole);
+  el.style.setProperty('--lh-role', t.lhRole);
+  el.style.setProperty('--fs-body', t.fsBody);
+  el.style.setProperty('--lh-body', t.lhBody);
+  el.style.setProperty('--sp-section', t.spSection);
+  el.style.setProperty('--sp-job', t.spJob);
+  el.style.setProperty('--sp-bullet', t.spBullet);
+  el.style.setProperty('--sp-body', t.spBody);
+  el.style.setProperty('--sp-skill', t.spSkill);
 }
 
 function measureResumeContent(paper) {
@@ -2111,93 +3601,217 @@ function measureResumeContent(paper) {
   return max;
 }
 
+const PAGE_FIT = {
+  BODY_MIN: 9.5,
+  BODY_MAX: 12,
+  BODY_AVG: 10.75,
+  LH_MIN: 0.92,
+  LH_MAX: 1.08,
+  FILL_MIN: 0.985,
+  FIT_MAX: 0.998,
+  MAX_PAGES: 2,
+};
+
+const PAGE_MARGINS = { top: 0.05, right: 0.10, bottom: 0.19, left: 0.10 };
+
+function pageMarginsCss() {
+  const m = PAGE_MARGINS;
+  return `${m.top}in ${m.right}in ${m.bottom}in ${m.left}in`;
+}
+
+function applyPageMargins(el) {
+  if (!el || !el.style) return;
+  const m = PAGE_MARGINS;
+  el.style.padding = `${m.top}in ${m.right}in ${m.bottom}in ${m.left}in`;
+}
+
+function pageContentHeight() {
+  return inchesToPx(11 - PAGE_MARGINS.top - PAGE_MARGINS.bottom);
+}
+
+function largestBodyThatFits(measure, apply, hiBound, bodyMin, bodyMax) {
+  let lo = bodyMin;
+  let hi = bodyMax;
+  let best = bodyMin;
+  for (let i = 0; i < 14; i++) {
+    const mid = (lo + hi) / 2;
+    apply(mid, 1);
+    if (measure() <= hiBound) { best = mid; lo = mid; }
+    else hi = mid;
+  }
+  return Math.round(best * 10) / 10;
+}
+
+function compressLhToHeight(measure, apply, bodyPt, maxH, lhMin, lhMax) {
+  apply(bodyPt, lhMax);
+  if (measure() <= maxH) return lhMax;
+  let lo = lhMin;
+  let hi = lhMax;
+  let best = lhMin;
+  for (let i = 0; i < 12; i++) {
+    const mid = (lo + hi) / 2;
+    apply(bodyPt, mid);
+    if (measure() <= maxH) { best = mid; lo = mid; }
+    else hi = mid;
+  }
+  return Math.round(best * 100) / 100;
+}
+
+function expandToFillPage(measure, apply, bodyPt, loBound, hiBound, F) {
+  let lh = 1;
+  apply(bodyPt, lh);
+
+  if (measure() < loBound) {
+    let lo = 1;
+    let hi = F.LH_MAX;
+    let best = 1;
+    for (let i = 0; i < 12; i++) {
+      const mid = (lo + hi) / 2;
+      apply(bodyPt, mid);
+      const h = measure();
+      if (h < loBound) { best = mid; lo = mid; }
+      else if (h > hiBound) hi = mid;
+      else { best = mid; break; }
+    }
+    lh = best;
+    apply(bodyPt, lh);
+  }
+
+  if (measure() < loBound && bodyPt < F.BODY_MAX) {
+    let lo = bodyPt;
+    let hi = F.BODY_MAX;
+    let best = bodyPt;
+    for (let i = 0; i < 12; i++) {
+      const mid = (lo + hi) / 2;
+      apply(mid, lh);
+      const h = measure();
+      if (h <= hiBound) {
+        if (h >= loBound) { best = mid; break; }
+        best = mid;
+        lo = mid;
+      } else hi = mid;
+    }
+    bodyPt = Math.round(best * 10) / 10;
+    apply(bodyPt, lh);
+  }
+
+  return { bodyPt, lh: Math.round(lh * 100) / 100, pages: 1 };
+}
+
 function fitResumeToPage(paper) {
-  const FS_MIN = 0.92;
-  const FS_MAX = 1.2;
-  const LH_MIN = 0.88;
-  const LH_MAX = 1.55;
-  const target = inchesToPx(11 - 0.11 - 0.19);
-  const loBound = target * 0.96;
-  const hiBound = target * 0.995;
+  const F = PAGE_FIT;
+  const hiBound = pageContentHeight() * F.FIT_MAX;
+  const loBound = pageContentHeight() * F.FILL_MIN;
   const measure = () => {
     void paper.offsetHeight;
     return measureResumeContent(paper);
   };
-  const apply = (fs, lh) => applyResumeFitVars(paper, fs, lh);
+  const apply = (bodyPt, lh) => applyResumeFitVars(paper, bodyPt, lh);
 
-  let fs = 1;
+  // Prefer one page: scale 12pt → 9.5pt (and tighten line height) before adding page 2
+  apply(F.BODY_MAX, 1);
+  if (measure() <= hiBound) {
+    const bodyPt = largestBodyThatFits(measure, apply, hiBound, F.BODY_MIN, F.BODY_MAX);
+    return expandToFillPage(measure, apply, bodyPt, loBound, hiBound, F);
+  }
+
+  let bodyPt = largestBodyThatFits(measure, apply, hiBound, F.BODY_MIN, F.BODY_MAX);
   let lh = 1;
-  apply(1, 1);
-  let h = measure();
-
-  if (h > hiBound) {
-    let lo = LH_MIN;
-    let hi = 1;
-    let best = LH_MIN;
-    for (let i = 0; i < 12; i++) {
-      const mid = (lo + hi) / 2;
-      apply(1, mid);
-      if (measure() <= hiBound) { best = mid; lo = mid; }
-      else hi = mid;
-    }
-    lh = best;
-    apply(fs, lh);
-    h = measure();
-    if (h > hiBound) {
-      let flo = FS_MIN;
-      let fhi = 1;
-      let fbest = FS_MIN;
-      for (let i = 0; i < 12; i++) {
-        const mid = (flo + fhi) / 2;
-        apply(mid, lh);
-        if (measure() <= hiBound) { fbest = mid; flo = mid; }
-        else fhi = mid;
-      }
-      fs = fbest;
-      apply(fs, lh);
-      h = measure();
-    }
-    if (h > hiBound * 1.01) {
-      fs = FS_MIN;
-      lh = LH_MIN;
-      apply(fs, lh);
-      return { fs, lh, pages: 2 };
-    }
-    return { fs, lh, pages: 1 };
+  apply(bodyPt, lh);
+  if (measure() > hiBound) {
+    lh = compressLhToHeight(measure, apply, bodyPt, hiBound, F.LH_MIN, F.LH_MAX);
+  }
+  apply(bodyPt, lh);
+  if (measure() <= hiBound) {
+    return expandToFillPage(measure, apply, bodyPt, loBound, hiBound, F);
   }
 
-  if (h < loBound) {
-    let lo = 1;
-    let hi = LH_MAX;
-    let best = 1;
-    for (let i = 0; i < 12; i++) {
-      const mid = (lo + hi) / 2;
-      apply(1, mid);
-      const ch = measure();
-      if (ch < loBound) { best = mid; lo = mid; }
-      else if (ch > hiBound) hi = mid;
-      else { best = mid; break; }
-    }
-    lh = best;
-    apply(fs, lh);
-    h = measure();
-    if (h < loBound) {
-      let flo = 1;
-      let fhi = FS_MAX;
-      let fbest = 1;
-      for (let i = 0; i < 12; i++) {
-        const mid = (flo + fhi) / 2;
-        apply(mid, lh);
-        const ch = measure();
-        if (ch < loBound) { fbest = mid; flo = mid; }
-        else if (ch > hiBound) fhi = mid;
-        else { fbest = mid; break; }
-      }
-      fs = fbest;
-      apply(fs, lh);
-    }
+  // Still overflows at 9.5pt minimum — use a second page
+  const maxTotal = hiBound * F.MAX_PAGES;
+  bodyPt = largestBodyThatFits(measure, apply, maxTotal, F.BODY_MIN, F.BODY_MAX);
+  lh = 1;
+  apply(bodyPt, lh);
+  if (measure() > maxTotal) {
+    lh = compressLhToHeight(measure, apply, bodyPt, maxTotal, F.LH_MIN, F.LH_MAX);
   }
-  return { fs, lh, pages: 1 };
+  return { bodyPt, lh: Math.round(lh * 100) / 100, pages: 2 };
+}
+
+function formatFitHint(fit) {
+  if (!fit) return '';
+  const pt = (fit.bodyPt || PAGE_FIT.BODY_AVG).toFixed(1);
+  const namePt = (fit.bodyPt * 1.8).toFixed(1);
+  if ((fit.pages || 1) > 1) {
+    return `2 pages · ${pt}pt body (only used because 9.5pt still overflows one page) · name ~${namePt}pt`;
+  }
+  return `1 page · ${pt}pt body (9.5–12pt, squeezed to one page when possible) · name ~${namePt}pt`;
+}
+
+function clearPageBreaks(paper) {
+  paper.querySelectorAll('.r-page-break').forEach(n => n.remove());
+}
+
+function clearPage2Wrap(paper) {
+  paper.querySelectorAll('.r-page-2').forEach(el => {
+    while (el.firstChild) paper.insertBefore(el.firstChild, el);
+    el.remove();
+  });
+}
+
+function contentHeightBefore(kids, beforeEl) {
+  const top = beforeEl.offsetTop;
+  let max = 0;
+  for (const el of kids) {
+    if (el.offsetTop >= top - 0.5) continue;
+    max = Math.max(max, el.offsetTop + el.offsetHeight);
+  }
+  return max;
+}
+
+function normalizeBreakTarget(kids, el) {
+  let target = el;
+  if (target.classList.contains('r-job') || target.classList.contains('r-role')) {
+    const idx = kids.indexOf(target);
+    const prev = idx > 0 ? kids[idx - 1] : null;
+    if (prev && prev.classList.contains('r-section')) target = prev;
+  }
+  return target;
+}
+
+function findPageBreakTarget(paper, pageHeight) {
+  const kids = [...paper.children].filter(c => !c.classList.contains('r-page-break'));
+  if (!kids.length) return null;
+
+  const totalH = Math.max(...kids.map(el => el.offsetTop + el.offsetHeight));
+  const limit = pageHeight * PAGE_FIT.FIT_MAX;
+  if (totalH <= limit * 1.02) return null;
+
+  const minFill = pageHeight * 0.84;
+  const breakables = kids.filter(el =>
+    el.classList.contains('r-section') ||
+    el.classList.contains('r-job') ||
+    el.classList.contains('r-role')
+  );
+
+  let best = null;
+  for (const el of breakables) {
+    const target = normalizeBreakTarget(kids, el);
+    const fill = contentHeightBefore(kids, target);
+    if (fill < minFill || fill > limit) continue;
+    if (!best || fill > best.fill) best = { el: target, fill };
+  }
+  if (best) return best.el;
+
+  // No break fills page 1 enough — let the print engine paginate naturally at @page height
+  return null;
+}
+
+function markFirstPageEnd(paper, pageHeight) {
+  clearPageBreaks(paper);
+  paper.querySelectorAll('.r-page-start').forEach(el => el.classList.remove('r-page-start'));
+  const target = findPageBreakTarget(paper, pageHeight);
+  if (!target) return;
+  target.classList.add('r-page-start');
 }
 
 function currentResumeText() {
@@ -2214,17 +3828,24 @@ function showFormattedResume(text) {
   }
   paper.classList.remove('two-page');
   paper.style.minHeight = '11in';
+  clearPageBreaks(paper);
+  clearPage2Wrap(paper);
   paper.innerHTML = parseResumeToHtml(cleaned);
-  applyResumeFitVars(paper, 1, 1);
+  applyPageMargins(paper);
+  applyResumeFitVars(paper, PAGE_FIT.BODY_AVG, 1);
+  const pageHeight = pageContentHeight();
   const fit = fitResumeToPage(paper);
   state.docFit = fit;
-  applyResumeFitVars(paper, fit.fs, fit.lh);
+  applyResumeFitVars(paper, fit.bodyPt, fit.lh);
   if (fit.pages > 1) {
+    markFirstPageEnd(paper, pageHeight);
     paper.classList.add('two-page');
     paper.style.minHeight = (11 * fit.pages) + 'in';
   } else {
     paper.style.minHeight = '11in';
   }
+  const fitHint = $('resumeFitHint');
+  if (fitHint) fitHint.textContent = formatFitHint(fit);
 }
 
 function setResumeView(mode) {
@@ -2237,6 +3858,8 @@ function setResumeView(mode) {
 }
 
 function buildWordHtml(content, title) {
+  const paper = $('resumePaper');
+  const bodyHtml = (paper && paper.innerHTML.trim()) ? paper.innerHTML : parseResumeToHtml(content);
   return `<!DOCTYPE html>
 <html xmlns:o="urn:schemas-microsoft-com:office:office"
       xmlns:w="urn:schemas-microsoft-com:office:word"
@@ -2249,16 +3872,16 @@ function buildWordHtml(content, title) {
   <style>
     @page WordSection1 {
       size: 8.5in 11in;
-      margin: 0.11in 0.10in 0.19in 0.10in;
+      margin: ${pageMarginsCss()};
       mso-header-margin: 0in;
       mso-footer-margin: 0in;
     }
-    body { font-family: Calibri, Arial, sans-serif; font-size: ${(10 * (state.docFit?.fs || 1)).toFixed(2)}pt; color: #000000; line-height: ${(11.5 * (state.docFit?.fs || 1) * (state.docFit?.lh || 1)).toFixed(2)}pt; mso-line-height-rule: exactly; text-align: left; }
+    body { font-family: Calibri, Arial, sans-serif; font-size: ${(state.docFit?.bodyPt || PAGE_FIT.BODY_AVG).toFixed(2)}pt; color: #000000; line-height: ${((state.docFit?.bodyPt || PAGE_FIT.BODY_AVG) * 1.15 * (state.docFit?.lh || 1)).toFixed(2)}pt; mso-line-height-rule: exactly; text-align: left; }
     ${resumeCss()}
   </style>
 </head>
 <body>
-  <div class="WordSection1" align="left" style="text-align:left">${parseResumeToHtml(content)}</div>
+  <div class="WordSection1" align="left" style="text-align:left">${bodyHtml}</div>
 </body>
 </html>`;
 }
@@ -2266,6 +3889,7 @@ function buildWordHtml(content, title) {
 function downloadDocx() {
   const content = currentResumeText();
   if (!content) { showToast('Nothing to save yet', '#e11d48'); return; }
+  updateExportFilename(content);
   const filename = (state.filename || 'tailored_resume.doc').replace(/\.docx?$/i, '.doc');
   const blob = new Blob(['\ufeff' + buildWordHtml(content, filename)], { type: 'application/msword' });
   const a = document.createElement('a');
@@ -2279,6 +3903,7 @@ function downloadDocx() {
 function downloadTxt() {
   const text = currentResumeText();
   if (!text) { showToast('Nothing to save yet', '#e11d48'); return; }
+  updateExportFilename(text);
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
   a.download = (state.filename || 'tailored_resume.txt').replace(/\.doc$/i, '.txt');
@@ -2290,109 +3915,103 @@ function copyToClipboard() {
   navigator.clipboard.writeText(currentResumeText()).then(() => showToast('Copied to clipboard'));
 }
 
-function resumePaperLayoutCss() {
-  return `
-    * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; background: #fff; }
-    .resume-paper {
-      background: #fff;
-      color: #000;
-      width: 8.5in;
-      min-height: 11in;
-      max-width: none;
-      margin: 0;
-      box-sizing: border-box;
-      position: relative;
-      padding: 0.11in 0.10in 0.19in 0.10in;
-      box-shadow: none;
-      font-family: Calibri, Arial, sans-serif;
-      font-size: var(--fs-body, 10pt);
-      line-height: var(--lh-body, 11.5pt);
-    }
-    .resume-paper.two-page { min-height: auto; background-image: none; }
-    .resume-paper .r-name {
-      font-size: var(--fs-name, 18pt); font-weight: 700; text-align: center; color: #000;
-      margin: 0; padding: 0; line-height: var(--lh-name, 21.9pt);
-    }
-    .resume-paper .r-headline {
-      font-size: var(--fs-title, 14pt); font-weight: 700; text-align: center; color: #000;
-      margin: 3.2pt 0 0 0; padding: 0; line-height: var(--fs-title, 14pt);
-    }
-    .resume-paper .r-contact {
-      font-size: var(--fs-body, 10pt); text-align: center; color: #000;
-      margin: 0; padding: 0; line-height: var(--lh-body, 11.5pt);
-    }
-    .resume-paper .r-rule {
-      font-size: 1pt; line-height: 1pt; margin: 0; padding: 0; height: 1pt;
-      border: 0; border-top: 0.5pt solid #000; overflow: hidden;
-    }
-    .resume-paper .r-section {
-      font-size: var(--fs-title, 14pt); font-weight: 700; text-transform: uppercase; letter-spacing: 0;
-      border-bottom: 0.5pt solid #000; margin: var(--sp-section, 7.1pt) 0 0 4.55pt; padding: 0;
-      color: #000; line-height: var(--fs-title, 14pt); text-align: left;
-    }
-    .resume-paper .r-job { width: 100%; border-collapse: collapse; margin: var(--sp-job, 1.85pt) 0 0 0; }
-    .resume-paper .r-job td {
-      font-size: var(--fs-role, 11pt); font-weight: 700; color: #000; padding: 0; line-height: var(--lh-role, 11pt);
-      vertical-align: bottom; font-family: Calibri, Arial, sans-serif; text-align: left;
-    }
-    .resume-paper .r-job td:first-child { padding-left: 4.55pt; }
-    .resume-paper .r-dates { text-align: right; white-space: nowrap; width: 32%; }
-    .resume-paper .r-role {
-      font-size: var(--fs-role, 11pt); font-weight: 700; color: #000;
-      margin: var(--sp-job, 1.85pt) 0 0 4.55pt; line-height: var(--lh-role, 11pt); text-align: left;
-    }
-    .resume-paper .r-role i, .resume-paper .r-job i { font-style: italic; font-weight: 700; }
-    .resume-paper .r-bullet {
-      display: flex; align-items: flex-start; gap: 0;
-      font-size: var(--fs-body, 10pt); color: #000;
-      margin: 0 0 0 4.55pt; padding: 0; text-indent: 0; text-align: left;
-      line-height: var(--lh-body, 11.5pt);
-    }
-    .resume-paper .r-bmark { flex: 0 0 12pt; width: 12pt; text-align: left; line-height: inherit; }
-    .resume-paper .r-btext { flex: 1 1 auto; min-width: 0; text-align: left; text-indent: 0; }
-    .resume-paper .r-job + .r-bullet, .resume-paper .r-role + .r-bullet { margin-top: var(--sp-bullet, 2.05pt); }
-    .resume-paper .r-body {
-      font-size: var(--fs-body, 10pt); color: #000; margin: var(--sp-body, 1.5pt) 0 0 4.55pt; padding: 0;
-      line-height: var(--lh-body, 11.5pt); text-align: justify;
-    }
-    .resume-paper .r-skill-line {
-      font-size: var(--fs-body, 10pt); color: #000; margin: var(--sp-skill, 1.7pt) 0 0 4.55pt; padding: 0;
-      line-height: var(--lh-body, 11.5pt); text-align: justify;
-    }
-    .resume-paper .r-section + .r-skill-line, .resume-paper .r-section + .r-body { margin-top: var(--sp-body, 1.5pt); }
-    .resume-paper .r-skill-label { font-weight: 700; color: #000; }
-    .resume-paper b, .resume-paper strong { font-weight: 700; color: #000; }
-    .resume-paper a { color: #1a56c4; text-decoration: underline; }
-    @page { size: letter portrait; margin: 0; }
-    @media print {
-      html, body { margin: 0; background: #fff; }
-      .resume-paper { width: 8.5in; min-height: auto; box-shadow: none; }
-      * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    }
-  `;
+function buildPrintHtml(content, opts = {}) {
+  const jd = opts.jd != null
+    ? opts.jd
+    : (($('jdInput') && $('jdInput').value.trim()) || '');
+  const keywords = opts.keywords != null ? opts.keywords : (state.keywords || {});
+  if (content) showFormattedResume(content);
+  const paper = $('resumePaper');
+  if (!paper || !paper.innerHTML.trim()) return null;
+  const printTitle = opts.printTitle || buildExportBasename(
+    content || currentResumeText(),
+    jd,
+    keywords
+  );
+  const fit = state.docFit || { bodyPt: PAGE_FIT.BODY_AVG, lh: 1, pages: 1 };
+  const bodyPt = fit.bodyPt || PAGE_FIT.BODY_AVG;
+  const lh = fit.lh || 1;
+  const lhPt = (bodyPt * 1.15 * lh).toFixed(2);
+  const tmp = document.createElement('div');
+  tmp.innerHTML = paper.innerHTML;
+  tmp.querySelectorAll('.r-page-start').forEach(el => el.classList.remove('r-page-start'));
+  tmp.querySelectorAll('.r-page-break').forEach(el => el.remove());
+  const bodyHtml = tmp.innerHTML;
+  const safeTitle = escapeHtml(printTitle);
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${safeTitle}</title>
+<style>
+  @page { size: 8.5in 11in; margin: ${pageMarginsCss()}; }
+  html, body { margin: 0; padding: 0; background: #fff; overflow: visible; }
+  body {
+    font-family: Calibri, Arial, sans-serif;
+    font-size: ${bodyPt.toFixed(2)}pt;
+    color: #000;
+    line-height: ${lhPt}pt;
+    mso-line-height-rule: exactly;
+    text-align: left;
+    orphans: 2;
+    widows: 2;
+  }
+  .WordSection1 { text-align: left; overflow: visible; }
+  ${resumeCss()}
+  .r-bullet {
+    display: block !important;
+    margin: 0 0 0 4.55pt !important;
+    padding-left: 13.5pt !important;
+    text-indent: -13.5pt !important;
+  }
+  .r-bmark, .r-btext { display: inline; }
+  .r-section,
+  .r-job,
+  .r-role,
+  .r-skill-line,
+  .r-body,
+  .r-bullet,
+  table.r-job {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .r-section + .r-job,
+  .r-section + .r-role,
+  .r-section + .r-bullet,
+  .r-section + .r-skill-line,
+  .r-section + .r-body {
+    break-before: avoid;
+    page-break-before: avoid;
+  }
+  @media print {
+    @page { size: 8.5in 11in; margin: ${pageMarginsCss()}; }
+    html, body { margin: 0; padding: 0; background: #fff; overflow: visible; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style></head><body><div class="WordSection1">${bodyHtml}</div>
+<script>
+window.onload = function() {
+  var fn = ${JSON.stringify(printTitle)};
+  document.title = fn;
+  var t = document.querySelector('title');
+  if (t) t.textContent = fn;
+  window.focus();
+  setTimeout(function() { window.print(); }, 300);
+};
+<\/script></body></html>`;
 }
 
 function printResume() {
   const content = currentResumeText();
   if (!content) { showToast('Nothing to print yet', '#e11d48'); return; }
-  const paper = $('resumePaper');
-  if (!paper || !paper.innerHTML.trim()) showFormattedResume(content);
-  const live = $('resumePaper');
-  if (!live || !live.innerHTML.trim()) { showToast('Nothing to print yet', '#e11d48'); return; }
-  const clone = live.cloneNode(true);
-  clone.classList.remove('two-page');
-  clone.style.minHeight = 'auto';
-  clone.style.boxShadow = 'none';
-  clone.style.margin = '0';
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title></title>
-    <style>${resumePaperLayoutCss()}</style>
-  </head><body>${clone.outerHTML}
-  <script>window.onload=function(){window.focus();setTimeout(function(){window.print();},200);}<\/script></body></html>`;
-  const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
-  const w = window.open(url, '_blank');
-  if (!w) showToast('Allow pop-ups to print', '#e11d48');
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  const base = updateExportFilename(content);
+  const html = buildPrintHtml(content);
+  if (!html) { showToast('Nothing to print yet', '#e11d48'); return; }
+  const w = window.open('', '_blank');
+  if (!w) {
+    showToast('Allow pop-ups to print', '#e11d48');
+    return;
+  }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  showToast(`Print / save PDF as: ${base}.pdf`);
 }
 
 function copyFilename() {
@@ -2421,19 +4040,62 @@ async function pingHealth() {
     if (data.ok && data.gemini) {
       markGemini(true, data.keyName ? `Model ready · ${data.keyName}` : 'Model ready');
       $('serverHint').classList.add('hidden');
+      if ($('uploadHint')) $('uploadHint').classList.toggle('hidden', data.extractResume !== false);
       return;
     }
   } catch { /* offline */ }
   markGemini(false);
   $('serverHint').classList.remove('hidden');
+  if ($('uploadHint')) $('uploadHint').classList.add('hidden');
 }
 
-$('jdInput').addEventListener('input', updateCounts);
-$('resumeInput').addEventListener('input', updateCounts);
+async function bootstrapApp() {
+  screenLoadingDepth = 1;
+  document.body.classList.add('screen-loading');
+  try {
+    loadWorkspace();
+    applyBaseResumeToUi();
+    applyUrlSession();
+    syncUiFromActiveSession();
+    initResumeUpload();
+    initTracks();
+    updateCounts();
+    await pingHealth();
+  } finally {
+    hideScreenLoading();
+    maybePrintOnLoad();
+  }
+}
+
+function applyUrlSession() {
+  const params = new URLSearchParams(window.location.search);
+  const sessionId = params.get('session');
+  const shouldPrint = params.get('print') === '1';
+  if (!sessionId) return;
+  const session = state.jdSessions.find(s => s.id === sessionId);
+  if (!session) return;
+  state.activeJdId = sessionId;
+  if (shouldPrint && String(session.tailoredResume || '').trim().length > 50) {
+    window.__printOnLoad = true;
+  }
+  if (window.history?.replaceState) {
+    window.history.replaceState(null, '', 'index.html');
+  }
+}
+
+function maybePrintOnLoad() {
+  if (!window.__printOnLoad) return;
+  window.__printOnLoad = false;
+  if (String(state.tailoredResume || '').trim().length > 50) {
+    setTimeout(() => printResume(), 400);
+  }
+}
+
+$('jdInput').addEventListener('input', onJdInput);
+$('resumeInput').addEventListener('input', onResumeInput);
 $('outputArea').addEventListener('input', () => {
   state.tailoredResume = $('outputArea').textContent;
   showFormattedResume(state.tailoredResume);
+  scheduleSaveWorkspace();
 });
-initTracks();
-pingHealth();
-updateCounts();
+bootstrapApp();
