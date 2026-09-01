@@ -134,7 +134,6 @@ function persistCurrentJdSession(keywords) {
   session.tailoredResume = state.tailoredResume || ($('outputArea') && $('outputArea').textContent) || '';
   syncJdSessionMeta(session, keywords || state.keywords);
   session.updatedAt = Date.now();
-  renderResumeHistory();
 }
 
 function initDefaultWorkspace() {
@@ -231,85 +230,6 @@ function renderJdTabs() {
     </div>`;
   }).join('') + '<button type="button" class="jd-tab add" onclick="addJdSession()"><span class="jd-tab-add-icon">+</span> Add posting</button>';
   updateJdActiveMeta();
-  renderResumeHistory();
-}
-
-function getHistorySessions() {
-  return state.jdSessions
-    .filter(s => String(s.tailoredResume || '').trim().length > 120)
-    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-}
-
-function formatHistoryDate(ts) {
-  if (!ts) return '';
-  try {
-    return new Date(ts).toLocaleString(undefined, {
-      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-    });
-  } catch {
-    return '';
-  }
-}
-
-function renderResumeHistory() {
-  const el = $('resumeHistory');
-  if (!el) return;
-  const items = getHistorySessions();
-  if (!items.length) {
-    el.innerHTML = '<p class="rail-history-empty">Rewrite a posting to build your print history.</p>';
-    return;
-  }
-  el.innerHTML = items.map(s => {
-    const meta = deriveJdSessionMeta(s.jd);
-    const title = formatTabJobTitle(s.roleTitle || meta.fullTitle || s.label || 'Untitled role', { full: true });
-    const company = (s.company || meta.company || '').trim();
-    const active = s.id === state.activeJdId;
-    return `
-      <article class="rail-history-item ${active ? 'active' : ''}" onclick="openHistorySession('${s.id}')">
-        <div class="rail-history-title" title="${escapeHtml(title).replace(/"/g, '&quot;')}">${escapeHtml(title)}</div>
-        ${company ? `<div class="rail-history-sub">${escapeHtml(company)}</div>` : ''}
-        <div class="rail-history-meta">${escapeHtml(formatHistoryDate(s.updatedAt))}</div>
-        <div class="rail-history-actions">
-          <button type="button" class="rail-history-print" onclick="printSessionResume('${s.id}', event)">Print</button>
-        </div>
-      </article>`;
-  }).join('');
-}
-
-function openHistorySession(id) {
-  if (id === state.activeJdId) {
-    const target = $('resultsSection') || $('resumePaper');
-    if (target && !target.classList?.contains('hidden')) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-    return;
-  }
-  switchJdSession(id);
-  setTimeout(() => {
-    const target = $('resultsSection') || $('resumePaper');
-    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, 80);
-}
-
-function printSessionResume(id, event) {
-  event?.stopPropagation?.();
-  event?.preventDefault?.();
-  const session = state.jdSessions.find(s => s.id === id);
-  const content = String(session?.tailoredResume || '').trim();
-  if (!content || content.length < 50) {
-    showToast('No tailored resume to print', '#e11d48');
-    return;
-  }
-  if (id !== state.activeJdId) {
-    persistCurrentJdSession();
-    state.activeJdId = id;
-    syncUiFromActiveSession();
-  } else {
-    state.tailoredResume = content;
-    if ($('outputArea')) $('outputArea').textContent = content;
-    showFormattedResume(content);
-  }
-  printResume();
 }
 
 function syncUiFromActiveSession() {
@@ -3537,7 +3457,7 @@ function resumeCssBlock(bodyPt, lh, sel = '') {
     ${s}.r-role { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsRole}; font-weight: bold; color: #000000; margin: ${t.spJob} 0 0 4.55pt; line-height: ${t.lhRole}; text-align: left; }
     ${s}.r-role i, ${s}.r-job i { font-style: italic; font-weight: bold; }
     ${s}.r-bullet { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsBody}; color: #000000; margin: 0 0 0 18pt; text-indent: -13.5pt; line-height: ${t.lhBody}; mso-line-height-rule: exactly; padding: 0; text-align: left; }
-    ${s}.r-job + .r-bullet, ${s}.r-role + .r-bullet { margin-top: ${t.spBullet}; }
+    ${s}.r-job + .r-bullet, ${s}.r-role + .r-bullet, ${s}.r-bullet + .r-bullet { margin-top: ${t.spBullet}; }
     ${s}.r-body { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsBody}; color: #000000; margin: ${t.spBody} 0 0 4.55pt; padding: 0; line-height: ${t.lhBody}; mso-line-height-rule: exactly; text-align: justify; }
     ${s}.r-skill-line { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsBody}; color: #000000; margin: ${t.spSkill} 0 0 4.55pt; padding: 0; line-height: ${t.lhBody}; mso-line-height-rule: exactly; text-align: justify; }
     ${s}.r-section + .r-skill-line, ${s}.r-section + .r-body { margin-top: ${t.spBody}; }
@@ -3602,9 +3522,9 @@ function measureResumeContent(paper) {
 }
 
 const PAGE_FIT = {
-  BODY_MIN: 9.5,
+  BODY_MIN: 8.8,
   BODY_MAX: 12,
-  BODY_AVG: 10.75,
+  BODY_AVG: 10.4,
   LH_MIN: 0.92,
   LH_MAX: 1.08,
   FILL_MIN: 0.985,
@@ -3613,6 +3533,11 @@ const PAGE_FIT = {
 };
 
 const PAGE_MARGINS = { top: 0.05, right: 0.10, bottom: 0.19, left: 0.10 };
+const US_LETTER = { widthIn: 8.5, heightIn: 11 };
+
+function letterPageSizeCss() {
+  return `size: letter portrait; size: ${US_LETTER.widthIn}in ${US_LETTER.heightIn}in;`;
+}
 
 function pageMarginsCss() {
   const m = PAGE_MARGINS;
@@ -3655,6 +3580,56 @@ function compressLhToHeight(measure, apply, bodyPt, maxH, lhMin, lhMax) {
     else hi = mid;
   }
   return Math.round(best * 100) / 100;
+}
+
+function measureFirstPageFill(paper, pageHi) {
+  let fill = 0;
+  for (const el of paper.children) {
+    if (el.classList.contains('r-page-break')) continue;
+    const top = el.offsetTop;
+    const bottom = top + el.offsetHeight;
+    if (top >= pageHi - 0.5) break;
+    fill = bottom <= pageHi ? Math.max(fill, bottom) : pageHi;
+    if (bottom > pageHi) break;
+  }
+  return fill;
+}
+
+function expandToFillFirstPage(measureFirst, measureTotal, apply, bodyPt, lh, loBound, totalHi, F) {
+  let bestPt = bodyPt;
+  let bestLh = lh;
+  const fits = () => measureTotal() <= totalHi;
+  const firstFill = () => measureFirst();
+
+  if (firstFill() < loBound) {
+    let lo = bodyPt;
+    let hi = F.BODY_MAX;
+    for (let i = 0; i < 14; i++) {
+      const mid = (lo + hi) / 2;
+      apply(mid, lh);
+      if (!fits()) hi = mid;
+      else if (firstFill() < loBound) { bestPt = mid; lo = mid; }
+      else { bestPt = mid; break; }
+    }
+    bodyPt = Math.round(bestPt * 10) / 10;
+    apply(bodyPt, lh);
+  }
+
+  if (firstFill() < loBound) {
+    let lo = lh;
+    let hi = F.LH_MAX;
+    for (let i = 0; i < 12; i++) {
+      const mid = (lo + hi) / 2;
+      apply(bodyPt, mid);
+      if (!fits()) hi = mid;
+      else if (firstFill() < loBound) { bestLh = mid; lo = mid; }
+      else { bestLh = mid; break; }
+    }
+    lh = Math.round(bestLh * 100) / 100;
+    apply(bodyPt, lh);
+  }
+
+  return { bodyPt, lh: Math.round(lh * 100) / 100 };
 }
 
 function expandToFillPage(measure, apply, bodyPt, loBound, hiBound, F) {
@@ -3700,41 +3675,46 @@ function expandToFillPage(measure, apply, bodyPt, loBound, hiBound, F) {
 
 function fitResumeToPage(paper) {
   const F = PAGE_FIT;
-  const hiBound = pageContentHeight() * F.FIT_MAX;
+  const pageHi = pageContentHeight() * F.FIT_MAX;
   const loBound = pageContentHeight() * F.FILL_MIN;
+  const totalHi = pageHi * F.MAX_PAGES;
   const measure = () => {
     void paper.offsetHeight;
     return measureResumeContent(paper);
   };
+  const measureFirst = () => {
+    void paper.offsetHeight;
+    return measureFirstPageFill(paper, pageHi);
+  };
   const apply = (bodyPt, lh) => applyResumeFitVars(paper, bodyPt, lh);
 
-  // Prefer one page: scale 12pt → 9.5pt (and tighten line height) before adding page 2
+  // Prefer one page: squeeze down to 8.8pt before spilling to page 2
   apply(F.BODY_MAX, 1);
-  if (measure() <= hiBound) {
-    const bodyPt = largestBodyThatFits(measure, apply, hiBound, F.BODY_MIN, F.BODY_MAX);
-    return expandToFillPage(measure, apply, bodyPt, loBound, hiBound, F);
+  if (measure() <= pageHi) {
+    const bodyPt = largestBodyThatFits(measure, apply, pageHi, F.BODY_MIN, F.BODY_MAX);
+    return expandToFillPage(measure, apply, bodyPt, loBound, pageHi, F);
   }
 
-  let bodyPt = largestBodyThatFits(measure, apply, hiBound, F.BODY_MIN, F.BODY_MAX);
+  let bodyPt = largestBodyThatFits(measure, apply, pageHi, F.BODY_MIN, F.BODY_MAX);
   let lh = 1;
   apply(bodyPt, lh);
-  if (measure() > hiBound) {
-    lh = compressLhToHeight(measure, apply, bodyPt, hiBound, F.LH_MIN, F.LH_MAX);
+  if (measure() > pageHi) {
+    lh = compressLhToHeight(measure, apply, bodyPt, pageHi, F.LH_MIN, F.LH_MAX);
   }
   apply(bodyPt, lh);
-  if (measure() <= hiBound) {
-    return expandToFillPage(measure, apply, bodyPt, loBound, hiBound, F);
+  if (measure() <= pageHi) {
+    return expandToFillPage(measure, apply, bodyPt, loBound, pageHi, F);
   }
 
-  // Still overflows at 9.5pt minimum — use a second page
-  const maxTotal = hiBound * F.MAX_PAGES;
-  bodyPt = largestBodyThatFits(measure, apply, maxTotal, F.BODY_MIN, F.BODY_MAX);
-  lh = 1;
+  // Still overflows at 8.8pt on one page — use page 2, then grow type to fill page 1
+  bodyPt = F.BODY_MIN;
+  lh = F.LH_MIN;
   apply(bodyPt, lh);
-  if (measure() > maxTotal) {
-    lh = compressLhToHeight(measure, apply, bodyPt, maxTotal, F.LH_MIN, F.LH_MAX);
+  if (measure() > totalHi) {
+    lh = compressLhToHeight(measure, apply, bodyPt, totalHi, F.LH_MIN, F.LH_MAX);
   }
-  return { bodyPt, lh: Math.round(lh * 100) / 100, pages: 2 };
+  const grown = expandToFillFirstPage(measureFirst, measure, apply, bodyPt, lh, loBound, totalHi, F);
+  return { ...grown, pages: 2 };
 }
 
 function formatFitHint(fit) {
@@ -3742,9 +3722,9 @@ function formatFitHint(fit) {
   const pt = (fit.bodyPt || PAGE_FIT.BODY_AVG).toFixed(1);
   const namePt = (fit.bodyPt * 1.8).toFixed(1);
   if ((fit.pages || 1) > 1) {
-    return `2 pages · ${pt}pt body (only used because 9.5pt still overflows one page) · name ~${namePt}pt`;
+    return `2 pages · ${pt}pt body (8.8pt min on one page; grown to fill page 1) · name ~${namePt}pt`;
   }
-  return `1 page · ${pt}pt body (9.5–12pt, squeezed to one page when possible) · name ~${namePt}pt`;
+  return `1 page · ${pt}pt body (8.8–12pt, grown to fill the page) · name ~${namePt}pt`;
 }
 
 function clearPageBreaks(paper) {
@@ -3758,60 +3738,10 @@ function clearPage2Wrap(paper) {
   });
 }
 
-function contentHeightBefore(kids, beforeEl) {
-  const top = beforeEl.offsetTop;
-  let max = 0;
-  for (const el of kids) {
-    if (el.offsetTop >= top - 0.5) continue;
-    max = Math.max(max, el.offsetTop + el.offsetHeight);
-  }
-  return max;
-}
-
-function normalizeBreakTarget(kids, el) {
-  let target = el;
-  if (target.classList.contains('r-job') || target.classList.contains('r-role')) {
-    const idx = kids.indexOf(target);
-    const prev = idx > 0 ? kids[idx - 1] : null;
-    if (prev && prev.classList.contains('r-section')) target = prev;
-  }
-  return target;
-}
-
-function findPageBreakTarget(paper, pageHeight) {
-  const kids = [...paper.children].filter(c => !c.classList.contains('r-page-break'));
-  if (!kids.length) return null;
-
-  const totalH = Math.max(...kids.map(el => el.offsetTop + el.offsetHeight));
-  const limit = pageHeight * PAGE_FIT.FIT_MAX;
-  if (totalH <= limit * 1.02) return null;
-
-  const minFill = pageHeight * 0.84;
-  const breakables = kids.filter(el =>
-    el.classList.contains('r-section') ||
-    el.classList.contains('r-job') ||
-    el.classList.contains('r-role')
-  );
-
-  let best = null;
-  for (const el of breakables) {
-    const target = normalizeBreakTarget(kids, el);
-    const fill = contentHeightBefore(kids, target);
-    if (fill < minFill || fill > limit) continue;
-    if (!best || fill > best.fill) best = { el: target, fill };
-  }
-  if (best) return best.el;
-
-  // No break fills page 1 enough — let the print engine paginate naturally at @page height
-  return null;
-}
-
-function markFirstPageEnd(paper, pageHeight) {
-  clearPageBreaks(paper);
+function clearPrintPageMarkers(paper) {
+  if (!paper) return;
   paper.querySelectorAll('.r-page-start').forEach(el => el.classList.remove('r-page-start'));
-  const target = findPageBreakTarget(paper, pageHeight);
-  if (!target) return;
-  target.classList.add('r-page-start');
+  paper.querySelectorAll('.r-page-break').forEach(el => el.remove());
 }
 
 function currentResumeText() {
@@ -3833,16 +3763,15 @@ function showFormattedResume(text) {
   paper.innerHTML = parseResumeToHtml(cleaned);
   applyPageMargins(paper);
   applyResumeFitVars(paper, PAGE_FIT.BODY_AVG, 1);
-  const pageHeight = pageContentHeight();
   const fit = fitResumeToPage(paper);
   state.docFit = fit;
   applyResumeFitVars(paper, fit.bodyPt, fit.lh);
+  clearPrintPageMarkers(paper);
   if (fit.pages > 1) {
-    markFirstPageEnd(paper, pageHeight);
     paper.classList.add('two-page');
-    paper.style.minHeight = (11 * fit.pages) + 'in';
+    paper.style.minHeight = (US_LETTER.heightIn * fit.pages) + 'in';
   } else {
-    paper.style.minHeight = '11in';
+    paper.style.minHeight = US_LETTER.heightIn + 'in';
   }
   const fitHint = $('resumeFitHint');
   if (fitHint) fitHint.textContent = formatFitHint(fit);
@@ -3871,7 +3800,7 @@ function buildWordHtml(content, title) {
   <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
   <style>
     @page WordSection1 {
-      size: 8.5in 11in;
+      ${letterPageSizeCss()}
       margin: ${pageMarginsCss()};
       mso-header-margin: 0in;
       mso-footer-margin: 0in;
@@ -3915,94 +3844,151 @@ function copyToClipboard() {
   navigator.clipboard.writeText(currentResumeText()).then(() => showToast('Copied to clipboard'));
 }
 
-function buildPrintHtml(content, opts = {}) {
-  const jd = opts.jd != null
-    ? opts.jd
-    : (($('jdInput') && $('jdInput').value.trim()) || '');
-  const keywords = opts.keywords != null ? opts.keywords : (state.keywords || {});
-  if (content) showFormattedResume(content);
-  const paper = $('resumePaper');
-  if (!paper || !paper.innerHTML.trim()) return null;
-  const printTitle = opts.printTitle || buildExportBasename(
-    content || currentResumeText(),
-    jd,
-    keywords
-  );
-  const fit = state.docFit || { bodyPt: PAGE_FIT.BODY_AVG, lh: 1, pages: 1 };
-  const bodyPt = fit.bodyPt || PAGE_FIT.BODY_AVG;
-  const lh = fit.lh || 1;
-  const lhPt = (bodyPt * 1.15 * lh).toFixed(2);
-  const tmp = document.createElement('div');
-  tmp.innerHTML = paper.innerHTML;
-  tmp.querySelectorAll('.r-page-start').forEach(el => el.classList.remove('r-page-start'));
-  tmp.querySelectorAll('.r-page-break').forEach(el => el.remove());
-  const bodyHtml = tmp.innerHTML;
-  const safeTitle = escapeHtml(printTitle);
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${safeTitle}</title>
-<style>
-  @page { size: 8.5in 11in; margin: ${pageMarginsCss()}; }
-  html, body { margin: 0; padding: 0; background: #fff; overflow: visible; }
-  body {
-    font-family: Calibri, Arial, sans-serif;
-    font-size: ${bodyPt.toFixed(2)}pt;
-    color: #000;
-    line-height: ${lhPt}pt;
-    mso-line-height-rule: exactly;
-    text-align: left;
-    orphans: 2;
-    widows: 2;
-  }
-  .WordSection1 { text-align: left; overflow: visible; }
-  ${resumeCss()}
-  .r-bullet {
-    display: block !important;
-    margin: 0 0 0 4.55pt !important;
-    padding-left: 13.5pt !important;
-    text-indent: -13.5pt !important;
-  }
-  .r-bmark, .r-btext { display: inline; }
-  .r-section,
-  .r-job,
-  .r-role,
-  .r-skill-line,
-  .r-body,
-  .r-bullet,
-  table.r-job {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-  .r-section + .r-job,
-  .r-section + .r-role,
-  .r-section + .r-bullet,
-  .r-section + .r-skill-line,
-  .r-section + .r-body {
-    break-before: avoid;
-    page-break-before: avoid;
-  }
-  @media print {
-    @page { size: 8.5in 11in; margin: ${pageMarginsCss()}; }
-    html, body { margin: 0; padding: 0; background: #fff; overflow: visible; }
-    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  }
-</style></head><body><div class="WordSection1">${bodyHtml}</div>
-<script>
-window.onload = function() {
-  var fn = ${JSON.stringify(printTitle)};
-  document.title = fn;
-  var t = document.querySelector('title');
-  if (t) t.textContent = fn;
-  window.focus();
-  setTimeout(function() { window.print(); }, 300);
-};
-<\/script></body></html>`;
+function resumePaperLayoutCss() {
+  const w = US_LETTER.widthIn;
+  return `
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: #fff; }
+    .resume-paper {
+      background: #fff;
+      color: #000;
+      width: ${w}in;
+      min-height: 0;
+      max-width: none;
+      margin: 0;
+      box-sizing: border-box;
+      position: relative;
+      padding: 0;
+      box-shadow: none;
+      font-family: Calibri, Arial, sans-serif;
+      font-size: var(--fs-body, 12pt);
+      line-height: var(--lh-body, 13.8pt);
+    }
+    .resume-paper .r-name {
+      font-size: var(--fs-name, 21.6pt); font-weight: 700; text-align: center; color: #000;
+      margin: 0; padding: 0; line-height: var(--lh-name, 26.3pt);
+    }
+    .resume-paper .r-headline {
+      font-size: var(--fs-title, 16.8pt); font-weight: 700; text-align: center; color: #000;
+      margin: 3.2pt 0 0 0; padding: 0; line-height: var(--fs-title, 16.8pt);
+    }
+    .resume-paper .r-contact {
+      font-size: var(--fs-body, 12pt); text-align: center; color: #000;
+      margin: 0; padding: 0; line-height: var(--lh-body, 11.5pt);
+    }
+    .resume-paper .r-rule {
+      font-size: 1pt; line-height: 1pt; margin: 0; padding: 0; height: 1pt;
+      border: 0; border-top: 0.5pt solid #000; overflow: hidden;
+    }
+    .resume-paper .r-section {
+      font-size: var(--fs-title, 16.8pt); font-weight: 700; text-transform: uppercase; letter-spacing: 0;
+      border-bottom: 0.5pt solid #000; margin: var(--sp-section, 7.1pt) 0 0 4.55pt; padding: 0;
+      color: #000; line-height: var(--fs-title, 16.8pt); text-align: left;
+      break-after: avoid; page-break-after: avoid;
+    }
+    .resume-paper .r-job {
+      width: 100%; border-collapse: collapse; margin: var(--sp-job, 1.85pt) 0 0 0;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .resume-paper .r-job td {
+      font-size: var(--fs-role, 13.2pt); font-weight: 700; color: #000; padding: 0; line-height: var(--lh-role, 13.2pt);
+      vertical-align: bottom; font-family: Calibri, Arial, sans-serif; text-align: left;
+    }
+    .resume-paper .r-job td:first-child { padding-left: 4.55pt; }
+    .resume-paper .r-dates { text-align: right; white-space: nowrap; width: 32%; }
+    .resume-paper .r-role {
+      font-size: var(--fs-role, 13.2pt); font-weight: 700; color: #000;
+      margin: var(--sp-job, 1.85pt) 0 0 4.55pt; line-height: var(--lh-role, 13.2pt); text-align: left;
+      break-after: avoid; page-break-after: avoid;
+    }
+    .resume-paper .r-role i, .resume-paper .r-job i { font-style: italic; font-weight: 700; }
+    .resume-paper .r-section,
+    .resume-paper .r-role,
+    .resume-paper .r-body,
+    .resume-paper .r-skill-line { text-align: left; }
+    .resume-paper .r-bullet {
+      display: flex; align-items: flex-start; gap: 0;
+      font-size: var(--fs-body, 12pt); color: #000;
+      margin: 0 0 0 4.55pt; padding: 0; text-indent: 0; text-align: left;
+      line-height: var(--lh-body, 13.8pt);
+      break-inside: auto; page-break-inside: auto;
+      orphans: 2; widows: 2;
+    }
+    .resume-paper .r-bmark { flex: 0 0 12pt; width: 12pt; text-align: left; line-height: inherit; }
+    .resume-paper .r-btext { flex: 1 1 auto; min-width: 0; text-align: left; text-indent: 0; }
+    .resume-paper .r-job + .r-bullet,
+    .resume-paper .r-role + .r-bullet,
+    .resume-paper .r-bullet + .r-bullet { margin-top: var(--sp-bullet, 2.05pt); }
+    .resume-paper .r-body {
+      font-size: var(--fs-body, 12pt); color: #000; margin: var(--sp-body, 1.5pt) 0 0 4.55pt; padding: 0;
+      line-height: var(--lh-body, 13.8pt); text-align: justify;
+    }
+    .resume-paper .r-skill-line {
+      font-size: var(--fs-body, 12pt); color: #000; margin: var(--sp-skill, 1.7pt) 0 0 4.55pt; padding: 0;
+      line-height: var(--lh-body, 13.8pt); text-align: justify;
+    }
+    .resume-paper .r-section + .r-skill-line, .resume-paper .r-section + .r-body { margin-top: var(--sp-body, 1.5pt); }
+    .resume-paper .r-skill-label { font-weight: 700; color: #000; }
+    .resume-paper b, .resume-paper strong { font-weight: 700; color: #000; }
+    .resume-paper a { color: #1a56c4; text-decoration: underline; }
+    .resume-paper .r-section + .r-job,
+    .resume-paper .r-section + .r-role,
+    .resume-paper .r-section + .r-bullet,
+    .resume-paper .r-section + .r-skill-line,
+    .resume-paper .r-section + .r-body { break-before: avoid; page-break-before: avoid; }
+    @page { ${letterPageSizeCss()} margin: ${pageMarginsCss()}; }
+    @media print {
+      html, body { margin: 0; padding: 0; background: #fff; }
+      .resume-paper {
+        width: ${w}in !important;
+        min-height: 0 !important;
+        height: auto !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        box-shadow: none;
+      }
+      * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  `;
+}
+
+function preparePrintClone(live) {
+  const clone = live.cloneNode(true);
+  clone.classList.remove('two-page');
+  clone.querySelectorAll('.r-page-start').forEach(el => el.classList.remove('r-page-start'));
+  clone.querySelectorAll('.r-page-break').forEach(el => el.remove());
+  clone.style.boxShadow = 'none';
+  clone.style.margin = '0';
+  clone.style.maxWidth = 'none';
+  clone.style.width = US_LETTER.widthIn + 'in';
+  clone.style.minHeight = '0';
+  clone.style.height = 'auto';
+  clone.style.padding = '0';
+  return clone;
 }
 
 function printResume() {
   const content = currentResumeText();
   if (!content) { showToast('Nothing to print yet', '#e11d48'); return; }
+  showFormattedResume(content);
+  const live = $('resumePaper');
+  if (!live || !live.innerHTML.trim()) { showToast('Nothing to print yet', '#e11d48'); return; }
   const base = updateExportFilename(content);
-  const html = buildPrintHtml(content);
-  if (!html) { showToast('Nothing to print yet', '#e11d48'); return; }
+  const clone = preparePrintClone(live);
+  const safeTitle = escapeHtml(base);
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${safeTitle}</title>
+<style>${resumePaperLayoutCss()}</style>
+</head><body>${clone.outerHTML}
+<script>
+window.onload = function() {
+  var fn = ${JSON.stringify(base)};
+  document.title = fn;
+  var t = document.querySelector('title');
+  if (t) t.textContent = fn;
+  window.focus();
+  setTimeout(function() { window.print(); }, 250);
+};
+<\/script></body></html>`;
   const w = window.open('', '_blank');
   if (!w) {
     showToast('Allow pop-ups to print', '#e11d48');
@@ -4011,7 +3997,7 @@ function printResume() {
   w.document.open();
   w.document.write(html);
   w.document.close();
-  showToast(`Print / save PDF as: ${base}.pdf`);
+  showToast(`US Letter · save PDF as ${base}.pdf`);
 }
 
 function copyFilename() {
@@ -4055,7 +4041,6 @@ async function bootstrapApp() {
   try {
     loadWorkspace();
     applyBaseResumeToUi();
-    applyUrlSession();
     syncUiFromActiveSession();
     initResumeUpload();
     initTracks();
@@ -4063,31 +4048,6 @@ async function bootstrapApp() {
     await pingHealth();
   } finally {
     hideScreenLoading();
-    maybePrintOnLoad();
-  }
-}
-
-function applyUrlSession() {
-  const params = new URLSearchParams(window.location.search);
-  const sessionId = params.get('session');
-  const shouldPrint = params.get('print') === '1';
-  if (!sessionId) return;
-  const session = state.jdSessions.find(s => s.id === sessionId);
-  if (!session) return;
-  state.activeJdId = sessionId;
-  if (shouldPrint && String(session.tailoredResume || '').trim().length > 50) {
-    window.__printOnLoad = true;
-  }
-  if (window.history?.replaceState) {
-    window.history.replaceState(null, '', 'index.html');
-  }
-}
-
-function maybePrintOnLoad() {
-  if (!window.__printOnLoad) return;
-  window.__printOnLoad = false;
-  if (String(state.tailoredResume || '').trim().length > 50) {
-    setTimeout(() => printResume(), 400);
   }
 }
 

@@ -1,0 +1,10 @@
+.env
+.env.*
+resumes/
+__pycache__/
+*.pyc
+.git/
+start.bat
+start-prod.bat
+Dockerfile
+.dockerignore
