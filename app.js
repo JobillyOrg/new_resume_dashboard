@@ -112,6 +112,7 @@ let state = {
 };
 
 const WORKSPACE_KEY = 'jobilly_workspace_v1';
+const workspaceStorage = () => sessionStorage;
 let saveWorkspaceTimer = null;
 
 function newJdId() {
@@ -150,12 +151,13 @@ function saveWorkspace() {
     mode: state.mode,
     track: state.track,
   };
-  try { localStorage.setItem(WORKSPACE_KEY, JSON.stringify(payload)); } catch { /* quota */ }
+  try { workspaceStorage().setItem(WORKSPACE_KEY, JSON.stringify(payload)); } catch { /* quota */ }
 }
 
 function loadWorkspace() {
+  try { localStorage.removeItem(WORKSPACE_KEY); } catch { /* legacy cleanup */ }
   try {
-    const raw = localStorage.getItem(WORKSPACE_KEY);
+    const raw = workspaceStorage().getItem(WORKSPACE_KEY);
     if (!raw) {
       initDefaultWorkspace();
       return;
@@ -505,6 +507,7 @@ function showAiProcessing(title, sub = 'Please wait…') {
   if ($('progressSection')) $('progressSection').classList.add('hidden');
   if ($('detailAnalysisBar')) $('detailAnalysisBar').classList.add('hidden');
   if ($('detailAnalysisPanel')) $('detailAnalysisPanel').classList.add('hidden');
+  if ($('postRewriteScore')) $('postRewriteScore').classList.add('hidden');
   if ($('scoreSection')) $('scoreSection').classList.add('hidden');
   if ($('optimizeBoard')) $('optimizeBoard').classList.add('hidden');
   if ($('resultsSection')) $('resultsSection').classList.add('hidden');
@@ -992,6 +995,11 @@ YOUR JOB — extract from THIS posting only (not internet/market skills):
    Include stacks like Python, PyTorch, LangChain, LlamaIndex, RAG, embeddings, vector search, fine-tuning, LLM evaluation, MLOps, etc. when the JD mentions them.
 5. jdSecondary: 4-10 secondary items FROM THE JD ONLY — domain (healthcare, biopharma), practices (responsible AI, observability, production ML), or nice-to-have tools mentioned in the posting.
 6. atsKeywords: 12-20 exact ATS phrases from THIS JD — short phrases copied or closely mirrored (e.g. "retrieval pipelines", "prompt chaining", "inference orchestration").
+7. eligibility: read the JD for hard gates. Copy exact JD wording when possible:
+   - yearsNote: exact phrase about years of experience required (e.g. "5+ years of software engineering experience"), or null if not stated
+   - usCitizenshipText: exact phrase about US citizenship / U.S. citizen requirement, or null if not stated
+   - workAuthorizationText: exact phrase about work authorization, visa sponsorship, or right to work, or null if not stated
+   Also set boolean flags in workAuthorization when clearly stated.
 
 RULES:
 - jdPrimary = hard technical skills only (languages, frameworks, platforms, ML/LLM techniques).
@@ -1012,7 +1020,32 @@ Return ONLY JSON:
   "roleFamily": "ml",
   "jdPrimary": ["..."],
   "jdSecondary": ["..."],
-  "atsKeywords": ["..."]
+  "atsKeywords": ["..."],
+  "eligibility": {
+    "minYears": 5,
+    "maxYears": null,
+    "yearsNote": "5+ years of relevant experience",
+    "usCitizenshipText": "Must be a U.S. citizen",
+    "workAuthorizationText": "Must be authorized to work in the US without sponsorship",
+    "education": "Bachelor's in CS or related field",
+    "workAuthorization": {
+      "usCitizenRequired": false,
+      "usCitizenPreferred": false,
+      "authorizedToWorkRequired": true,
+      "noSponsorship": true,
+      "sponsorshipAvailable": false,
+      "clearanceRequired": false,
+      "clearanceLevel": "",
+      "notes": []
+    },
+    "location": {
+      "onsiteRequired": false,
+      "hybrid": true,
+      "remoteOk": true,
+      "locationNote": "Hybrid in Austin, TX"
+    },
+    "otherRequirements": ["Must pass background check"]
+  }
 }`;
 }
 
@@ -1070,6 +1103,299 @@ function mergeAiExtractions(jdAi, internetAi) {
   };
 }
 
+function parseJdEligibility(parsed) {
+  const e = (parsed && parsed.eligibility) || {};
+  const wa = e.workAuthorization || {};
+  const loc = e.location || {};
+  const minYears = Number(e.minYears);
+  const maxYears = Number(e.maxYears);
+  return {
+    minYears: Number.isFinite(minYears) && minYears > 0 ? minYears : null,
+    maxYears: Number.isFinite(maxYears) && maxYears > 0 ? maxYears : null,
+    yearsNote: String(e.yearsNote || '').trim(),
+    usCitizenshipText: String(e.usCitizenshipText || '').trim(),
+    workAuthorizationText: String(e.workAuthorizationText || '').trim(),
+    education: String(e.education || '').trim(),
+    workAuthorization: {
+      usCitizenRequired: !!wa.usCitizenRequired,
+      usCitizenPreferred: !!wa.usCitizenPreferred,
+      authorizedToWorkRequired: !!wa.authorizedToWorkRequired,
+      noSponsorship: !!wa.noSponsorship,
+      sponsorshipAvailable: !!wa.sponsorshipAvailable,
+      clearanceRequired: !!wa.clearanceRequired,
+      clearanceLevel: String(wa.clearanceLevel || '').trim(),
+      notes: Array.isArray(wa.notes) ? wa.notes.map(String).filter(Boolean) : [],
+    },
+    location: {
+      onsiteRequired: !!loc.onsiteRequired,
+      hybrid: !!loc.hybrid,
+      remoteOk: !!loc.remoteOk,
+      locationNote: String(loc.locationNote || '').trim(),
+    },
+    otherRequirements: Array.isArray(e.otherRequirements) ? e.otherRequirements.map(String).filter(Boolean) : [],
+  };
+}
+
+function extractJdLineSnippet(jd, patterns, maxLen = 180) {
+  const lines = String(jd || '').split('\n').map(l => l.trim()).filter(Boolean);
+  for (const line of lines) {
+    for (const re of patterns) {
+      if (re.test(line)) return line.slice(0, maxLen);
+    }
+  }
+  for (const re of patterns) {
+    const m = String(jd || '').match(re);
+    if (m) return m[0].trim().slice(0, maxLen);
+  }
+  return '';
+}
+
+function extractLocalEligibilityFromJd(jd) {
+  const t = String(jd || '');
+  const lower = t.toLowerCase();
+  let minYears = null;
+  let maxYears = null;
+  const yearPatterns = [
+    /(\d+)\s*\+\s*years?(?:\s+of)?(?:\s+(?:relevant|professional|related))?\s*experience/i,
+    /(\d+)\s*to\s*(\d+)\s*years?(?:\s+of)?(?:\s+(?:relevant|professional|related))?\s*experience/i,
+    /minimum\s+of\s+(\d+)\s+years?/i,
+    /at least\s+(\d+)\s+years?/i,
+    /(\d+)\s+years?(?:\s+of)?(?:\s+(?:relevant|professional|related))?\s*experience\s+required/i,
+  ];
+  for (const re of yearPatterns) {
+    const m = t.match(re);
+    if (!m) continue;
+    minYears = Number(m[1]);
+    if (m[2]) maxYears = Number(m[2]);
+    break;
+  }
+  const wa = {
+    usCitizenRequired: /\b(us citizen|u\.s\. citizen|united states citizen|must be a (?:u\.s\. )?citizen|citizenship required)\b/i.test(t)
+      && !/\b(citizenship|citizen).{0,30}(not required|no requirement)/i.test(t),
+    usCitizenPreferred: /\b(us citizen|u\.s\. citizen).{0,20}preferred\b/i.test(t),
+    authorizedToWorkRequired: /\b(authorized to work|legally authorized|eligible to work|work authorization|right to work|must be authorized)\b/i.test(t),
+    noSponsorship: /\b(no sponsorship|not provide sponsorship|will not sponsor|unable to sponsor|without sponsorship|not eligible for sponsorship|cannot sponsor|does not sponsor)\b/i.test(t),
+    sponsorshipAvailable: /\b(sponsorship available|will sponsor|visa sponsorship|h-1b sponsorship)\b/i.test(t)
+      && !/\b(no sponsorship|not provide|will not sponsor|unable to sponsor)\b/i.test(t),
+    clearanceRequired: /\b(security clearance|secret clearance|top secret|ts\/sci|public trust|active clearance)\b/i.test(t),
+    clearanceLevel: '',
+    notes: [],
+  };
+  const clearance = t.match(/\b(top secret\/sci|ts\/sci|top secret|secret clearance|public trust)\b/i);
+  if (clearance) wa.clearanceLevel = clearance[0];
+  if (wa.usCitizenRequired) wa.notes.push('US citizenship required');
+  else if (wa.usCitizenPreferred) wa.notes.push('US citizenship preferred');
+  if (wa.noSponsorship) wa.notes.push('No visa sponsorship');
+  else if (wa.sponsorshipAvailable) wa.notes.push('Visa sponsorship may be available');
+  if (wa.authorizedToWorkRequired && !wa.usCitizenRequired) wa.notes.push('Must be authorized to work in the US');
+  const location = {
+    onsiteRequired: /\b(on[- ]site|in[- ]office|in person|must (?:be )?relocate)\b/i.test(t) && !/\b(remote|work from home)\b/i.test(t.slice(0, 200)),
+    hybrid: /\bhybrid\b/i.test(t),
+    remoteOk: /\b(remote|work from home|fully remote|telecommute)\b/i.test(t),
+    locationNote: '',
+  };
+  const locMatch = t.match(/(?:location|based in|office in)[:\s]+([^\n.]{4,80})/i);
+  if (locMatch) location.locationNote = locMatch[1].trim();
+  let education = '';
+  const eduMatch = t.match(/(?:bachelor|master|phd|b\.s\.|m\.s\.|degree).{0,80}/i);
+  if (eduMatch) education = eduMatch[0].trim().slice(0, 120);
+
+  const yearsNote = minYears
+    ? extractJdLineSnippet(t, [
+      /\d+\s*\+?\s*years?.{0,80}experience/i,
+      /minimum\s+of\s+\d+\s+years?/i,
+      /at least\s+\d+\s+years?/i,
+    ]) || `${minYears}${maxYears ? `–${maxYears}` : '+'} years of experience`
+    : extractJdLineSnippet(t, [/\d+\s*\+?\s*years?.{0,80}experience/i, /minimum\s+of\s+\d+\s+years?/i]);
+
+  const usCitizenshipText = wa.usCitizenRequired
+    ? extractJdLineSnippet(t, [/u\.?s\.?\s*citizen/i, /united states citizen/i, /citizenship required/i]) || 'US citizenship required'
+    : wa.usCitizenPreferred
+      ? extractJdLineSnippet(t, [/u\.?s\.?\s*citizen.{0,30}preferred/i]) || 'US citizenship preferred'
+      : '';
+
+  const workAuthorizationText = extractJdLineSnippet(t, [
+    /authorized to work/i,
+    /work authorization/i,
+    /eligible to work/i,
+    /right to work/i,
+    /no sponsorship/i,
+    /not provide sponsorship/i,
+    /will not sponsor/i,
+    /visa sponsorship/i,
+    /h-1b/i,
+    /without sponsorship/i,
+  ]) || (wa.noSponsorship ? 'No visa sponsorship' : '')
+    || (wa.authorizedToWorkRequired ? 'Must be authorized to work in the US' : '')
+    || (wa.sponsorshipAvailable ? 'Visa sponsorship available' : '');
+
+  return {
+    minYears,
+    maxYears,
+    yearsNote,
+    usCitizenshipText,
+    workAuthorizationText,
+    education,
+    workAuthorization: wa,
+    location,
+    otherRequirements: [],
+    source: 'local',
+  };
+}
+
+function mergeEligibility(aiElig, localElig) {
+  const ai = aiElig || {};
+  const local = localElig || {};
+  const wa = { ...(local.workAuthorization || {}), ...(ai.workAuthorization || {}) };
+  const loc = { ...(local.location || {}), ...(ai.location || {}) };
+  return {
+    minYears: ai.minYears ?? local.minYears ?? null,
+    maxYears: ai.maxYears ?? local.maxYears ?? null,
+    yearsNote: ai.yearsNote || local.yearsNote || '',
+    usCitizenshipText: ai.usCitizenshipText || local.usCitizenshipText || '',
+    workAuthorizationText: ai.workAuthorizationText || local.workAuthorizationText || '',
+    education: ai.education || local.education || '',
+    workAuthorization: {
+      usCitizenRequired: !!(ai.workAuthorization?.usCitizenRequired || local.workAuthorization?.usCitizenRequired),
+      usCitizenPreferred: !!(ai.workAuthorization?.usCitizenPreferred || local.workAuthorization?.usCitizenPreferred),
+      authorizedToWorkRequired: !!(ai.workAuthorization?.authorizedToWorkRequired || local.workAuthorization?.authorizedToWorkRequired),
+      noSponsorship: !!(ai.workAuthorization?.noSponsorship || local.workAuthorization?.noSponsorship),
+      sponsorshipAvailable: !!(ai.workAuthorization?.sponsorshipAvailable || local.workAuthorization?.sponsorshipAvailable),
+      clearanceRequired: !!(ai.workAuthorization?.clearanceRequired || local.workAuthorization?.clearanceRequired),
+      clearanceLevel: ai.workAuthorization?.clearanceLevel || local.workAuthorization?.clearanceLevel || '',
+      notes: uniqTerms([...(ai.workAuthorization?.notes || []), ...(local.workAuthorization?.notes || [])]),
+    },
+    location: {
+      onsiteRequired: !!(ai.location?.onsiteRequired || local.location?.onsiteRequired),
+      hybrid: !!(ai.location?.hybrid || local.location?.hybrid),
+      remoteOk: !!(ai.location?.remoteOk || local.location?.remoteOk),
+      locationNote: ai.location?.locationNote || local.location?.locationNote || '',
+    },
+    otherRequirements: uniqTerms([...(ai.otherRequirements || []), ...(local.otherRequirements || [])]),
+  };
+}
+
+function estimateResumeExperienceYears(resumeText) {
+  const roles = extractRolesFromResume(resumeText);
+  const now = new Date();
+  const nowMonths = now.getFullYear() * 12 + now.getMonth();
+  const ranges = [];
+  const addRange = (startYear, endYear, present) => {
+    const start = startYear * 12;
+    const end = present ? nowMonths : (endYear * 12 + 11);
+    if (end >= start) ranges.push({ start, end });
+  };
+  for (const role of roles) {
+    const present = /\b(present|current|now|today|ongoing)\b/i.test(role);
+    const years = [...role.matchAll(/\b((?:19|20)\d{2})\b/g)].map(m => Number(m[1]));
+    if (years.length >= 2) addRange(Math.min(...years), present ? now.getFullYear() : Math.max(...years), present);
+    else if (years.length === 1) addRange(years[0], years[0], present);
+  }
+  if (!ranges.length) {
+    const exp = String(resumeText || '').split('\n');
+    const expIdx = exp.findIndex(l => /^(PROFESSIONAL )?EXPERIENCE$|^WORK (EXPERIENCE|HISTORY)$/i.test(l.trim()));
+    const block = expIdx >= 0 ? exp.slice(expIdx, expIdx + 80).join('\n') : resumeText;
+    const years = [...block.matchAll(/\b((?:19|20)\d{2})\b/g)].map(m => Number(m[1]));
+    if (years.length >= 2) addRange(Math.min(...years), Math.max(...years), /\b(present|current)\b/i.test(block));
+  }
+  if (!ranges.length) return { years: null, roleCount: roles.length, note: 'Could not parse experience dates from resume' };
+  ranges.sort((a, b) => a.start - b.start);
+  const merged = [];
+  for (const r of ranges) {
+    if (!merged.length || r.start > merged[merged.length - 1].end + 1) merged.push({ ...r });
+    else merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, r.end);
+  }
+  const totalMonths = merged.reduce((sum, r) => sum + (r.end - r.start + 1), 0);
+  return {
+    years: Math.round((totalMonths / 12) * 10) / 10,
+    roleCount: roles.length || merged.length,
+    note: '',
+  };
+}
+
+function buildEligibilityReport(eligibility, resumeText) {
+  const NOT_FOUND = 'Not found';
+  const wa = eligibility?.workAuthorization || {};
+  const exp = estimateResumeExperienceYears(resumeText);
+
+  let yearsJd = (eligibility?.yearsNote || '').trim();
+  if (!yearsJd && eligibility?.minYears) {
+    yearsJd = `${eligibility.minYears}${eligibility.maxYears ? `–${eligibility.maxYears}` : '+'} years of experience`;
+  }
+  if (!yearsJd) yearsJd = NOT_FOUND;
+
+  let citizenshipJd = (eligibility?.usCitizenshipText || '').trim();
+  if (!citizenshipJd) {
+    if (wa.usCitizenRequired) citizenshipJd = 'US citizenship required';
+    else if (wa.usCitizenPreferred) citizenshipJd = 'US citizenship preferred';
+    else citizenshipJd = NOT_FOUND;
+  }
+
+  let workAuthJd = (eligibility?.workAuthorizationText || '').trim();
+  if (!workAuthJd) {
+    const parts = [];
+    if (wa.noSponsorship) parts.push('No visa sponsorship');
+    if (wa.sponsorshipAvailable) parts.push('Visa sponsorship available');
+    if (wa.authorizedToWorkRequired) parts.push('Must be authorized to work in the US');
+    if (wa.clearanceRequired) {
+      parts.push(wa.clearanceLevel ? `Security clearance: ${wa.clearanceLevel}` : 'Security clearance required');
+    }
+    workAuthJd = parts.length ? parts.join(' · ') : NOT_FOUND;
+  }
+
+  const items = [
+    {
+      label: 'Years of experience required',
+      value: yearsJd,
+      found: yearsJd !== NOT_FOUND,
+      sub: exp.years != null ? `Your resume: ~${exp.years} years` : '',
+    },
+    {
+      label: 'Work authorization',
+      value: workAuthJd,
+      found: workAuthJd !== NOT_FOUND,
+      sub: '',
+    },
+    {
+      label: 'US citizenship',
+      value: citizenshipJd,
+      found: citizenshipJd !== NOT_FOUND,
+      sub: '',
+    },
+  ];
+
+  return { items, experience: exp };
+}
+
+function renderEligibilityPanel(report) {
+  const el = $('eligibilityPanel');
+  if (!el) return;
+  if (!report?.items?.length) {
+    el.classList.add('hidden');
+    el.innerHTML = '';
+    return;
+  }
+  const foundCount = report.items.filter(i => i.found).length;
+  el.classList.remove('hidden');
+  el.innerHTML = `
+    <div class="eligibility-head">
+      <div>
+        <div class="card-title" style="margin-bottom:4px;">JD particulars</div>
+        <p class="hint" style="margin:0;">Read from the posting by Gemini — exact requirements or <strong>Not found</strong> if not stated.</p>
+      </div>
+      <span class="eligibility-badge ${foundCount ? 'pass' : 'warn'}">${foundCount}/3 found in JD</span>
+    </div>
+    <div class="eligibility-grid">
+      ${report.items.map(item => `
+        <article class="eligibility-item ${item.found ? 'found' : 'missing'}">
+          <div class="eligibility-item-label">${escapeHtml(item.label)}</div>
+          <p class="eligibility-item-value">${escapeHtml(item.value)}</p>
+          ${item.sub ? `<p class="eligibility-item-sub">${escapeHtml(item.sub)}</p>` : ''}
+        </article>
+      `).join('')}
+    </div>`;
+}
+
 function parseJdAnalysis(parsed) {
   if (!parsed || typeof parsed !== 'object') return null;
   return {
@@ -1083,6 +1409,7 @@ function parseJdAnalysis(parsed) {
     internetKeywords: filterExtractedSkills(parsed.internetKeywords || []),
     marketSkills: filterExtractedSkills(parsed.marketSkills || parsed.market || parsed.roleSkills || parsed.internetSkills || []),
     internetUsed: !!parsed.internetUsed,
+    eligibility: parseJdEligibility(parsed),
   };
 }
 
@@ -1209,6 +1536,9 @@ async function analyzeJdWithAiRag(jd) {
     }
 
     ai = mergeAiExtractions(jdAi, internetAi);
+    if (ai) {
+      ai.eligibility = mergeEligibility(ai.eligibility, extractLocalEligibilityFromJd(jd));
+    }
     if (!ai.internetUsed && internetError) {
       ai.internetError = String(internetError.message || internetError).slice(0, 100);
     }
@@ -1217,6 +1547,7 @@ async function analyzeJdWithAiRag(jd) {
     ai = null;
   }
   const built = assembleLockedSkills(jd, ragJd, ai, state.mode);
+  built.eligibility = ai?.eligibility || mergeEligibility(null, extractLocalEligibilityFromJd(jd));
   built.geminiError = geminiError ? String(geminiError.message || geminiError).slice(0, 120) : null;
   built.internetError = ai?.internetError || (internetError && !ai ? String(internetError.message || internetError).slice(0, 100) : null);
   return built;
@@ -2226,6 +2557,9 @@ async function lockKeywordsFromJd(jd) {
   const cacheKey = skillsetCacheKey(jd);
   if (state.keywords?.primary?.length && state.kwHash === h && state.keywords.role && state.keywords._mode === state.mode) {
     ensureAliasMap(state.keywords);
+    if (!state.keywords.eligibility) {
+      state.keywords.eligibility = mergeEligibility(null, extractLocalEligibilityFromJd(jd));
+    }
     return state.keywords;
   }
   try {
@@ -2234,6 +2568,9 @@ async function lockKeywordsFromJd(jd) {
       const parsed = JSON.parse(raw);
       if (parsed.primary && parsed.primary.length && parsed._mode === state.mode) {
         ensureAliasMap(parsed);
+        if (!parsed.eligibility) {
+          parsed.eligibility = mergeEligibility(null, extractLocalEligibilityFromJd(jd));
+        }
         state.keywords = parsed;
         state.kwHash = h;
         return state.keywords;
@@ -2686,6 +3023,7 @@ function renderAtsPanel(unified) {
   const roleLabel = (kw.role && kw.role.label) || unified.title || 'Read from posting';
   state.preTailor = snapshotScore(unified);
   $('freeAtsPanel').classList.remove('hidden');
+  if ($('postRewriteScore')) $('postRewriteScore').classList.add('hidden');
   if ($('scoreSection')) $('scoreSection').classList.add('hidden');
   if ($('optimizeBoard')) $('optimizeBoard').classList.add('hidden');
   $('scoreSourceLabel').textContent = roleLabel;
@@ -2700,6 +3038,10 @@ function renderAtsPanel(unified) {
       : 'Locked to JD skills. Switch to Stretch to also add internet/market skills.';
     $('roleDetectLine').textContent = `Role: ${roleLabel} · ${geminiNote} ${modeNote}`;
   }
+  const resumeText = ($('resumeInput') && $('resumeInput').value.trim()) || unified.resumeUsed || '';
+  const jdText = ($('jdInput') && $('jdInput').value.trim()) || '';
+  const eligibility = kw.eligibility || mergeEligibility(null, extractLocalEligibilityFromJd(jdText));
+  renderEligibilityPanel(buildEligibilityReport(eligibility, resumeText));
   if ($('atsDonut')) $('atsDonut').innerHTML = svgDonut(score);
   $('freeAtsScore').textContent = score;
   $('freeAtsScore').style.color = color;
@@ -2725,7 +3067,6 @@ function renderAtsPanel(unified) {
   if ($('atsFlow')) $('atsFlow').innerHTML = renderFlow(atsStory(unified));
   const missing = uniqTerms([...missingImportant, ...missingExtra]);
   const found = [...(sc.keywordsFound || []), ...(sc.secondaryFound || [])];
-  const resumeText = ($('resumeInput') && $('resumeInput').value.trim()) || unified.resumeUsed || '';
   const ats = atsPhraseReport(kw, resumeText);
   state.lastMissingReport = {
     important: missingImportant,
@@ -2770,6 +3111,58 @@ function renderAtsPanel(unified) {
   if (cta) cta.innerHTML = renderRewriteCta(score, roleLabel);
 }
 
+function renderPostRewriteScore(unified, before) {
+  const el = $('postRewriteScore');
+  if (!el) return;
+  const sc = unified.scorecard || {};
+  const score = Number(unified.atsScore || 0);
+  const prev = before ? Number(before.atsScore || 0) : null;
+  const delta = prev != null ? score - prev : null;
+  const hue = scoreHue(score);
+  const kwFound = (sc.keywordsFound || []).length;
+  const kwTotal = Math.max(unified.primary?.length || 0, 1);
+  const deltaClass = delta == null ? 'flat' : delta > 0 ? 'up' : delta < 0 ? '' : 'flat';
+  const deltaText = delta == null
+    ? 'After rewrite'
+    : `${prev} → ${score} (${delta >= 0 ? '+' : ''}${delta})`;
+  el.classList.remove('hidden');
+  el.innerHTML = `
+    <div class="insight-hero">
+      <div>
+        <div class="donut-wrap" id="postRewriteDonut">${svgDonut(score, 140)}</div>
+        ${prev != null ? `<div class="post-score-delta ${deltaClass}">${escapeHtml(deltaText)}</div>` : ''}
+      </div>
+      <div>
+        <div class="card-title">Match score after rewrite</div>
+        <p class="hint" style="margin-bottom:12px;">${prev != null
+    ? `Moved from ${prev}/100 before rewrite to ${score}/100 on the tailored draft.`
+    : 'How the rewritten page scores against this posting.'}</p>
+        <div class="kpi-mini">
+          <div class="score-card">
+            <div class="score-label">Match score</div>
+            <div class="score-value" style="color:${hue}">${score}</div>
+            <div class="score-sub">target 95 / 100</div>
+          </div>
+          <div class="score-card">
+            <div class="score-label">Must-have skills</div>
+            <div class="score-value blue">${kwFound}/${kwTotal}</div>
+            <div class="score-sub">on the rewritten page</div>
+          </div>
+          <div class="score-card">
+            <div class="score-label">Page hygiene</div>
+            <div class="score-value" style="font-size:22px;color:${sc.formatCheck === 'PASS' ? '#16a34a' : '#d97706'}">${escapeHtml(sc.formatCheck || '--')}</div>
+            <div class="score-sub">parser-safe layout</div>
+          </div>
+          <div class="score-card">
+            <div class="score-label">Measured bullets</div>
+            <div class="score-value yellow" style="font-size:22px;">${sc.bulletsWithMetrics || 0}/${sc.bulletsTotal || 0}</div>
+            <div class="score-sub">numbers in work history</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
 function renderResults(unified, resumeText) {
   const sc = unified.scorecard;
   const score = unified.atsScore;
@@ -2777,6 +3170,7 @@ function renderResults(unified, resumeText) {
   stopAiProcessing();
   setDetailAnalysisOpen(false);
   if ($('detailAnalysisBar')) $('detailAnalysisBar').classList.remove('hidden');
+  renderPostRewriteScore(unified, state.preTailor);
   $('resultsSection').classList.remove('hidden');
   $('atsScore').textContent = score;
   $('atsScore').className = 'score-value ' + (score >= 95 ? 'green' : score >= 70 ? 'yellow' : 'red');
@@ -2875,7 +3269,7 @@ async function runAtsCheck() {
     const kw = await lockKeywordsFromJd(jd);
     syncJdSessionMeta(getActiveJdSession(), kw);
     renderJdTabs();
-    updateAiProcessing('Scoring your resume against the posting…');
+    updateAiProcessing('Checking posting eligibility and scoring your resume…');
     if (!kw.geminiUsed && kw.geminiError) {
       showToast('Gemini unavailable — using local RAG for skills', '#d97706');
     }
@@ -2898,6 +3292,7 @@ async function runAnalysis() {
   if (!inputs) return;
   const { jd, resume } = inputs;
   $('analyzeBtn').disabled = true;
+  if ($('postRewriteScore')) $('postRewriteScore').classList.add('hidden');
   $('scoreSection').classList.add('hidden');
   $('resultsSection').classList.add('hidden');
   if ($('optimizeBoard')) $('optimizeBoard').classList.add('hidden');
@@ -2957,8 +3352,8 @@ async function runAnalysis() {
     persistCurrentJdSession();
     saveWorkspace();
     showToast(unified.atsScore >= SCORE_THRESHOLD
-      ? `Draft scored ${unified.atsScore}/100 — open Detail analysis for charts`
-      : `Score ${unified.atsScore}/100 — use Push the score or Detail analysis`);
+      ? `Draft scored ${unified.atsScore}/100`
+      : `Score ${unified.atsScore}/100 — use Push the score to close gaps`);
   } catch (err) {
     showToast('Rewrite failed: ' + String(err.message || err).slice(0, 90), '#e11d48');
     stopAiProcessing();
@@ -3039,6 +3434,7 @@ function resetResultsUi(silent) {
   state.boldFinalized = false;
   state.preTailor = null;
   $('freeAtsPanel').classList.add('hidden');
+  if ($('postRewriteScore')) $('postRewriteScore').classList.add('hidden');
   $('scoreSection').classList.add('hidden');
   $('resultsSection').classList.add('hidden');
   $('progressSection').classList.add('hidden');
