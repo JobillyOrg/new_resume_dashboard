@@ -1982,6 +1982,7 @@ BULLETS:
 - 1-2 lines each
 - Every bullet ends with a period
 - Tight spacing: no blank lines between bullets
+- NEVER tack a skill onto the end of a bullet as a comma dump (bad: "...decisions, Tableau." or "...latency, NumPy."). Work each tool into the sentence (good: "Built Tableau dashboards to..." or "...using NumPy to reduce pipeline latency by 30%.").
 
 Do NOT use tables, columns, icons, photos, skill bars, or ALL-CAPS name.
 
@@ -2040,6 +2041,7 @@ MISSING JD ATS PHRASES (${ats.missing.length}/${ats.phrases.length}): ${ats.miss
 CURRENT RULE SCORES: ${JSON.stringify(sc.ruleScores || {})}
 POINTS STILL NEEDED: ${Math.max(0, SCORE_THRESHOLD - Number(sc.atsScore || 0))} — you must close this gap.
 Put every skill in MUST ADD into SKILLS and into at least one experience bullet using the exact spelling.
+Weave each tool into the sentence body — never append a trailing comma skill dump (bad: "...decisions, Tableau.").
 If a bullet has no number, add a metric already used elsewhere on this resume (or a modest % / count).
 GAPS:
 ${gaps.map(g => '- ' + g).join('\n') || 'none'}
@@ -2442,28 +2444,121 @@ function experienceRoleBlocks(lines) {
   return roles;
 }
 
+function regexEscape(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function termInLine(term, line) {
+  return new RegExp(`\\b${regexEscape(term)}\\b`, 'i').test(String(line || ''));
+}
+
+function bulletLineParts(line) {
+  const m = String(line || '').match(/^(\s*[-•*·◦▸▶]\s+)([\s\S]*)$/);
+  if (!m) return null;
+  let body = m[2].trim();
+  const punct = /[.!?]$/.test(body) ? body.slice(-1) : '.';
+  const core = /[.!?]$/.test(body) ? body.slice(0, -1).trim() : body.trim();
+  return { mark: m[1], core, punct };
+}
+
+function isTrailingKeywordDump(core, pool, aliasMap) {
+  const m = String(core || '').match(/^(.+?),\s*([A-Za-z0-9.#+\-/]{2,48})$/);
+  if (!m) return null;
+  const [, main, tail] = m;
+  if (termInLine(tail, main)) return { main: main.trim(), tail };
+  const hit = (pool || []).some(k =>
+    String(k).toLowerCase() === tail.toLowerCase() || keywordPresent(k, tail, aliasMap)
+  );
+  return hit ? { main: main.trim(), tail } : null;
+}
+
+function weaveTermIntoBullet(line, term) {
+  const kw = String(term || '').trim();
+  if (!kw || termInLine(kw, line)) return line;
+  const parts = bulletLineParts(line);
+  if (!parts) return line;
+
+  let { mark, core, punct } = parts;
+  const dump = isTrailingKeywordDump(core, [kw], {});
+  if (dump) core = dump.main;
+
+  const tryWeave = () => {
+    const toHit = core.match(/^(.+?)(\s+to\s+(?:boost|reduce|improve|enhance|drive|enable|deliver|streamline|cut|increase|support|accelerate|optimize).+)$/i);
+    if (toHit && toHit[1].length > 12) return `${toHit[1]} with ${kw}${toHit[2]}`;
+
+    const byHit = core.match(/^(.+?)(\s+by\s+(?:\d|an?\s|\d))/i);
+    if (byHit && byHit[1].length > 15) return `${byHit[1]} using ${kw}${byHit[2]}`;
+
+    const actionHit = core.match(/^((?:Developed|Built|Engineered|Implemented|Designed|Optimized|Automated|Created|Led|Managed|Performed|Deployed|Integrated|Streamlined|Enhanced|Delivered|Established|Utilized|Leveraged|Architected)[^.]{0,100}?)(\s+.{8,})$/i);
+    if (actionHit) return `${actionHit[1]} with ${kw}${actionHit[2]}`;
+
+    const split = core.split(/,\s+/);
+    if (split.length >= 2) {
+      split.splice(1, 0, `leveraging ${kw}`);
+      return split.join(', ');
+    }
+
+    const words = core.split(/\s+/);
+    if (words.length >= 5) {
+      words.splice(Math.min(4, words.length - 2), 0, `with ${kw}`);
+      return words.join(' ');
+    }
+    return `${core}, applying ${kw} in the workflow`;
+  };
+
+  const woven = tryWeave();
+  return `${mark}${woven}${punct}`;
+}
+
+function cleanTrailingKeywordDumps(lines, keywords) {
+  const pool = uniqTerms([
+    ...(keywords?.primary || []),
+    ...(keywords?.secondary || []),
+    ...(keywords?.jdPrimary || []),
+    ...(keywords?.marketSkills || []),
+    ...(keywords?.internetSkills || []),
+  ]);
+  const aliasMap = keywords?.aliasMap || {};
+  return lines.map(line => {
+    if (!isBulletLine(line)) return line;
+    const parts = bulletLineParts(line);
+    if (!parts) return line;
+    const dump = isTrailingKeywordDump(parts.core, pool, aliasMap);
+    if (!dump) return line;
+    const stripped = `${parts.mark}${dump.main}${parts.punct}`;
+    return weaveTermIntoBullet(stripped, dump.tail);
+  });
+}
+
 function appendTermsToLine(line, terms) {
   const missing = (terms || []).filter(Boolean);
   if (!missing.length) return line;
+  if (isBulletLine(line)) {
+    let out = line;
+    for (const t of missing) out = weaveTermIntoBullet(out, t);
+    return out;
+  }
   const trimmed = String(line || '').replace(/\s+$/, '');
   const punct = /[.!?]$/.test(trimmed) ? trimmed.slice(-1) : '.';
   const core = /[.!?]$/.test(trimmed) ? trimmed.slice(0, -1) : trimmed;
-  if (isBulletLine(core)) return core.replace(/\.\s*$/, '') + ', ' + missing.join(', ') + punct;
   return core + ' using ' + missing.join(', ') + punct;
 }
 
 function appendAtsPhraseToLine(line, phrase) {
   const p = String(phrase || '').trim();
   if (!p || atsPhrasePresent(p, line)) return line;
+  if (isBulletLine(line)) {
+    const parts = bulletLineParts(line);
+    if (!parts) return line;
+    const woven = parts.core.match(/^(.+?)(\s+to\s+.+)$/i)
+      ? `${parts.core.replace(/\s+to\s+/i, `, including ${p}, to `)}`
+      : `${parts.core}, supporting ${p}`;
+    return `${parts.mark}${woven}${parts.punct}`;
+  }
   const trimmed = String(line || '').replace(/\s+$/, '');
   const hasEnd = /[.!?]$/.test(trimmed);
   const punct = hasEnd ? trimmed.slice(-1) : '.';
   const core = hasEnd ? trimmed.slice(0, -1) : trimmed;
-  if (isBulletLine(core)) {
-    const mark = /^[-•*·◦▸▶]/.test(core) ? core.match(/^[-•*·◦▸▶]/)[0] : '-';
-    const body = bulletText(core).replace(/\.\s*$/, '');
-    return `${mark} ${body}, including ${p}${punct}`;
-  }
   return `${core}, including ${p}${punct}`;
 }
 
@@ -2564,6 +2659,7 @@ function polishResumeForAts(resume, keywords, masterResume) {
   }
 
   lines = trimExperienceBullets(lines, 7);
+  lines = cleanTrailingKeywordDumps(lines, keywords);
   return restoreExtraSections(lines.join('\n').replace(/\n{3,}/g, '\n\n').trim(), masterResume || '');
 }
 
