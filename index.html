@@ -812,6 +812,27 @@
     .eligibility-item-sub.pass { color: #15803d; font-weight: 650; }
     .eligibility-item-sub.fail { color: #be123c; font-weight: 650; }
 
+    .stack-detect {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px;
+      margin-bottom: 12px; padding: 10px 14px;
+      border-radius: var(--radius-md); border: 1px solid #e2e8f0;
+      background: #f8fafc; font-size: 13px; line-height: 1.45;
+    }
+    .stack-detect.hidden { display: none; }
+    .stack-detect-label {
+      font-weight: 700; color: #64748b; font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .stack-detect-chip {
+      font-weight: 800; padding: 3px 10px; border-radius: 999px; border: 1px solid;
+    }
+    .stack-detect.aws .stack-detect-chip { background: #fff7ed; color: #c2410c; border-color: #fdba74; }
+    .stack-detect.azure .stack-detect-chip { background: #eff6ff; color: #1d4ed8; border-color: #93c5fd; }
+    .stack-detect.gcp .stack-detect-chip { background: #f0fdf4; color: #15803d; border-color: #86efac; }
+    .stack-detect.neutral .stack-detect-chip { background: #f1f5f9; color: #475569; border-color: #cbd5e1; }
+    .stack-detect-detail { color: #64748b; flex: 1 1 200px; }
+    .post-rewrite-score .stack-detect { margin-top: 8px; }
+
     .preview-toggle { display: flex; gap: 8px; margin-bottom: 12px; }
     .preview-toggle .active { background: #4f46e5; color: #fff; border-color: #4f46e5; }
     .paper-wrap {
@@ -1056,12 +1077,13 @@
         </div>
         <div>
           <div class="card-title">Match report · <span id="scoreSourceLabel">Role</span></div>
-          <div id="roleDetectLine" class="hint" style="margin-bottom:12px;">Paste a posting and click Score this match.</div>
+          <div id="roleDetectLine" class="hint" style="margin-bottom:8px;">Paste a posting and click Score this match.</div>
+          <div id="stackDetectLine" class="stack-detect hidden" role="status" aria-live="polite"></div>
           <div class="kpi-mini">
             <div class="score-card">
               <div class="score-label">Match score</div>
               <div class="score-value" id="freeAtsScore">--</div>
-              <div class="score-sub">Aim for 95 / 100</div>
+              <div class="score-sub">Aim for 98+ · test in ChatGPT / Claude / Grok</div>
             </div>
             <div class="score-card">
               <div class="score-label">Skills in work history</div>
@@ -1267,6 +1289,6 @@
 
 <div id="toast"></div>
 <script src="rag-engine.js?v=jdtitles"></script>
-<script src="app.js?v=weave-bullet-skills"></script>
+<script src="app.js?v=pdf-name"></script>
 </body>
 </html>

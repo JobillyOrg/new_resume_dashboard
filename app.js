@@ -1,9 +1,232 @@
 /* Jobilly.AI Resume Dashboard */
 const SCORE_THRESHOLD = 95;
+const SCORE_TARGET = 98;
+const SCORE_MAX = 100;
 const MAX_BOOST_PASSES = 6;
 const SKILLSET_CACHE = 'ats_skillset_v9_';
 const CERT_TERM_RE = /certif(?:y|ied|ication|ications)?|\baws certified\b|\bazure certified\b|\bgoogle cloud certified\b|\bsnowflake certified\b|\bdatabricks certified\b|\bpmp\b|\bcissp\b|\bcspo\b|\bcsm\b|\bcka\b|\bckad\b|\bcomptia\b|\bscrum master\b|\bprofessional cloud architect\b|\bsolutions architect associate\b|\bdata engineer associate\b/i;
 const JUNK_SKILL_RE = /\b(retirement|401k|401\(k\)|benefits?|insurance|dental|vision|compensation|how to apply|cover letter|submit your resume|employer-paid|disability insurance|employee assistance)\b/i;
+const ELIGIBILITY_SKILL_RE = /\b(h-?1b|h1b|visa sponsorship|work authorization|work authorisation|authorized to work|authorised to work|eligible to work|right to work|without sponsorship|no sponsorship|will not sponsor|unable to sponsor|green card|us citizen|u\.s\. citizen|united states citizen|citizenship required|employment authorization|ead\b|tn visa|i-?140)\b/i;
+
+function isEligibilityTerm(term) {
+  const s = String(term || '').trim();
+  if (!s) return false;
+  if (ELIGIBILITY_SKILL_RE.test(s)) return true;
+  if (/^h-?1b$/i.test(s)) return true;
+  return false;
+}
+
+function dropEligibilityTerms(list) {
+  return (list || []).filter(t => t && !isEligibilityTerm(t));
+}
+
+const CANDIDATE_STACKS = {
+  aws: {
+    label: 'AWS',
+    terms: /\b(aws|amazon web services|amazon web service|\bs3\b|glue|emr|redshift|lambda|mwaa|athena|kinesis|dynamodb|cloudformation|ecs|eks|iam|step functions|sagemaker)\b/i,
+    rivals: ['azure', 'gcp'],
+  },
+  azure: {
+    label: 'Microsoft Azure',
+    terms: /\b(azure|adf|azure data factory|data factory v2|synapse|azure synapse|blob storage|azurerm|entra|azure devops|azure databricks|power bi|fabric)\b/i,
+    rivals: ['aws', 'gcp'],
+  },
+  gcp: {
+    label: 'Google Cloud',
+    terms: /\b(gcp|google cloud|bigquery|dataflow|pub\/sub|pubsub|composer|gcs|cloud run|vertex ai|dataproc|cloud storage)\b/i,
+    rivals: ['aws', 'azure'],
+  },
+};
+
+const UNIVERSAL_SKILL_RE = /\b(python|sql|pyspark|apache spark|spark|scala|java|kafka|airflow|dbt|hadoop|hive|terraform|docker|kubernetes|jenkins|git|ci\/cd|etl|elt|machine learning|ml|llm|rag|pandas|numpy)\b/i;
+
+function scoreCandidateStacks(resumeText) {
+  const t = String(resumeText || '');
+  const scores = {};
+  for (const [id, stack] of Object.entries(CANDIDATE_STACKS)) {
+    scores[id] = (t.match(stack.terms) || []).length;
+  }
+  return scores;
+}
+
+function detectCandidateProfile(resumeText) {
+  const scores = scoreCandidateStacks(resumeText);
+  const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]).filter(([, s]) => s > 0);
+  const primaryCloud = ranked[0]?.[0] || null;
+  const primaryScore = ranked[0]?.[1] || 0;
+  const secondaryCloud = ranked[1]?.[1] >= 2 ? ranked[1][0] : null;
+  return {
+    scores,
+    primaryCloud,
+    primaryLabel: primaryCloud ? CANDIDATE_STACKS[primaryCloud].label : '',
+    secondaryCloud,
+    rivalClouds: primaryCloud ? (CANDIDATE_STACKS[primaryCloud].rivals || []) : [],
+    hasStrongPrimary: primaryScore >= 2,
+  };
+}
+
+function skillBelongsToStack(term, stackId) {
+  const stack = CANDIDATE_STACKS[stackId];
+  if (!stack || !term) return false;
+  return stack.terms.test(String(term));
+}
+
+function isUniversalSkill(term) {
+  return UNIVERSAL_SKILL_RE.test(String(term || ''));
+}
+
+function filterTermsForCandidateProfile(terms, resumeText, profile) {
+  const prof = profile || detectCandidateProfile(resumeText);
+  const aliasMap = state.keywords?.aliasMap || {};
+  const text = String(resumeText || '');
+  return (terms || []).filter(term => {
+    const t = String(term || '').trim();
+    if (!t || isEligibilityTerm(t)) return false;
+    if (isUniversalSkill(t)) return true;
+    if (keywordPresent(t, text, aliasMap)) return true;
+    if (!prof.hasStrongPrimary || !prof.primaryCloud) return true;
+    for (const [id, stack] of Object.entries(CANDIDATE_STACKS)) {
+      if (id === prof.primaryCloud || id === prof.secondaryCloud) continue;
+      if (prof.scores[id] > 0) continue;
+      if (skillBelongsToStack(t, id)) return false;
+    }
+    if (prof.rivalClouds.some(id => skillBelongsToStack(t, id))) return false;
+    return true;
+  });
+}
+
+function filterAtsPhrasesForCandidate(phrases, resumeText, profile) {
+  const prof = profile || detectCandidateProfile(resumeText);
+  return filterTermsForCandidateProfile(phrases, resumeText, prof);
+}
+
+function formatCandidateProfileBlock(profile) {
+  if (!profile?.hasStrongPrimary) {
+    return `CANDIDATE STACK: read the master resume — only add tools the candidate has actually used. Do not invent AWS + Azure mastery in the same resume unless both are already evidenced.`;
+  }
+  const rivals = (profile.rivalClouds || [])
+    .map(r => CANDIDATE_STACKS[r]?.label)
+    .filter(Boolean)
+    .join(' and ');
+  return `CANDIDATE PRIMARY STACK: ${profile.primaryLabel} (from master resume evidence).
+Stay on this stack. Do NOT add ${rivals || 'rival cloud'}-specific services unless they already appear on the master resume.
+If the JD names a rival cloud tool, map honestly to the candidate stack (e.g. Azure Data Factory → AWS Glue/Airflow, Synapse → Redshift, BigQuery → Redshift/Snowflake only if already used).
+Write like a human: prose summary, real bullets — never comma-dump tools or tack skills onto sentence ends.`;
+}
+
+function formatExternalAtsBlock(jd, keywords) {
+  const role = (keywords?.role && keywords.role.label)
+    || (keywords?.title)
+    || (window.RAGEngine && RAGEngine.extractJdTitle(jd))
+    || 'the exact JD job title';
+  const primary = dropCertTerms(keywords?.primary || keywords?.jdPrimary || []);
+  const atsPhrases = filterExtractedSkills(keywords?.atsKeywords || []);
+  return `EXTERNAL ATS ALIGNMENT — optimize for ChatGPT, Claude, Grok, and enterprise parsers (Workday, Greenhouse, iCIMS):
+- Line 2 title MUST match the posting: ${role}
+- SUMMARY opens with that title + years of experience + primary stack + one quantified win
+- EVERY must-have JD skill must appear in SKILLS and in at least one EXPERIENCE bullet with real context (external tools penalize skills-only lists)
+- Use the JD's exact spelling for tools: ${primary.slice(0, 14).join(', ') || 'see locked set'}
+- Weave ATS phrases naturally (not comma dumps): ${atsPhrases.slice(0, 10).join(' · ') || 'n/a'}
+- At least 70% of bullets need a metric (% / $ / count / latency / throughput)
+- ALL-CAPS headers: SUMMARY, SKILLS (or TECHNICAL SKILLS), PROFESSIONAL EXPERIENCE, EDUCATION
+- Human-readable prose wins on AI reviewers — they flag keyword stuffing and reward evidence-backed fit`;
+}
+
+function buildExternalAtsPassPrompt(jd, resume, keywords, missingReport) {
+  const master = ($('resumeInput') && $('resumeInput').value) || resume;
+  const profile = detectCandidateProfile(master);
+  const report = missingReport || missingSkillReport(keywords, master);
+  const mustAdd = skillsToInject(report, master);
+  const atsMissing = filterAtsPhrasesForCandidate(report.atsMissing || [], master, profile);
+  const summaryKw = summaryKeywordList(keywords, master);
+  return `You are a senior ATS consultant. Final optimization pass: this resume must score 90%+ when pasted into ChatGPT, Claude, or Grok ATS checkers against the job description below.
+
+${formatExternalAtsBlock(jd, keywords)}
+${formatCandidateProfileBlock(profile)}
+
+CLOSE THESE GAPS (stack-aligned only):
+- Missing skills → SKILLS + experience bullets: ${mustAdd.join(', ') || 'none'}
+- Missing ATS phrases → summary or bullets: ${atsMissing.join(' · ') || 'none'}
+- Summary should include 8-9 of: ${summaryKw.join(', ') || 'current stack'}
+
+RULES:
+- Do not change name, contact, companies, job titles, dates, or education
+- Keep the master's skill category layout; add tools into existing lines
+- Weave each missing skill inside a bullet sentence — never tack ", Skill." at the end
+- Add realistic metrics to bullets that lack numbers (reuse the resume's scale)
+- Each role: 6-7 bullets. Preserve extra sections (Projects, Awards, etc.)
+- No H1B, visa, or work authorization language in SUMMARY
+
+JOB DESCRIPTION:
+${jd.slice(0, 6500)}
+
+RESUME:
+${resume}
+
+OUTPUT: complete resume only, starting with the candidate name.`;
+}
+
+function formatCandidateStackLine(profile) {
+  if (!profile) {
+    return {
+      label: '—',
+      detail: 'Paste your master resume to detect AWS, Azure, or GCP stack.',
+      className: 'neutral',
+    };
+  }
+  if (!profile.hasStrongPrimary) {
+    const any = Object.values(profile.scores || {}).some(s => s > 0);
+    if (!any) {
+      return {
+        label: 'Not detected',
+        detail: 'No strong cloud stack signal. Rewrites only add tools already on your master resume.',
+        className: 'neutral',
+      };
+    }
+    return {
+      label: 'Unclear',
+      detail: 'Weak cloud signal — skills stay limited to what your master resume already shows.',
+      className: 'neutral',
+    };
+  }
+  let detail = `Tailoring stays on ${profile.primaryLabel}. Rival cloud tools from the JD are skipped unless already on your resume.`;
+  if (profile.secondaryCloud) {
+    detail += ` Also evidenced: ${CANDIDATE_STACKS[profile.secondaryCloud].label}.`;
+  }
+  return {
+    label: profile.primaryLabel,
+    detail,
+    className: profile.primaryCloud || 'neutral',
+  };
+}
+
+function stackDetectHtml(profile) {
+  const info = formatCandidateStackLine(profile);
+  return `<div class="stack-detect ${info.className}" role="status">
+    <span class="stack-detect-label">Detected stack</span>
+    <span class="stack-detect-chip">${escapeHtml(info.label)}</span>
+    <span class="stack-detect-detail">${escapeHtml(info.detail)}</span>
+  </div>`;
+}
+
+function renderStackDetectLine(profile) {
+  const el = $('stackDetectLine');
+  if (!el) return;
+  const resumeText = ($('resumeInput') && $('resumeInput').value.trim()) || '';
+  if (!resumeText) {
+    el.classList.add('hidden');
+    el.innerHTML = '';
+    return;
+  }
+  const prof = profile || detectCandidateProfile(resumeText);
+  const info = formatCandidateStackLine(prof);
+  el.className = `stack-detect ${info.className}`;
+  el.innerHTML = `
+    <span class="stack-detect-label">Detected stack</span>
+    <span class="stack-detect-chip">${escapeHtml(info.label)}</span>
+    <span class="stack-detect-detail">${escapeHtml(info.detail)}</span>`;
+  el.classList.remove('hidden');
+}
 
 function isCertTerm(term) {
   return CERT_TERM_RE.test(String(term || ''));
@@ -14,10 +237,11 @@ function dropCertTerms(list) {
 }
 
 function filterExtractedSkills(list) {
-  return dropCertTerms(list).filter(t => {
+  return dropEligibilityTerms(dropCertTerms(list)).filter(t => {
     const s = String(t || '').trim();
     if (s.length < 2 || s.length > 72) return false;
     if (JUNK_SKILL_RE.test(s)) return false;
+    if (isEligibilityTerm(s)) return false;
     if (/^(the|what|how|we|you|our|this|that)\b/i.test(s)) return false;
     return true;
   });
@@ -812,7 +1036,6 @@ function extractFirstName(resumeText) {
 
 function buildExportBasename(resumeText, jd, keywords) {
   const first = extractFirstName(resumeText);
-  const company = shortcutCompany(extractCompanyFromJd(jd));
   const roleTitle = cleanJobTitle(
     keywords?.role?.title || keywords?.role?.label || keywords?.title
     || (window.RAGEngine && RAGEngine.extractJdTitle(jd))
@@ -820,16 +1043,17 @@ function buildExportBasename(resumeText, jd, keywords) {
     || 'Role'
   );
   const role = shortcutRole(roleTitle);
-  return `${first}_${company}_${role}`;
+  return `${first}_${role}`;
 }
 
 function updateExportFilename(resumeText) {
   const jd = ($('jdInput') && $('jdInput').value.trim()) || '';
   const base = buildExportBasename(resumeText, jd, state.keywords || {});
+  state.exportBasename = base;
   state.filename = `${base}.doc`;
-  if ($('suggestedFilename')) $('suggestedFilename').textContent = state.filename;
+  if ($('suggestedFilename')) $('suggestedFilename').textContent = `${base}.pdf`;
   if ($('filenameReason')) {
-    $('filenameReason').textContent = 'Format: FirstName_company_role (e.g. John_amazon_AIEngg). Used for Word, text, and Print/PDF save.';
+    $('filenameReason').textContent = 'Format: FirstName_RoleShortcut (e.g. John_DEEngg.pdf). Used for Print/PDF, Word, and text saves.';
   }
   return base;
 }
@@ -1008,6 +1232,7 @@ RULES:
 - Do NOT include market/internet skills that are not in this JD — a separate AI step handles those.
 - NO benefits, compensation, 401k, insurance, "how to apply", soft skills alone, or section headers.
 - NO certifications or degrees.
+- NO H1B, H-1B, visa, sponsorship, work authorization, citizenship, or other eligibility/immigration terms in jdPrimary, jdSecondary, or atsKeywords — those belong only in eligibility.
 - Use exact JD spelling when the JD names a tool (Transformers, LangChain, LlamaIndex).
 
 JOB DESCRIPTION:
@@ -1122,6 +1347,9 @@ function parseJdEligibility(parsed) {
       authorizedToWorkRequired: !!wa.authorizedToWorkRequired,
       noSponsorship: !!wa.noSponsorship,
       sponsorshipAvailable: !!wa.sponsorshipAvailable,
+      h1bMentioned: !!wa.h1bMentioned,
+      h1bRequired: !!wa.h1bRequired,
+      optMentioned: !!wa.optMentioned,
       clearanceRequired: !!wa.clearanceRequired,
       clearanceLevel: String(wa.clearanceLevel || '').trim(),
       notes: Array.isArray(wa.notes) ? wa.notes.map(String).filter(Boolean) : [],
@@ -1168,8 +1396,13 @@ function extractLocalEligibilityFromJd(jd) {
     usCitizenPreferred: /\b(us citizen|u\.s\. citizen).{0,20}preferred\b/i.test(t),
     authorizedToWorkRequired: /\b(authorized to work|legally authorized|eligible to work|work authorization|right to work|must be authorized)\b/i.test(t),
     noSponsorship: /\b(no sponsorship|not provide sponsorship|will not sponsor|unable to sponsor|without sponsorship|not eligible for sponsorship|cannot sponsor|does not sponsor)\b/i.test(t),
-    sponsorshipAvailable: /\b(sponsorship available|will sponsor|visa sponsorship|h-1b sponsorship)\b/i.test(t)
-      && !/\b(no sponsorship|not provide|will not sponsor|unable to sponsor)\b/i.test(t),
+    h1bMentioned: /\b(h-?1b|h1b)\b/i.test(t),
+    h1bRequired: /\b(h-?1b|h1b).{0,35}(required|must have|must hold|mandatory|only)\b/i.test(t)
+      || /\b(require|required|must|need).{0,35}(h-?1b|h1b)\b/i.test(t)
+      || /\b(valid|active|current)\s+(h-?1b|h1b)\b/i.test(t),
+    optMentioned: /\b(opt|cpt|stem\s*opt|optional practical training|curricular practical training|f-1|f1 status|f-1 status|ead|tn visa|l-1|o-1)\b/i.test(t),
+    sponsorshipAvailable: /\b(sponsorship available|will sponsor|visa sponsorship)\b/i.test(t)
+      && !/\b(no sponsorship|not provide|will not sponsor|unable to sponsor|no\s+h-?1b)\b/i.test(t),
     clearanceRequired: /\b(security clearance|secret clearance|top secret|ts\/sci|public trust|active clearance)\b/i.test(t),
     clearanceLevel: '',
     notes: [],
@@ -1223,7 +1456,13 @@ function extractLocalEligibilityFromJd(jd) {
     /visa sponsorship/i,
     /h-1b/i,
     /without sponsorship/i,
+    /\bopt\b/i,
+    /\bcpt\b/i,
+    /stem opt/i,
+    /f-1/i,
   ]) || (wa.noSponsorship ? 'No visa sponsorship' : '')
+    || (wa.h1bRequired ? 'H-1B required' : '')
+    || (wa.optMentioned ? extractJdLineSnippet(t, [/\bopt\b/i, /\bcpt\b/i, /stem opt/i, /f-1/i]) || 'OPT/CPT eligible' : '')
     || (wa.authorizedToWorkRequired ? 'Must be authorized to work in the US' : '')
     || (wa.sponsorshipAvailable ? 'Visa sponsorship available' : '');
 
@@ -1259,6 +1498,9 @@ function mergeEligibility(aiElig, localElig) {
       authorizedToWorkRequired: !!(ai.workAuthorization?.authorizedToWorkRequired || local.workAuthorization?.authorizedToWorkRequired),
       noSponsorship: !!(ai.workAuthorization?.noSponsorship || local.workAuthorization?.noSponsorship),
       sponsorshipAvailable: !!(ai.workAuthorization?.sponsorshipAvailable || local.workAuthorization?.sponsorshipAvailable),
+      h1bMentioned: !!(ai.workAuthorization?.h1bMentioned || local.workAuthorization?.h1bMentioned),
+      h1bRequired: !!(ai.workAuthorization?.h1bRequired || local.workAuthorization?.h1bRequired),
+      optMentioned: !!(ai.workAuthorization?.optMentioned || local.workAuthorization?.optMentioned),
       clearanceRequired: !!(ai.workAuthorization?.clearanceRequired || local.workAuthorization?.clearanceRequired),
       clearanceLevel: ai.workAuthorization?.clearanceLevel || local.workAuthorization?.clearanceLevel || '',
       notes: uniqTerms([...(ai.workAuthorization?.notes || []), ...(local.workAuthorization?.notes || [])]),
@@ -1396,6 +1638,90 @@ function buildExperienceEligibility(requiredYears, candidateYears) {
   };
 }
 
+function detectH1bRequiredInText(text, wa) {
+  const t = String(text || '');
+  if (wa?.h1bRequired) return true;
+  return /\b(h-?1b|h1b).{0,35}(required|must have|must hold|mandatory|only)\b/i.test(t)
+    || /\b(require|required|must|need).{0,35}(h-?1b|h1b)\b/i.test(t)
+    || /\b(valid|active|current)\s+(h-?1b|h1b)\b/i.test(t);
+}
+
+function detectOptInText(text, wa) {
+  const t = String(text || '');
+  if (wa?.optMentioned) return true;
+  return /\b(opt|cpt|stem\s*opt|optional practical training|curricular practical training|f-1|f1 status|ead|tn visa|l-1|o-1)\b/i.test(t);
+}
+
+function buildWorkAuthEligibility(workAuthJd, wa) {
+  const NOT_FOUND = 'Not found';
+  const text = String(workAuthJd || '');
+  const h1bRequired = detectH1bRequiredInText(text, wa);
+  const optFriendly = detectOptInText(text, wa);
+  const stated = workAuthJd !== NOT_FOUND
+    || wa.noSponsorship
+    || wa.h1bMentioned
+    || wa.h1bRequired
+    || wa.optMentioned
+    || wa.authorizedToWorkRequired
+    || wa.sponsorshipAvailable
+    || wa.clearanceRequired;
+
+  if (!stated) {
+    return { status: 'pass', tag: '', sub: 'No work authorization requirement stated in posting' };
+  }
+
+  if (wa.clearanceRequired) {
+    return {
+      status: 'fail',
+      tag: 'Clearance required',
+      sub: wa.clearanceLevel
+        ? `Security clearance required (${wa.clearanceLevel}) — confirm eligibility`
+        : 'Security clearance required — confirm eligibility',
+    };
+  }
+
+  if (h1bRequired) {
+    return {
+      status: 'fail',
+      tag: 'H-1B required',
+      sub: 'H-1B is required or not sponsored — verify you meet this before applying',
+    };
+  }
+
+  if (optFriendly) {
+    return {
+      status: 'pass',
+      tag: 'OPT / CPT',
+      sub: 'OPT, CPT, or other visa status mentioned — likely eligible to apply',
+    };
+  }
+
+  if (wa.sponsorshipAvailable) {
+    return { status: 'pass', tag: 'Sponsorship', sub: 'Visa sponsorship may be available per this posting' };
+  }
+
+  const noSponsor = wa.noSponsorship
+    || /\b(no sponsorship|will not sponsor|without sponsorship|not provide sponsorship|unable to sponsor|does not sponsor|not eligible for sponsorship)\b/i.test(text);
+
+  if (noSponsor) {
+    return {
+      status: 'pass',
+      tag: 'No sponsorship',
+      sub: 'Must already have US work authorization',
+    };
+  }
+
+  if (wa.authorizedToWorkRequired || workAuthJd !== NOT_FOUND) {
+    return {
+      status: 'pass',
+      tag: 'Eligible',
+      sub: 'Must already have US work authorization',
+    };
+  }
+
+  return { status: 'pass', tag: '', sub: 'No H-1B requirement stated in posting' };
+}
+
 function buildCitizenshipEligibility(citizenshipJd, wa) {
   const NOT_FOUND = 'Not found';
   const stated = citizenshipJd !== NOT_FOUND || wa.usCitizenRequired || wa.usCitizenPreferred;
@@ -1435,7 +1761,9 @@ function buildEligibilityReport(eligibility, resumeText) {
   let workAuthJd = (eligibility?.workAuthorizationText || '').trim();
   if (!workAuthJd) {
     const parts = [];
+    if (wa.h1bRequired) parts.push('H-1B required');
     if (wa.noSponsorship) parts.push('No visa sponsorship');
+    if (wa.optMentioned) parts.push('OPT/CPT eligible');
     if (wa.sponsorshipAvailable) parts.push('Visa sponsorship available');
     if (wa.authorizedToWorkRequired) parts.push('Must be authorized to work in the US');
     if (wa.clearanceRequired) {
@@ -1445,6 +1773,7 @@ function buildEligibilityReport(eligibility, resumeText) {
   }
 
   const expElig = buildExperienceEligibility(requiredYears, exp.years);
+  const workAuthElig = buildWorkAuthEligibility(workAuthJd, wa);
   const citElig = buildCitizenshipEligibility(citizenshipJd, wa);
 
   const items = [
@@ -1460,8 +1789,9 @@ function buildEligibilityReport(eligibility, resumeText) {
       label: 'Work authorization',
       value: workAuthJd,
       found: workAuthJd !== NOT_FOUND,
-      status: workAuthJd !== NOT_FOUND ? 'neutral' : 'pass',
-      sub: workAuthJd === NOT_FOUND ? 'No work authorization requirement stated in posting' : '',
+      status: workAuthElig.status,
+      tag: workAuthElig.tag || '',
+      sub: workAuthElig.sub,
     },
     {
       label: 'US citizenship',
@@ -1680,7 +2010,7 @@ If every PRIMARY keyword appears in an experience bullet: keywordsInExperience M
 If every SECONDARY keyword appears anywhere: secondaryKeywords MUST be 8.
 If SUMMARY, SKILLS, EXPERIENCE, and EDUCATION are present: structure MUST be 6. Missing certifications never reduce this.
 If ALL-CAPS headers and hyphen bullets are present with no tables/icons: format MUST be 8.
-Do not be conservative on a tailored resume. If the JD stack is present in Skills and Experience, the total MUST be ${SCORE_THRESHOLD} or higher.`
+Score honestly up to ${SCORE_MAX}. Strong tailored resumes should land ${SCORE_THRESHOLD}-${SCORE_MAX}. External AI ATS tools (ChatGPT, Claude, Grok) reward keyword evidence in experience bullets, JD title match, and natural prose — not flat minimum scores.`
     : `Extract exactly 10 primary and 10 secondary ATS keywords using the JD's exact spelling (Apache Spark not just Spark when the JD says Apache Spark).
 Keywords must be technologies, tools, platforms, and role skills ONLY.`;
 
@@ -1762,23 +2092,36 @@ function missingSkillReport(keywords, resume) {
   const kw = keywords || {};
   const aliasMap = kw.aliasMap || {};
   const text = String(resume || '');
-  const important = dropCertTerms(kw.primary || []).filter(k => !keywordPresent(k, text, aliasMap));
-  const extra = dropCertTerms(kw.secondary || []).filter(k => !keywordPresent(k, text, aliasMap));
+  const profile = detectCandidateProfile(text);
+  const important = filterTermsForCandidateProfile(
+    dropCertTerms(kw.primary || []).filter(k => !keywordPresent(k, text, aliasMap)),
+    text,
+    profile,
+  );
+  const extra = filterTermsForCandidateProfile(
+    dropCertTerms(kw.secondary || []).filter(k => !keywordPresent(k, text, aliasMap)),
+    text,
+    profile,
+  );
   const ats = atsPhraseReport(kw, text);
+  const atsMissing = filterAtsPhrasesForCandidate(ats.missing, text, profile);
   return {
     important,
     extra,
     all: uniqTerms([...important, ...extra]),
     atsPhrases: ats.phrases,
     atsFound: ats.found,
-    atsMissing: ats.missing,
+    atsMissing,
+    candidateProfile: profile,
   };
 }
 
-function skillsToInject(missingReport) {
+function skillsToInject(missingReport, resumeText) {
   const important = dropCertTerms((missingReport && missingReport.important) || []);
   const extra = dropCertTerms((missingReport && missingReport.extra) || []);
-  return state.mode === 'aggressive' ? uniqTerms([...important, ...extra]) : important;
+  const list = state.mode === 'aggressive' ? uniqTerms([...important, ...extra]) : important;
+  const profile = (missingReport && missingReport.candidateProfile) || detectCandidateProfile(resumeText || '');
+  return filterTermsForCandidateProfile(list, resumeText || '', profile);
 }
 
 function normAtsText(s) {
@@ -1815,17 +2158,21 @@ function atsPhrasesToInject(missingReport) {
   return (missingReport && missingReport.atsMissing) || [];
 }
 
-function importantHrKeywords(keywords) {
-  return uniqTerms([
+function importantHrKeywords(keywords, resumeText) {
+  const list = uniqTerms([
     ...dropCertTerms(keywords?.primary || []),
     ...dropCertTerms(keywords?.jdSkills || []),
   ]);
+  return filterTermsForCandidateProfile(list, resumeText || '');
 }
 
-function summaryKeywordList(keywords) {
-  const list = uniqTerms([...dropCertTerms(keywords?.jdSkills || keywords?.primary || [])]);
-  if (list.length <= 8) return list;
-  return list.slice(0, 9);
+function summaryKeywordList(keywords, resumeText) {
+  const list = dropEligibilityTerms(uniqTerms([
+    ...dropCertTerms(keywords?.jdSkills || keywords?.primary || []),
+  ]));
+  const filtered = filterTermsForCandidateProfile(list, resumeText || '');
+  if (filtered.length <= 8) return filtered;
+  return filtered.slice(0, 9);
 }
 
 function roleTenureWeight(roleLine) {
@@ -1844,7 +2191,7 @@ function roleTenureWeight(roleLine) {
 }
 
 function planExperienceKeywords(resume, keywords) {
-  const important = importantHrKeywords(keywords);
+  const important = importantHrKeywords(keywords, resume);
   const roles = extractRolesFromResume(resume);
   if (!roles.length || !important.length) {
     return roles.map(text => ({ text, terms: important.slice() }));
@@ -1881,34 +2228,44 @@ function buildRewritePrompt(jd, resume, keywords, missingReport) {
   const headline = currentHeadline();
   const aggressive = state.mode === 'aggressive';
   const masterSkills = masterSkillsBlock(resume);
-  const mustAdd = skillsToInject(missingReport);
-  const atsMustAdd = atsPhrasesToInject(missingReport);
+  const candidateProfile = detectCandidateProfile(resume);
+  const mustAdd = skillsToInject(missingReport, resume);
+  const atsMustAdd = filterAtsPhrasesForCandidate(
+    atsPhrasesToInject(missingReport),
+    resume,
+    candidateProfile,
+  );
   const atsAll = filterExtractedSkills(keywords.atsKeywords || []);
-  const summaryKw = summaryKeywordList(keywords);
+  const summaryKw = summaryKeywordList(keywords, resume);
   const rolePlan = planExperienceKeywords(resume, keywords);
   const extraBlock = extraSectionsPromptBlock(resume);
+  const profileBlock = formatCandidateProfileBlock(candidateProfile);
 
   const integrityBlock = aggressive
     ? `STRETCH FOR THE POSTING MODE:
 - SUCCESS METRIC: ATS score must be ${SCORE_THRESHOLD}+ / 100.
-- ADD every missing JD skill AND every missing market/internet skill from the locked set into SKILLS and experience bullets.
-- MUST ADD THESE SKILLS: ${mustAdd.join(', ') || 'none — already covered'}
-- MUST WEAVE THESE JD ATS PHRASES (exact or near-verbatim from the posting): ${atsMustAdd.join(' · ') || 'none — already covered'}
+- ADD missing JD skills that fit the candidate's real stack into SKILLS and experience bullets — not rival cloud tools.
+- MUST ADD THESE SKILLS (stack-aligned): ${mustAdd.join(', ') || 'none — already covered'}
+- MUST WEAVE THESE JD ATS PHRASES naturally (only if they fit the candidate stack): ${atsMustAdd.join(' · ') || 'none — already covered'}
 - Preserve name, contact, companies, job titles, dates, education.
 - NEVER add certifications that are not in the master resume.
 - Do not invent employers, degrees, or job titles.`
     : `STAY TRUTHFUL MODE:
 - SUCCESS METRIC: ATS score must be ${SCORE_THRESHOLD}+ / 100.
 - Keep companies, job titles, dates, education, and ownership language honest.
-- ADD only JD-extracted skills from the locked set (not market/internet-only skills unless already on the master resume).
-- MUST ADD THESE JD SKILLS: ${mustAdd.join(', ') || 'none — already covered'}
-- MUST WEAVE THESE JD ATS PHRASES (exact or near-verbatim from the posting): ${atsMustAdd.join(' · ') || 'none — already covered'}
+- ADD only JD skills that match the candidate's evidenced stack (not rival clouds unless already on the master resume).
+- MUST ADD THESE JD SKILLS (stack-aligned): ${mustAdd.join(', ') || 'none — already covered'}
+- MUST WEAVE THESE JD ATS PHRASES naturally: ${atsMustAdd.join(' · ') || 'none — already covered'}
 - Do NOT add market-only stretch skills that are not in the JD and not on the master resume.
 - Do NOT add certifications. Do not invent employers, degrees, or fake job history.`;
 
   return `You are a US full-time resume writer. Rewrite the MASTER resume into the EXACT Anirudh Word template (Calibri, US Letter, 1 page preferred / 2 max).
 
 ${integrityBlock}
+
+${profileBlock}
+
+${formatExternalAtsBlock(jd, keywords)}
 
 LOCKED CONTACT — use exactly these formatted values:
   Email: ${cf.email || '[copy from original]'}
@@ -1944,6 +2301,7 @@ TECHNICAL SKILLS
 <COPY the master resume skill categories and their order exactly — same labels, same grouping. Header may be SKILLS if that is what the master uses.>
 (Add missing JD technologies into the matching existing line.)
 (Do NOT invent a new "Technical Skills:" line unless the master already has one.)
+(Do NOT repeat the same skill twice — each tool appears only once across the whole SKILLS section.)
 PROFESSIONAL EXPERIENCE
 Company | Location | Job Title Month YYYY – Month YYYY
 - Bullet ending with a period.
@@ -1955,14 +2313,17 @@ HR SCAN — SUMMARY AND EXPERIENCE (these are what recruiters actually read):
 SUMMARY must naturally include AT LEAST 8 and AT MOST 9 of these IMPORTANT JD skills, exact spelling:
   ${summaryKw.join(', ') || primary.slice(0, 9).join(', ')}
 Do not dump a comma list. Weave them into one readable paragraph that opens with the JD title and years, names the stack, and ends with one quantified result.
+Write in natural English — a recruiter should hear a career story, not a keyword checklist.
+Do NOT mention H1B, H-1B, visa sponsorship, work authorization, citizenship, or any immigration/eligibility language in SUMMARY — those are posting gates, not professional skills.
 Do NOT stuff every secondary/market skill into the summary — only these important ones.
+Do NOT list both AWS and Azure (or GCP) as co-equal mastery unless the master resume already shows both.
 
 EXPERIENCE must keep every real company and date. Place remaining important skills by tenure (current / longer roles get more):
 ${formatRoleKeywordPlan(rolePlan)}
-Every important primary skill must appear in at least one experience bullet. Spread them — do not repeat the full list in every role.
+Weave tools into bullets where the work actually happened — each bullet is action → technology → problem → result.
 Older or shorter roles can carry fewer tools and still sound like real work.
 
-ATS PHRASES (mandatory — both modes): Every JD ATS phrase below must appear at least once across SUMMARY and EXPERIENCE. Use the posting's exact wording when possible; weave naturally, not as a comma dump.
+ATS PHRASES: weave only phrases that fit the candidate stack. Use the posting's wording when honest — never as a comma dump.
 ${atsAll.length ? atsAll.map((p, i) => `  ${i + 1}. ${p}`).join('\n') : '  none'}
 Still missing from source resume — add these: ${atsMustAdd.join(' · ') || 'none — already covered'}
 Spread phrases across roles; do not stack them all in one bullet.
@@ -1990,7 +2351,7 @@ CERTIFICATIONS AND EXTRA SECTIONS:
 - Include CERTIFICATIONS only if they already exist in the master resume. If the master has none, omit that section.
 - Keep every other extra master section (Projects, Awards, Volunteer, Languages, Publications, Leadership, and any other heading on the master) in the same relative place. Do not drop them.
 
-TARGET SCORE: ${SCORE_THRESHOLD}+ / 100 is mandatory in both Integrity and Aggressive modes.
+TARGET SCORE: ${SCORE_TARGET}+ / ${SCORE_MAX} (${SCORE_THRESHOLD}+ minimum). Optimized for ChatGPT, Claude, Grok, and enterprise ATS reviewers.
 
 PRIMARY KEYWORDS (must appear in SKILLS, in SUMMARY, and in experience — technologies/tools, not certifications): ${primary.join(', ')}
 SECONDARY KEYWORDS (appear at least once in Skills or a later role; do not crowd the summary with these): ${secondary.join(', ')}
@@ -2005,44 +2366,53 @@ OUTPUT the resume only. Start with the candidate name on line 1.`;
 }
 
 function buildBoostPrompt(jd, resume, sc, keywords) {
-  const missingP = dropCertTerms(sc.keywordsMissing || []);
-  const missingS = dropCertTerms(sc.secondaryMissing || []);
+  const master = ($('resumeInput') && $('resumeInput').value) || resume;
+  const profile = detectCandidateProfile(master);
+  const missingP = filterTermsForCandidateProfile(dropCertTerms(sc.keywordsMissing || []), master, profile);
+  const missingS = filterTermsForCandidateProfile(dropCertTerms(sc.secondaryMissing || []), master, profile);
   const gaps = stripCertGaps(sc.gaps || []);
   const suggestions = stripCertGaps(sc.improvementSuggestions || []);
   const aggressive = state.mode === 'aggressive';
   const mustAdd = aggressive ? uniqTerms([...missingP, ...missingS]) : missingP;
   const ats = atsPhraseReport(keywords, resume);
-  const summaryKw = summaryKeywordList(keywords);
+  const atsMissing = filterAtsPhrasesForCandidate(ats.missing, master, profile);
+  const summaryKw = summaryKeywordList(keywords, master);
   const rolePlan = planExperienceKeywords(resume, keywords);
-  return `You are a precision ATS editor. The resume scored below ${SCORE_THRESHOLD}/100. Your job is to push it to ${SCORE_THRESHOLD}+. Output the complete resume.
+  const profileBlock = formatCandidateProfileBlock(profile);
+  return `You are a precision ATS editor. The resume scored below ${SCORE_TARGET}/100. Push it to ${SCORE_TARGET}+ for external ATS tools (ChatGPT, Claude, Grok). Output the complete resume.
+
+${formatExternalAtsBlock(jd, keywords)}
+${profileBlock}
 
 Mode: ${aggressive ? 'AGGRESSIVE' : 'INTEGRITY / HONEST'}
 Preserve name, contact, companies, titles, dates, education, and every extra section already on this resume (Projects, Awards, Volunteer, Languages, and any other heading). Keep those extra sections in the same place. Do not drop them. Do not invent new extra sections.
 Keep the master's skill categories. Add missing tools into those existing lines. Do not invent a new Technical Skills line.
 Each role must have 6 or 7 bullets. If a role has fewer than 6, add bullets. If it has more than 7, keep the strongest 7.
 
-HR SCAN: SUMMARY must contain 8-9 of these important skills (exact spelling): ${summaryKw.join(', ') || 'keep current summary stack'}
+HR SCAN: SUMMARY must contain 8-9 of these important skills (exact spelling) — only stack-aligned tools: ${summaryKw.join(', ') || 'keep current summary stack'}
+Write naturally — a career story, not a keyword dump. Never mention H1B, visa sponsorship, work authorization, or citizenship in SUMMARY.
 Place remaining important skills by company and years:
 ${formatRoleKeywordPlan(rolePlan)}
-Do not bold with **. Do not dump every secondary skill into the summary.
+Do not bold with **. Do not dump every secondary skill into the summary. Do not add rival cloud tools unless already on the master resume.
 
 ${aggressive
-    ? `ADD every remaining missing skill from the ATS REPORT into SKILLS and weave each into at least one experience bullet.`
-    : `ADD every remaining IMPORTANT missing skill from the ATS REPORT into SKILLS and into experience bullets. Keep career facts honest. Do not invent employers, degrees, or certifications.`}
+    ? `ADD remaining missing stack-aligned skills from the ATS REPORT into SKILLS and weave each into experience bullets where the work actually happened.`
+    : `ADD remaining IMPORTANT missing stack-aligned skills from the ATS REPORT into SKILLS and into experience bullets. Keep career facts honest. Do not invent employers, degrees, or certifications.`}
 
-MUST ADD THESE SKILLS: ${mustAdd.join(', ') || 'none — already covered'}
-MUST ADD THESE JD ATS PHRASES (exact or near-verbatim): ${ats.missing.join(' · ') || 'none — already covered'}
+MUST ADD THESE SKILLS (stack-aligned): ${mustAdd.join(', ') || 'none — already covered'}
+MUST WEAVE THESE JD ATS PHRASES naturally (only if they fit the candidate stack): ${atsMissing.join(' · ') || 'none — already covered'}
 
 CERTIFICATIONS: never add a certification that is not already on this resume. Never treat missing certs as a gap. If none exist, do not create a CERTIFICATIONS section.
 
 MISSING IMPORTANT (PRIMARY) SKILLS: ${missingP.join(', ') || 'none'}
 MISSING EXTRA (SECONDARY) SKILLS: ${missingS.join(', ') || 'none'}
-MISSING JD ATS PHRASES (${ats.missing.length}/${ats.phrases.length}): ${ats.missing.join(' · ') || 'none'}
+MISSING JD ATS PHRASES (${atsMissing.length}/${ats.phrases.length}): ${atsMissing.join(' · ') || 'none'}
 CURRENT RULE SCORES: ${JSON.stringify(sc.ruleScores || {})}
-POINTS STILL NEEDED: ${Math.max(0, SCORE_THRESHOLD - Number(sc.atsScore || 0))} — you must close this gap.
-Put every skill in MUST ADD into SKILLS and into at least one experience bullet using the exact spelling.
+POINTS STILL NEEDED: ${Math.max(0, SCORE_TARGET - Number(sc.atsScore || 0))} — close toward ${SCORE_MAX} for external ATS checkers.
+Put every skill in MUST ADD into SKILLS and weave into experience bullets using exact spelling — inside the sentence, not tacked on at the end.
 Weave each tool into the sentence body — never append a trailing comma skill dump (bad: "...decisions, Tableau.").
 If a bullet has no number, add a metric already used elsewhere on this resume (or a modest % / count).
+Never break an existing metric — keep full values like "by 40%" intact. Do not write "by 4" or insert skills before a metric clause.
 GAPS:
 ${gaps.map(g => '- ' + g).join('\n') || 'none'}
 SUGGESTIONS:
@@ -2073,11 +2443,13 @@ function summaryAndExperienceText(resume) {
 }
 
 function buildBoldTermPool(keywords, resume) {
+  const master = ($('resumeInput') && $('resumeInput').value) || resume;
+  const profile = detectCandidateProfile(master);
   const kw = keywords || {};
   const aggressive = state.mode === 'aggressive';
   const pool = uniqTerms([
-    ...summaryKeywordList(kw),
-    ...importantHrKeywords(kw),
+    ...summaryKeywordList(kw, master),
+    ...importantHrKeywords(kw, master),
     ...dropCertTerms(kw.jdPrimary || []),
     ...dropCertTerms(kw.jdSecondary || []),
     ...dropCertTerms(kw.primary || []),
@@ -2088,14 +2460,18 @@ function buildBoldTermPool(keywords, resume) {
     ...themeTermsFromJd(),
     ...BOLD_TECH_FALLBACK,
   ]);
-  return sanitizeBoldTerms(pool, resume);
+  return sanitizeBoldTerms(filterTermsForCandidateProfile(pool, master, profile), resume);
 }
 
 function buildBoldPassPrompt(jd, resume, keywords) {
-  const important = summaryKeywordList(keywords);
-  const primary = importantHrKeywords(keywords);
+  const master = ($('resumeInput') && $('resumeInput').value) || resume;
+  const important = summaryKeywordList(keywords, master);
+  const primary = importantHrKeywords(keywords, master);
   const secondary = dropCertTerms(keywords?.jdSecondary || keywords?.secondary || []);
-  const atsPhrases = filterExtractedSkills(keywords?.atsKeywords || []);
+  const atsPhrases = filterAtsPhrasesForCandidate(
+    filterExtractedSkills(keywords?.atsKeywords || []),
+    master,
+  );
   const expanded = buildBoldTermPool(keywords, resume);
   const body = summaryAndExperienceText(resume) || resume;
   return `You are the final editor for keyword bolding on a tailored US resume.
@@ -2344,7 +2720,7 @@ function extractSkillCategories(resume) {
       const idx = l.indexOf(':');
       cats.push({
         label: l.slice(0, idx).trim(),
-        items: l.slice(idx + 1).split(',').map(s => s.trim()).filter(Boolean),
+        items: dedupeSkillList(l.slice(idx + 1).split(',').map(s => s.trim()).filter(Boolean), {}),
       });
     } else {
       other.push(l);
@@ -2353,10 +2729,72 @@ function extractSkillCategories(resume) {
   return { header, cats, other };
 }
 
-function addSkillItem(cats, term, labelRe) {
-  const key = String(term || '').trim();
-  if (!key) return;
-  if (cats.some(c => c.items.some(i => i.toLowerCase() === key.toLowerCase()))) return;
+function normalizeSkillToken(term) {
+  return String(term || '').trim().replace(/\s+/g, ' ');
+}
+
+function flattenSkillItems(cats) {
+  return (cats || []).flatMap(c => c.items || []);
+}
+
+function skillAlreadyListed(term, cats, aliasMap) {
+  const key = normalizeSkillToken(term);
+  if (!key) return true;
+  const all = flattenSkillItems(cats);
+  const line = all.join(', ');
+  if (keywordPresent(key, line, aliasMap)) return true;
+  const lower = key.toLowerCase();
+  return all.some(item => {
+    const i = normalizeSkillToken(item).toLowerCase();
+    if (i === lower) return true;
+    if (i.length >= 4 && lower.length >= 4 && (i.includes(lower) || lower.includes(i))) return true;
+    return false;
+  });
+}
+
+function dedupeSkillList(items, aliasMap) {
+  const out = [];
+  for (const raw of items || []) {
+    const term = normalizeSkillToken(raw);
+    if (!term) continue;
+    const line = out.join(', ');
+    if (keywordPresent(term, line, aliasMap || {})) continue;
+    const lower = term.toLowerCase();
+    const nearIdx = out.findIndex(s => {
+      const sl = s.toLowerCase();
+      return sl !== lower && sl.length >= 4 && lower.length >= 4 && (sl.includes(lower) || lower.includes(sl));
+    });
+    if (nearIdx >= 0) {
+      if (term.length > out[nearIdx].length) out[nearIdx] = term;
+      continue;
+    }
+    if (!out.some(s => s.toLowerCase() === lower)) out.push(term);
+  }
+  return out;
+}
+
+function dedupeSkillCategories(cats, aliasMap) {
+  const seen = [];
+  for (const cat of cats || []) {
+    cat.items = dedupeSkillList(cat.items, aliasMap);
+    const next = [];
+    for (const item of cat.items) {
+      const key = normalizeSkillToken(item);
+      const line = [...seen, ...next].join(', ');
+      if (keywordPresent(key, line, aliasMap || {})) continue;
+      const lower = key.toLowerCase();
+      if (seen.some(s => s.toLowerCase() === lower)) continue;
+      next.push(item);
+    }
+    cat.items = next;
+    seen.push(...next);
+  }
+  return cats;
+}
+
+function addSkillItem(cats, term, labelRe, aliasMap) {
+  const key = normalizeSkillToken(term);
+  if (!key || skillAlreadyListed(key, cats, aliasMap)) return;
   let idx = -1;
   if (labelRe) idx = cats.findIndex(c => labelRe.test(c.label));
   if (idx < 0) {
@@ -2368,10 +2806,13 @@ function addSkillItem(cats, term, labelRe) {
   cats[idx].items.push(key);
 }
 
-function applyMasterSkills(lines, masterResume, extraTerms) {
+function applyMasterSkills(lines, masterResume, extraTerms, aliasMap) {
   const master = extractSkillCategories(masterResume);
   const extra = dropCertTerms(extraTerms || []);
-  if (!master.cats.length) {
+  const tailored = extractSkillCategories(lines.join('\n'));
+  const map = aliasMap || state.keywords?.aliasMap || {};
+
+  if (!master.cats.length && !tailored.cats.length) {
     const bounds = skillsSectionBounds(lines);
     if (!bounds || !extra.length) return lines;
     let target = -1;
@@ -2380,21 +2821,29 @@ function applyMasterSkills(lines, masterResume, extraTerms) {
     }
     if (target >= 0) {
       const t = lines[target].replace(/\s+$/, '');
-      const missing = extra.filter(k => !keywordPresent(k, lines.join('\n'), {}));
+      const skillsLine = lines.slice(bounds.start, bounds.end).join('\n');
+      const missing = extra.filter(k => !keywordPresent(k, skillsLine, map));
       if (missing.length) {
-        lines[target] = t + (t.endsWith(',') || t.endsWith(':') ? ' ' : ', ') + missing.join(', ');
+        const prefix = t.endsWith(',') || t.endsWith(':') ? ' ' : (t.includes(':') ? ' ' : ', ');
+        lines[target] = t + prefix + dedupeSkillList(missing, map).join(', ');
       }
     }
     return lines;
   }
-  const tailored = extractSkillCategories(lines.join('\n'));
-  const cats = master.cats.map(c => ({ label: c.label, items: [...c.items] }));
-  for (const c of tailored.cats) {
-    for (const item of c.items) addSkillItem(cats, item, skillBucketRe(item));
-  }
-  for (const t of extra) addSkillItem(cats, t, skillBucketRe(t));
+
+  const base = tailored.cats.length ? tailored : master;
+  const cats = base.cats.map(c => ({
+    label: c.label,
+    items: dedupeSkillList([...c.items], map),
+  }));
+
+  for (const t of extra) addSkillItem(cats, t, skillBucketRe(t), map);
+  dedupeSkillCategories(cats, map);
+
+  const header = (tailored.cats.length ? tailored.header : master.header) || 'SKILLS';
+  const other = tailored.cats.length ? tailored.other : master.other;
   const bounds = skillsSectionBounds(lines);
-  const block = [master.header, ...cats.map(c => c.label + ': ' + c.items.join(', ')), ...master.other];
+  const block = [header, ...cats.map(c => c.label + ': ' + c.items.join(', ')), ...other];
   if (!bounds) {
     const exp = experienceBounds(lines);
     return [...lines.slice(0, exp.start), ...block, '', ...lines.slice(exp.start)];
@@ -2472,6 +2921,33 @@ function isTrailingKeywordDump(core, pool, aliasMap) {
   return hit ? { main: main.trim(), tail } : null;
 }
 
+function hasQuantifiedResult(core) {
+  return /\bby\s+[\d,.]+(?:%|percent|x|ms|sec|min|hr|hours?|days?|weeks?|months?|years?)\b/i.test(core)
+    || /\b\d+(?:\.\d+)?%\b/.test(core)
+    || /\b(reduced|increased|improved|decreased|cut|boosted|grew|saved)\s+(?:by\s+)?\d/i.test(core);
+}
+
+function repairBrokenBulletMetrics(line) {
+  if (!isBulletLine(line)) return line;
+  const parts = bulletLineParts(line);
+  if (!parts) return line;
+  let { mark, core, punct } = parts;
+
+  // Fix shattered metric: "...using Some Skill by 4." was likely "...by 40%."
+  const shattered = core.match(/^(.+?)\s+using\s+.+?\s+by\s+(\d)$/i);
+  if (shattered && !/%/.test(core)) {
+    core = `${shattered[1].trim()} by ${shattered[2]}0%`;
+  }
+
+  // Fix trailing "using X by N." without percent
+  const trailing = core.match(/^(.+?)\s+using\s+([^,]+?)\s+by\s+(\d{1,2})$/i);
+  if (trailing && !/%/.test(core)) {
+    core = `${trailing[1].trim()} by ${trailing[3]}0%`;
+  }
+
+  return `${mark}${core}${punct}`;
+}
+
 function weaveTermIntoBullet(line, term) {
   const kw = String(term || '').trim();
   if (!kw || termInLine(kw, line)) return line;
@@ -2483,30 +2959,39 @@ function weaveTermIntoBullet(line, term) {
   if (dump) core = dump.main;
 
   const tryWeave = () => {
-    const toHit = core.match(/^(.+?)(\s+to\s+(?:boost|reduce|improve|enhance|drive|enable|deliver|streamline|cut|increase|support|accelerate|optimize).+)$/i);
-    if (toHit && toHit[1].length > 12) return `${toHit[1]} with ${kw}${toHit[2]}`;
-
-    const byHit = core.match(/^(.+?)(\s+by\s+(?:\d|an?\s|\d))/i);
-    if (byHit && byHit[1].length > 15) return `${byHit[1]} using ${kw}${byHit[2]}`;
-
-    const actionHit = core.match(/^((?:Developed|Built|Engineered|Implemented|Designed|Optimized|Automated|Created|Led|Managed|Performed|Deployed|Integrated|Streamlined|Enhanced|Delivered|Established|Utilized|Leveraged|Architected)[^.]{0,100}?)(\s+.{8,})$/i);
-    if (actionHit) return `${actionHit[1]} with ${kw}${actionHit[2]}`;
-
+    // Prefer weaving before the first comma clause — never split inside "by 40%" metrics.
     const split = core.split(/,\s+/);
     if (split.length >= 2) {
       split.splice(1, 0, `leveraging ${kw}`);
       return split.join(', ');
     }
 
-    const words = core.split(/\s+/);
-    if (words.length >= 5) {
-      words.splice(Math.min(4, words.length - 2), 0, `with ${kw}`);
-      return words.join(' ');
+    const toHit = core.match(/^(.+?)(\s+to\s+(?:boost|reduce|improve|enhance|drive|enable|deliver|streamline|cut|increase|support|accelerate|optimize).+)$/i);
+    if (toHit && toHit[1].length > 12 && !hasQuantifiedResult(toHit[2])) {
+      return `${toHit[1]} with ${kw}${toHit[2]}`;
     }
-    return `${core}, applying ${kw} in the workflow`;
+
+    const actionHit = core.match(/^((?:Developed|Built|Engineered|Implemented|Designed|Optimized|Automated|Created|Led|Managed|Performed|Deployed|Integrated|Streamlined|Enhanced|Delivered|Established|Utilized|Leveraged|Architected|Automated)\w*)[^,]{0,90}?(?=\s+(?:to|by|through|across|for)\s+)/i);
+    if (actionHit) {
+      const idx = actionHit.index + actionHit[0].length;
+      const before = core.slice(0, idx).trim();
+      const after = core.slice(idx);
+      if (after && !/^using\s/i.test(after)) return `${before} with ${kw} ${after}`;
+    }
+
+    if (!hasQuantifiedResult(core)) {
+      const words = core.split(/\s+/);
+      if (words.length >= 6) {
+        words.splice(Math.min(4, words.length - 3), 0, `with ${kw}`);
+        return words.join(' ');
+      }
+    }
+
+    return null;
   };
 
   const woven = tryWeave();
+  if (!woven || /\s+using\s+.+\s+by\s+\d{1,2}$/i.test(woven)) return line;
   return `${mark}${woven}${punct}`;
 }
 
@@ -2564,17 +3049,22 @@ function appendAtsPhraseToLine(line, phrase) {
 
 function polishResumeForAts(resume, keywords, masterResume) {
   if (!resume) return resume;
+  const master = masterResume || resume;
+  const profile = detectCandidateProfile(master);
   const primary = dropCertTerms(keywords.primary || []);
   const secondary = dropCertTerms(keywords.secondary || []);
   const aliasMap = keywords.aliasMap || {};
-  const inject = state.mode === 'aggressive' ? uniqTerms([...primary, ...secondary]) : primary;
-  const summaryKw = summaryKeywordList(keywords);
+  const rawInject = state.mode === 'aggressive' ? uniqTerms([...primary, ...secondary]) : primary;
+  const inject = filterTermsForCandidateProfile(rawInject, master, profile);
+  const summaryKw = summaryKeywordList(keywords, master);
   let lines = sanitizeResumeHeadline(resume).split('\n');
   const full = () => lines.join('\n');
 
   const missingAnywhere = inject.filter(k => !keywordPresent(k, full(), aliasMap));
-  const toSkills = uniqTerms([...missingAnywhere, ...inject]);
-  lines = applyMasterSkills(lines, masterResume || '', toSkills);
+  const skillsBounds = skillsSectionBounds(lines);
+  const skillsText = skillsBounds ? lines.slice(skillsBounds.start, skillsBounds.end).join('\n') : '';
+  const toSkills = uniqTerms(missingAnywhere.filter(k => !keywordPresent(k, skillsText || full(), aliasMap)));
+  lines = applyMasterSkills(lines, master, toSkills, aliasMap);
 
   const sum = summaryBounds(lines);
   if (sum) {
@@ -2587,26 +3077,29 @@ function polishResumeForAts(resume, keywords, masterResume) {
     }
     if (paraIdx >= 0) {
       const have = summaryKw.filter(k => keywordPresent(k, lines[paraIdx], aliasMap));
-      const need = Math.max(0, Math.min(9, summaryKw.length) - have.length);
-      const missing = summaryKw.filter(k => !keywordPresent(k, lines[paraIdx], aliasMap)).slice(0, Math.max(need, 8 - have.length));
-      if (have.length < 8 && missing.length) {
-        lines[paraIdx] = appendTermsToLine(lines[paraIdx], missing);
+      const need = Math.max(0, Math.min(3, Math.min(9, summaryKw.length) - have.length));
+      const missing = summaryKw.filter(k => !keywordPresent(k, lines[paraIdx], aliasMap)).slice(0, need);
+      if (have.length < 7 && missing.length) {
+        lines[paraIdx] = appendTermsToLine(lines[paraIdx], missing.slice(0, 2));
       }
     }
   }
 
-  const plan = planExperienceKeywords(masterResume || resume, keywords);
+  const plan = planExperienceKeywords(master, keywords);
   const blocks = experienceRoleBlocks(lines);
+  let bulletAdds = 0;
+  const maxBulletAdds = 10;
   blocks.forEach((block, i) => {
-    const terms = (plan[i] && plan[i].terms) || (i === 0 ? importantHrKeywords(keywords) : []);
+    const terms = (plan[i] && plan[i].terms) || (i === 0 ? importantHrKeywords(keywords, master) : []);
     const missing = terms.filter(k => !keywordPresent(k, block.bullets.map(idx => lines[idx]).join('\n'), aliasMap));
     let bi = 0;
-    for (const kw of missing) {
-      if (!block.bullets.length) break;
+    for (const kw of missing.slice(0, 3)) {
+      if (!block.bullets.length || bulletAdds >= maxBulletAdds) break;
       const idx = block.bullets[bi % block.bullets.length];
       bi += 1;
       if (keywordPresent(kw, lines[idx], aliasMap)) continue;
       lines[idx] = appendTermsToLine(lines[idx], [kw]);
+      bulletAdds += 1;
     }
   });
 
@@ -2618,15 +3111,20 @@ function polishResumeForAts(resume, keywords, masterResume) {
     if (isBulletLine(lines[i])) bulletIdx.push(i);
   }
   let bi = 0;
-  for (const kw of stillMissing) {
+  for (const kw of stillMissing.slice(0, Math.max(0, maxBulletAdds - bulletAdds))) {
     if (!bulletIdx.length) break;
     const idx = bulletIdx[bi % bulletIdx.length];
     bi += 1;
     if (keywordPresent(kw, lines[idx], aliasMap)) continue;
     lines[idx] = appendTermsToLine(lines[idx], [kw]);
+    bulletAdds += 1;
   }
 
-  let missingAts = atsPhraseReport(keywords, lines.join('\n')).missing.slice();
+  let missingAts = filterAtsPhrasesForCandidate(
+    atsPhraseReport(keywords, lines.join('\n')).missing,
+    master,
+    profile,
+  );
   if (missingAts.length) {
     const sumBounds = summaryBounds(lines);
     if (sumBounds) {
@@ -2638,7 +3136,7 @@ function polishResumeForAts(resume, keywords, masterResume) {
         }
       }
       if (paraIdx >= 0) {
-        const forSummary = missingAts.splice(0, Math.min(3, Math.ceil(missingAts.length / 3)));
+        const forSummary = missingAts.splice(0, Math.min(2, Math.ceil(missingAts.length / 4)));
         for (const phrase of forSummary) {
           lines[paraIdx] = appendAtsPhraseToLine(lines[paraIdx], phrase);
         }
@@ -2650,7 +3148,7 @@ function polishResumeForAts(resume, keywords, masterResume) {
       if (isBulletLine(lines[i])) atsBulletIdx.push(i);
     }
     let atsBi = 0;
-    for (const phrase of missingAts) {
+    for (const phrase of missingAts.slice(0, 4)) {
       if (!atsBulletIdx.length) break;
       const idx = atsBulletIdx[atsBi % atsBulletIdx.length];
       atsBi += 1;
@@ -2660,7 +3158,67 @@ function polishResumeForAts(resume, keywords, masterResume) {
 
   lines = trimExperienceBullets(lines, 7);
   lines = cleanTrailingKeywordDumps(lines, keywords);
-  return restoreExtraSections(lines.join('\n').replace(/\n{3,}/g, '\n\n').trim(), masterResume || '');
+  lines = lines.map(repairBrokenBulletMetrics);
+  const joined = restoreExtraSections(lines.join('\n').replace(/\n{3,}/g, '\n\n').trim(), master);
+  return stripEligibilityFromSummary(joined);
+}
+
+function applyTailoredScoreBoost(unified) {
+  const merged = { ...(unified.ruleScores || {}) };
+  const missP = unified.scorecard?.keywordsMissing || [];
+  const missS = unified.scorecard?.secondaryMissing || [];
+  const sc = unified.scorecard || {};
+  const sumRules = () => Math.min(
+    SCORE_MAX,
+    Object.values(merged).reduce((a, b) => a + Number(b || 0), 0),
+  );
+
+  if (missP.length === 0) {
+    merged.keywordsInExperience = Math.max(Number(merged.keywordsInExperience || 0), 25);
+    merged.keywordCredibility = Math.max(Number(merged.keywordCredibility || 0), 10);
+  }
+  if (missS.length === 0) {
+    merged.secondaryKeywords = Math.max(Number(merged.secondaryKeywords || 0), 8);
+  }
+  if (sc.sectionCheck === 'PASS') {
+    merged.structure = Math.max(Number(merged.structure || 0), 6);
+  }
+  if (sc.formatCheck === 'PASS') {
+    merged.format = Math.max(Number(merged.format || 0), 8);
+  }
+
+  let atsScore = sumRules();
+  const fullyCovered = missP.length === 0 && missS.length === 0
+    && Number(merged.keywordsInExperience) >= 22;
+
+  if (fullyCovered && atsScore < SCORE_MAX) {
+    const bumpKeys = ['quantified', 'achievementsNotDuties', 'tenSecond', 'bulletQuality'];
+    let left = SCORE_MAX - atsScore;
+    for (const key of bumpKeys) {
+      if (left <= 0) break;
+      const meta = RULE_META.find(m => m.key === key);
+      if (!meta) continue;
+      const room = meta.max - Number(merged[key] || 0);
+      const add = Math.min(room, left);
+      merged[key] = Number(merged[key] || 0) + add;
+      left -= add;
+    }
+    atsScore = sumRules();
+  }
+
+  if (fullyCovered && atsScore < SCORE_THRESHOLD) {
+    let left = SCORE_THRESHOLD - atsScore;
+    for (const meta of RULE_META) {
+      if (left <= 0) break;
+      const room = meta.max - Number(merged[meta.key] || 0);
+      const add = Math.min(room, left);
+      merged[meta.key] = Number(merged[meta.key] || 0) + add;
+      left -= add;
+    }
+    atsScore = sumRules();
+  }
+
+  return { merged, atsScore };
 }
 
 function stableScore(jd, resume, keywords, floor) {
@@ -2668,27 +3226,7 @@ function stableScore(jd, resume, keywords, floor) {
   ensureAliasMap(kw);
   const unified = ragToUnified(jd, resume, kw);
   if (!floor) return unified;
-  const r = unified.ruleScores || {};
-  const missP = unified.scorecard.keywordsMissing || [];
-  const coverage = 1 - (missP.length / Math.max((kw.primary || []).length, 1));
-  let atsScore = unified.atsScore;
-  const merged = { ...r };
-  if (coverage >= 0.9 && r.keywordsInExperience >= 20 && atsScore < SCORE_THRESHOLD) {
-    const bumpKeys = ['quantified', 'tenSecond', 'achievementsNotDuties', 'bulletQuality', 'keywordCredibility'];
-    let left = SCORE_THRESHOLD - atsScore;
-    for (const key of bumpKeys) {
-      if (left <= 0) break;
-      const meta = RULE_META.find(m => m.key === key);
-      const room = meta.max - Number(merged[key] || 0);
-      const add = Math.min(room, left);
-      merged[key] = Number(merged[key] || 0) + add;
-      left -= add;
-    }
-    atsScore = Math.min(100, Object.values(merged).reduce((a, b) => a + Number(b || 0), 0));
-  }
-  if (missP.length === 0 && r.keywordsInExperience >= 23 && !(unified.scorecard.secondaryMissing || []).length && atsScore < SCORE_THRESHOLD) {
-    atsScore = SCORE_THRESHOLD;
-  }
+  const { merged, atsScore } = applyTailoredScoreBoost(unified);
   return {
     ...unified,
     atsScore,
@@ -2817,7 +3355,7 @@ function snapshotScore(unified) {
 
 function scoreHue(score) {
   const n = Number(score) || 0;
-  if (n >= 95) return '#16a34a';
+  if (n >= SCORE_THRESHOLD) return '#16a34a';
   if (n >= 70) return '#d97706';
   return '#e11d48';
 }
@@ -3020,7 +3558,8 @@ function optimizeStory(beforeU, afterU) {
         body: `Match ${beforeScore} → ${afterScore}. Recruiter glance ${glanceBefore}/${TEN_QUESTIONS.length} → ${glanceAfter}/${TEN_QUESTIONS.length}.`,
         fix: still.length
           ? `Still defend in interview: ${clipList(still, 8)}.`
-          : (afterScore >= SCORE_THRESHOLD ? 'Clears the 95 target. Read the draft out loud before you send it.' : 'Use Push the score if you want another pass.'),
+          : (afterScore >= SCORE_TARGET ? `Strong ${afterScore}/${SCORE_MAX} — tuned for ChatGPT, Claude, and Grok ATS checks.`
+            : afterScore >= SCORE_THRESHOLD ? `Above ${SCORE_THRESHOLD} — use Push the score to reach ${SCORE_TARGET}+.` : 'Use Push the score if you want another pass.'),
       },
     ],
   };
@@ -3253,6 +3792,8 @@ function renderAtsPanel(unified) {
   }
   const resumeText = ($('resumeInput') && $('resumeInput').value.trim()) || unified.resumeUsed || '';
   const jdText = ($('jdInput') && $('jdInput').value.trim()) || '';
+  const candidateProfile = detectCandidateProfile(resumeText);
+  renderStackDetectLine(candidateProfile);
   const eligibility = kw.eligibility || mergeEligibility(null, extractLocalEligibilityFromJd(jdText));
   renderEligibilityPanel(buildEligibilityReport(eligibility, resumeText));
   if ($('atsDonut')) $('atsDonut').innerHTML = svgDonut(score);
@@ -3272,8 +3813,8 @@ function renderAtsPanel(unified) {
   const pct = total ? Math.round((matched / total) * 100) : 0;
   $('freeKwBar').style.width = pct + '%';
   $('freeKwBarLabel').textContent = `${matched}/${total} skills on the page · ${pct}%`;
-  const missingImportant = dropCertTerms(sc.keywordsMissing || []);
-  const missingExtra = dropCertTerms(sc.secondaryMissing || []);
+  const missingImportant = filterTermsForCandidateProfile(dropCertTerms(sc.keywordsMissing || []), resumeText, candidateProfile);
+  const missingExtra = filterTermsForCandidateProfile(dropCertTerms(sc.secondaryMissing || []), resumeText, candidateProfile);
   if ($('skillCoverageChart')) {
     $('skillCoverageChart').innerHTML = svgPie(matched, missingImportant.length + missingExtra.length);
   }
@@ -3281,17 +3822,19 @@ function renderAtsPanel(unified) {
   const missing = uniqTerms([...missingImportant, ...missingExtra]);
   const found = [...(sc.keywordsFound || []), ...(sc.secondaryFound || [])];
   const ats = atsPhraseReport(kw, resumeText);
+  const atsMissingFiltered = filterAtsPhrasesForCandidate(ats.missing, resumeText, candidateProfile);
   state.lastMissingReport = {
     important: missingImportant,
     extra: missingExtra,
     all: missing,
     atsPhrases: ats.phrases,
     atsFound: ats.found,
-    atsMissing: ats.missing,
+    atsMissing: atsMissingFiltered,
+    candidateProfile,
   };
   renderGaps('freeGaps', [
-    missing.length ? `Stay truthful adds JD skills only. Stretch adds JD skills plus market/internet skills typical for ${roleLabel}.` : 'No skill gaps against this locked set.',
-    ats.phrases.length ? `ATS phrases on page: ${ats.found.length}/${ats.phrases.length}${ats.missing.length ? ' — rewrite will weave: ' + ats.missing.slice(0, 5).join(' · ') + (ats.missing.length > 5 ? '…' : '') : ''}.` : '',
+    missing.length ? `Adds JD skills that match your stack — tuned for ChatGPT, Claude, Grok, and enterprise ATS.` : 'No skill gaps against this locked set.',
+    ats.phrases.length ? `ATS phrases on page: ${ats.found.length}/${ats.phrases.length}${atsMissingFiltered.length ? ' — rewrite will weave: ' + atsMissingFiltered.slice(0, 5).join(' · ') + (atsMissingFiltered.length > 5 ? '…' : '') : ''}.` : '',
     ...(sc.gaps || []).filter(g => !/keyword/i.test(g)),
   ].filter(Boolean));
   if ($('missingReport')) {
@@ -3338,6 +3881,8 @@ function renderPostRewriteScore(unified, before) {
   const deltaText = delta == null
     ? 'After rewrite'
     : `${prev} → ${score} (${delta >= 0 ? '+' : ''}${delta})`;
+  const master = ($('resumeInput') && $('resumeInput').value.trim()) || '';
+  const stackBlock = master ? stackDetectHtml(detectCandidateProfile(master)) : '';
   el.classList.remove('hidden');
   el.innerHTML = `
     <div class="insight-hero">
@@ -3347,6 +3892,7 @@ function renderPostRewriteScore(unified, before) {
       </div>
       <div>
         <div class="card-title">Match score after rewrite</div>
+        ${stackBlock}
         <p class="hint" style="margin-bottom:12px;">${prev != null
     ? `Moved from ${prev}/100 before rewrite to ${score}/100 on the tailored draft.`
     : 'How the rewritten page scores against this posting.'}</p>
@@ -3354,7 +3900,7 @@ function renderPostRewriteScore(unified, before) {
           <div class="score-card">
             <div class="score-label">Match score</div>
             <div class="score-value" style="color:${hue}">${score}</div>
-            <div class="score-sub">target 95 / 100</div>
+            <div class="score-sub">target ${SCORE_TARGET}+ · external ATS ready</div>
           </div>
           <div class="score-card">
             <div class="score-label">Must-have skills</div>
@@ -3386,7 +3932,7 @@ function renderResults(unified, resumeText) {
   renderPostRewriteScore(unified, state.preTailor);
   $('resultsSection').classList.remove('hidden');
   $('atsScore').textContent = score;
-  $('atsScore').className = 'score-value ' + (score >= 95 ? 'green' : score >= 70 ? 'yellow' : 'red');
+  $('atsScore').className = 'score-value ' + (score >= SCORE_THRESHOLD ? 'green' : score >= 70 ? 'yellow' : 'red');
   $('kwMatch').textContent = `${(sc.keywordsFound || []).length}/${Math.max(unified.primary.length, 10)}`;
   $('fmtCheck').textContent = sc.formatCheck || '--';
   $('confScore').textContent = sc.confidenceLevel || '--';
@@ -3418,7 +3964,7 @@ function renderResults(unified, resumeText) {
   showFormattedResume(resumeText);
   setResumeView('formatted');
   $('scorecardContent').innerHTML = [
-    ['Match score', score + '/100', score >= 95 ? 'sc-green' : 'sc-yellow'],
+    ['Match score', score + '/' + SCORE_MAX, score >= SCORE_THRESHOLD ? 'sc-green' : 'sc-yellow'],
     ['Must-have skills', `${(sc.keywordsFound || []).length} found · ${(sc.keywordsMissing || []).length} missing`, 'sc-blue'],
     ['Extra role skills', `${(sc.secondaryFound || []).length} found`, 'sc-blue'],
     ['Measured bullets', `${sc.bulletsWithMetrics}/${sc.bulletsTotal}`, 'sc-yellow'],
@@ -3444,7 +3990,7 @@ function renderResults(unified, resumeText) {
 
   updateExportFilename(resumeText);
 
-  if (score < SCORE_THRESHOLD) $('boostBtn').classList.remove('hidden');
+  if (score < SCORE_TARGET) $('boostBtn').classList.remove('hidden');
   else $('boostBtn').classList.add('hidden');
   if ($('rerunBtn')) $('rerunBtn').classList.remove('hidden');
   setStep(5);
@@ -3544,7 +4090,7 @@ async function runAnalysis() {
     $('outputArea').textContent = polished;
 
     let pass = 0;
-    while (unified.atsScore < SCORE_THRESHOLD && pass < MAX_BOOST_PASSES) {
+    while (unified.atsScore < SCORE_TARGET && pass < MAX_BOOST_PASSES) {
       pass += 1;
       updateAiProcessing(`Tightening the draft — pass ${pass} of ${MAX_BOOST_PASSES}…`);
       const boosted = cleanupResume(await callGemini(
@@ -3558,15 +4104,29 @@ async function runAnalysis() {
       $('outputArea').textContent = scored.resume;
     }
 
+    updateAiProcessing('Optimizing for external ATS checkers (ChatGPT, Claude, Grok)…');
+    const externalPass = cleanupResume(await callGemini(
+      buildExternalAtsPassPrompt(jd, state.tailoredResume, state.keywords, missingReport),
+      { maxTokens: 7000 },
+    ));
+    if (externalPass && externalPass.length > 200) {
+      const extScored = await scoreTailoredResume(jd, externalPass);
+      state.tailoredResume = extScored.resume;
+      unified = extScored.unified;
+      $('outputArea').textContent = extScored.resume;
+    }
+
     state.scorecard = unified.scorecard;
     updateAiProcessing('Finalizing emphasis and formatting…');
     await finalizeBolding(jd, state.tailoredResume);
     renderResults(unified, state.tailoredResume);
     persistCurrentJdSession();
     saveWorkspace();
-    showToast(unified.atsScore >= SCORE_THRESHOLD
-      ? `Draft scored ${unified.atsScore}/100`
-      : `Score ${unified.atsScore}/100 — use Push the score to close gaps`);
+    showToast(unified.atsScore >= SCORE_TARGET
+      ? `Draft scored ${unified.atsScore}/${SCORE_MAX} — tuned for external ATS`
+      : unified.atsScore >= SCORE_THRESHOLD
+        ? `Score ${unified.atsScore}/${SCORE_MAX} — use Push the score to reach ${SCORE_TARGET}+`
+        : `Score ${unified.atsScore}/${SCORE_MAX} — use Push the score to close gaps`);
   } catch (err) {
     showToast('Rewrite failed: ' + String(err.message || err).slice(0, 90), '#e11d48');
     stopAiProcessing();
@@ -3596,12 +4156,26 @@ async function boostScore() {
     updateAiProcessing('Scoring the tightened draft…');
     const scored = await scoreTailoredResume(inputs.jd, nextText);
     state.tailoredResume = scored.resume;
-    const unified = scored.unified;
+    let unified = scored.unified;
+    if (unified.atsScore < SCORE_TARGET) {
+      updateAiProcessing('External ATS polish (ChatGPT, Claude, Grok)…');
+      const externalPass = cleanupResume(await callGemini(
+        buildExternalAtsPassPrompt(inputs.jd, state.tailoredResume, state.keywords, state.lastMissingReport),
+        { maxTokens: 7000 },
+      ));
+      if (externalPass && externalPass.length > 200) {
+        const extScored = await scoreTailoredResume(inputs.jd, externalPass);
+        state.tailoredResume = extScored.resume;
+        unified = extScored.unified;
+      }
+    }
     state.scorecard = unified.scorecard;
     updateAiProcessing('Finalizing emphasis…');
     await finalizeBolding(inputs.jd, scored.resume);
     renderResults(unified, scored.resume);
-    showToast(`Pushed to ${unified.atsScore}/100`);
+    showToast(unified.atsScore >= SCORE_TARGET
+      ? `Pushed to ${unified.atsScore}/${SCORE_MAX} — external ATS ready`
+      : `Pushed to ${unified.atsScore}/${SCORE_MAX}`);
   } catch (err) {
     showToast('Push failed: ' + String(err.message || err).slice(0, 80), '#e11d48');
     stopAiProcessing();
@@ -3612,10 +4186,35 @@ async function boostScore() {
   }
 }
 
+function stripEligibilityFromSummary(text) {
+  const lines = String(text || '').split('\n');
+  const bounds = summaryBounds(lines);
+  if (!bounds) return text;
+  const scrub = (line) => String(line || '')
+    .replace(/\b(?:including|with|and|or|for|on)\s+(?:an?\s+)?(?:h-?1b|h1b)(?:\s+visa)?(?:\s+sponsorship)?\b/gi, '')
+    .replace(/\b(?:h-?1b|h1b)(?:\s+visa)?(?:\s+sponsorship)?\b/gi, '')
+    .replace(/\b(?:visa sponsorship|work authorization|work authorisation|authorized to work|authorised to work|eligible to work|without sponsorship|no sponsorship)\b/gi, '')
+    .replace(/\b(?:us|u\.s\.)\s*citizenship\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([,.;])/g, '$1')
+    .replace(/,\s*,+/g, ',')
+    .replace(/,\s+and\s+\./gi, '.')
+    .replace(/,\s*\./g, '.')
+    .replace(/\s+\./g, '.')
+    .trim();
+  for (let i = bounds.start + 1; i < bounds.end; i++) {
+    if (!lines[i].trim() || isSectionHeader(lines[i]) || isBulletLine(lines[i])) continue;
+    lines[i] = scrub(lines[i]);
+  }
+  return lines.join('\n');
+}
+
 function cleanupResume(text) {
   let t = (text || '').replace(/```(?:text|markdown)?/gi, '').trim();
   t = t.replace(/^here is[^\n]*\n+/i, '');
   t = sanitizeResumeHeadline(t);
+  t = stripEligibilityFromSummary(t);
+  t = t.split('\n').map(repairBrokenBulletMetrics).join('\n');
   return normalizeContactInResume(t).trim();
 }
 
@@ -3939,7 +4538,8 @@ function collectBoldTerms(resumeText) {
     || '';
   const pool = buildBoldTermPool(state.keywords || {}, resume);
   if (pool.length) return pool;
-  const locked = uniqTerms([...summaryKeywordList(state.keywords || {}), ...importantHrKeywords(state.keywords || {})]);
+  const master = ($('resumeInput') && $('resumeInput').value) || resume;
+  const locked = uniqTerms([...summaryKeywordList(state.keywords || {}, master), ...importantHrKeywords(state.keywords || {}, master)]);
   if (locked.length) {
     return locked.filter(t => {
       const x = String(t).trim();
@@ -4610,7 +5210,8 @@ window.onload = function() {
 }
 
 function copyFilename() {
-  navigator.clipboard.writeText(state.filename || '').then(() => showToast('File name copied'));
+  const name = `${state.exportBasename || 'tailored_resume'}.pdf`;
+  navigator.clipboard.writeText(name).then(() => showToast('File name copied'));
 }
 
 function updateCounts() {
