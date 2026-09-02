@@ -1155,22 +1155,15 @@ function extractLocalEligibilityFromJd(jd) {
   const lower = t.toLowerCase();
   let minYears = null;
   let maxYears = null;
-  const yearPatterns = [
-    /(\d+)\s*\+\s*years?(?:\s+of)?(?:\s+(?:relevant|professional|related))?\s*experience/i,
-    /(\d+)\s*to\s*(\d+)\s*years?(?:\s+of)?(?:\s+(?:relevant|professional|related))?\s*experience/i,
-    /minimum\s+of\s+(\d+)\s+years?/i,
-    /at least\s+(\d+)\s+years?/i,
-    /(\d+)\s+years?(?:\s+of)?(?:\s+(?:relevant|professional|related))?\s*experience\s+required/i,
-  ];
-  for (const re of yearPatterns) {
-    const m = t.match(re);
-    if (!m) continue;
-    minYears = Number(m[1]);
-    if (m[2]) maxYears = Number(m[2]);
-    break;
+  const parsedYears = parseRequiredYearsFromText(t);
+  if (parsedYears) minYears = parsedYears;
+  const rangeMatch = t.match(/(\d+(?:\.\d+)?)\s*to\s*(\d+(?:\.\d+)?)\s*years?/i);
+  if (rangeMatch) {
+    minYears = parseYearNumber(rangeMatch[1]);
+    maxYears = parseYearNumber(rangeMatch[2]);
   }
   const wa = {
-    usCitizenRequired: /\b(us citizen|u\.s\. citizen|united states citizen|must be a (?:u\.s\. )?citizen|citizenship required)\b/i.test(t)
+    usCitizenRequired: /\b(us citizen only|us citizen|u\.s\. citizen|united states citizen|must be a (?:u\.s\. )?citizen|citizenship required)\b/i.test(t)
       && !/\b(citizenship|citizen).{0,30}(not required|no requirement)/i.test(t),
     usCitizenPreferred: /\b(us citizen|u\.s\. citizen).{0,20}preferred\b/i.test(t),
     authorizedToWorkRequired: /\b(authorized to work|legally authorized|eligible to work|work authorization|right to work|must be authorized)\b/i.test(t),
@@ -1202,11 +1195,16 @@ function extractLocalEligibilityFromJd(jd) {
 
   const yearsNote = minYears
     ? extractJdLineSnippet(t, [
-      /\d+\s*\+?\s*years?.{0,80}experience/i,
-      /minimum\s+of\s+\d+\s+years?/i,
-      /at least\s+\d+\s+years?/i,
+      /\d+(?:\.\d+)?\s*\+?\s*years?.{0,80}experience/i,
+      /minimum\s+(?:of\s+)?\d+(?:\.\d+)?\s*year/i,
+      /at least\s+\d+(?:\.\d+)?\s*year/i,
+      /\d+(?:\.\d+)?\s*year\(?s?\)?\s*of\s*experience/i,
     ]) || `${minYears}${maxYears ? `–${maxYears}` : '+'} years of experience`
-    : extractJdLineSnippet(t, [/\d+\s*\+?\s*years?.{0,80}experience/i, /minimum\s+of\s+\d+\s+years?/i]);
+    : extractJdLineSnippet(t, [
+      /\d+(?:\.\d+)?\s*\+?\s*years?.{0,80}experience/i,
+      /minimum\s+(?:of\s+)?\d+(?:\.\d+)?\s*year/i,
+      /\d+(?:\.\d+)?\s*year\(?s?\)?\s*of\s*experience/i,
+    ]);
 
   const usCitizenshipText = wa.usCitizenRequired
     ? extractJdLineSnippet(t, [/u\.?s\.?\s*citizen/i, /united states citizen/i, /citizenship required/i]) || 'US citizenship required'
@@ -1313,16 +1311,119 @@ function estimateResumeExperienceYears(resumeText) {
   };
 }
 
+function parseYearNumber(s) {
+  const n = Number(String(s || '').replace(/,/g, ''));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function parseRequiredYearsFromText(text) {
+  const t = String(text || '').trim();
+  if (!t) return null;
+  const n = '(\\d+(?:\\.\\d+)?)';
+  const patterns = [
+    new RegExp(`minimum\\s+(?:of\\s+)?${n}\\s*year`, 'i'),
+    new RegExp(`at least\\s+${n}\\s*year`, 'i'),
+    new RegExp(`${n}\\s*\\+\\s*years?`, 'i'),
+    new RegExp(`${n}\\s*to\\s*${n}\\s*years?`, 'i'),
+    new RegExp(`${n}\\s*years?(?:\\s+of)?(?:\\s+(?:relevant|professional|related))?\\s*(?:of\\s+)?experience`, 'i'),
+    new RegExp(`${n}\\s*year\\(?s?\\)?\\s*(?:of\\s+)?experience`, 'i'),
+    new RegExp(`${n}\\s*years?\\s*(?:is\\s+)?required`, 'i'),
+  ];
+  for (const re of patterns) {
+    const m = t.match(re);
+    if (m) {
+      const val = parseYearNumber(m[1]);
+      if (val) return val;
+    }
+  }
+  return null;
+}
+
+function getJdRequiredYears(eligibility, yearsJdText) {
+  const min = Number(eligibility?.minYears);
+  if (Number.isFinite(min) && min > 0) return min;
+  const fromNote = parseRequiredYearsFromText(eligibility?.yearsNote);
+  if (fromNote) return fromNote;
+  if (yearsJdText) return parseRequiredYearsFromText(yearsJdText);
+  return null;
+}
+
+function getExperienceGap(requiredYears, candidateYears) {
+  return Math.round((candidateYears - requiredYears) * 100) / 100;
+}
+
+function buildExperienceEligibility(requiredYears, candidateYears) {
+  if (requiredYears == null) {
+    return {
+      status: 'neutral',
+      tag: '',
+      sub: candidateYears != null ? `Your resume: ~${candidateYears} years` : '',
+    };
+  }
+  if (candidateYears == null) {
+    return {
+      status: 'neutral',
+      tag: '',
+      sub: `JD requires ${requiredYears}+ years · could not parse dates on your resume`,
+    };
+  }
+  const gap = getExperienceGap(requiredYears, candidateYears);
+  if (gap < 0) {
+    return {
+      status: 'fail',
+      tag: 'Not eligible',
+      sub: `Your resume ~${candidateYears} years · JD requires ${requiredYears}+ years`,
+    };
+  }
+  if (gap > 1) {
+    return {
+      status: 'fail',
+      tag: 'More than buffer',
+      sub: `Your resume ~${candidateYears} years · more than 1 year above JD ${requiredYears}+ (outside buffer zone)`,
+    };
+  }
+  if (gap >= 1) {
+    return {
+      status: 'pass',
+      tag: 'Can apply',
+      sub: `1 year buffer zone · ~${candidateYears} years on resume vs ${requiredYears} required`,
+    };
+  }
+  return {
+    status: 'pass',
+    tag: 'Eligible',
+    sub: `Your resume ~${candidateYears} years meets ${requiredYears}+ required`,
+  };
+}
+
+function buildCitizenshipEligibility(citizenshipJd, wa) {
+  const NOT_FOUND = 'Not found';
+  const stated = citizenshipJd !== NOT_FOUND || wa.usCitizenRequired || wa.usCitizenPreferred;
+  if (!stated) {
+    return { status: 'pass', sub: 'No US citizenship requirement in this posting' };
+  }
+  return {
+    status: 'fail',
+    sub: wa.usCitizenRequired
+      ? 'US citizenship required — verify you meet this before applying'
+      : 'US citizenship mentioned in posting — check if this applies to you',
+  };
+}
+
 function buildEligibilityReport(eligibility, resumeText) {
   const NOT_FOUND = 'Not found';
   const wa = eligibility?.workAuthorization || {};
   const exp = estimateResumeExperienceYears(resumeText);
 
   let yearsJd = (eligibility?.yearsNote || '').trim();
-  if (!yearsJd && eligibility?.minYears) {
-    yearsJd = `${eligibility.minYears}${eligibility.maxYears ? `–${eligibility.maxYears}` : '+'} years of experience`;
+  let requiredYears = getJdRequiredYears(eligibility);
+  if (!yearsJd && requiredYears) {
+    yearsJd = `${requiredYears}${eligibility?.maxYears ? `–${eligibility.maxYears}` : '+'} years of experience`;
   }
   if (!yearsJd) yearsJd = NOT_FOUND;
+  if (requiredYears == null && yearsJd !== NOT_FOUND) {
+    requiredYears = parseRequiredYearsFromText(yearsJd);
+  }
 
   let citizenshipJd = (eligibility?.usCitizenshipText || '').trim();
   if (!citizenshipJd) {
@@ -1343,28 +1444,35 @@ function buildEligibilityReport(eligibility, resumeText) {
     workAuthJd = parts.length ? parts.join(' · ') : NOT_FOUND;
   }
 
+  const expElig = buildExperienceEligibility(requiredYears, exp.years);
+  const citElig = buildCitizenshipEligibility(citizenshipJd, wa);
+
   const items = [
     {
       label: 'Years of experience required',
       value: yearsJd,
       found: yearsJd !== NOT_FOUND,
-      sub: exp.years != null ? `Your resume: ~${exp.years} years` : '',
+      status: expElig.status,
+      tag: expElig.tag || '',
+      sub: expElig.sub,
     },
     {
       label: 'Work authorization',
       value: workAuthJd,
       found: workAuthJd !== NOT_FOUND,
-      sub: '',
+      status: workAuthJd !== NOT_FOUND ? 'neutral' : 'pass',
+      sub: workAuthJd === NOT_FOUND ? 'No work authorization requirement stated in posting' : '',
     },
     {
       label: 'US citizenship',
       value: citizenshipJd,
       found: citizenshipJd !== NOT_FOUND,
-      sub: '',
+      status: citElig.status,
+      sub: citElig.sub,
     },
   ];
 
-  return { items, experience: exp };
+  return { items, experience: exp, requiredYears };
 }
 
 function renderEligibilityPanel(report) {
@@ -1376,23 +1484,32 @@ function renderEligibilityPanel(report) {
     return;
   }
   const foundCount = report.items.filter(i => i.found).length;
+  const passCount = report.items.filter(i => i.status === 'pass').length;
+  const failCount = report.items.filter(i => i.status === 'fail').length;
+  const badgeClass = failCount ? 'fail' : passCount ? 'pass' : 'warn';
+  const badgeText = failCount
+    ? `${failCount} blocker${failCount > 1 ? 's' : ''} · ${foundCount}/3 in JD`
+    : `${passCount} clear · ${foundCount}/3 in JD`;
   el.classList.remove('hidden');
   el.innerHTML = `
     <div class="eligibility-head">
       <div>
         <div class="card-title" style="margin-bottom:4px;">JD particulars</div>
-        <p class="hint" style="margin:0;">Read from the posting by Gemini — exact requirements or <strong>Not found</strong> if not stated.</p>
+        <p class="hint" style="margin:0;">Green = eligible or no requirement · Red = blocker or not eligible · numbers from JD vs your resume.</p>
       </div>
-      <span class="eligibility-badge ${foundCount ? 'pass' : 'warn'}">${foundCount}/3 found in JD</span>
+      <span class="eligibility-badge ${badgeClass}">${badgeText}</span>
     </div>
     <div class="eligibility-grid">
-      ${report.items.map(item => `
-        <article class="eligibility-item ${item.found ? 'found' : 'missing'}">
-          <div class="eligibility-item-label">${escapeHtml(item.label)}</div>
+      ${report.items.map(item => {
+        const status = item.status || (item.found ? 'neutral' : 'neutral');
+        const valueClass = status === 'fail' && item.value === 'Not found' ? 'missing' : '';
+        return `
+        <article class="eligibility-item ${status}${valueClass ? ' ' + valueClass : ''}">
+          <div class="eligibility-item-label">${escapeHtml(item.label)}${item.tag ? `<span class="eligibility-chip ${status}">${escapeHtml(item.tag)}</span>` : ''}</div>
           <p class="eligibility-item-value">${escapeHtml(item.value)}</p>
-          ${item.sub ? `<p class="eligibility-item-sub">${escapeHtml(item.sub)}</p>` : ''}
-        </article>
-      `).join('')}
+          ${item.sub ? `<p class="eligibility-item-sub ${status === 'pass' || status === 'fail' ? status : ''}">${escapeHtml(item.sub)}</p>` : ''}
+        </article>`;
+      }).join('')}
     </div>`;
 }
 

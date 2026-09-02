@@ -784,15 +784,33 @@
     }
     .eligibility-item.found { background: #f8fafc; border-color: #e2e8f0; }
     .eligibility-item.missing { background: #f8fafc; border-color: #e2e8f0; }
+    .eligibility-item.pass {
+      background: #f0fdf4; border-color: #86efac;
+    }
+    .eligibility-item.pass .eligibility-item-value { color: #15803d; }
+    .eligibility-item.fail {
+      background: #fff1f2; border-color: #fda4af;
+    }
+    .eligibility-item.fail .eligibility-item-value { color: #be123c; }
+    .eligibility-item.neutral { background: #f8fafc; border-color: #e2e8f0; }
     .eligibility-item-label {
       font-size: 11px; font-weight: 800; letter-spacing: 0.06em;
       text-transform: uppercase; color: var(--muted); margin-bottom: 8px;
+      display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
     }
+    .eligibility-chip {
+      font-size: 10px; font-weight: 800; letter-spacing: 0.05em;
+      text-transform: uppercase; padding: 3px 8px; border-radius: 999px; border: 1px solid;
+    }
+    .eligibility-chip.pass { background: #dcfce7; color: #15803d; border-color: #86efac; }
+    .eligibility-chip.fail { background: #ffe4e6; color: #be123c; border-color: #fda4af; }
     .eligibility-item-value {
       font-size: 14px; font-weight: 700; line-height: 1.45; color: var(--ink); margin: 0;
     }
     .eligibility-item.missing .eligibility-item-value { color: #94a3b8; font-weight: 600; font-style: italic; }
     .eligibility-item-sub { font-size: 12px; line-height: 1.4; color: var(--muted); margin: 8px 0 0; }
+    .eligibility-item-sub.pass { color: #15803d; font-weight: 650; }
+    .eligibility-item-sub.fail { color: #be123c; font-weight: 650; }
 
     .preview-toggle { display: flex; gap: 8px; margin-bottom: 12px; }
     .preview-toggle .active { background: #4f46e5; color: #fff; border-color: #4f46e5; }
@@ -1249,6 +1267,6 @@
 
 <div id="toast"></div>
 <script src="rag-engine.js?v=jdtitles"></script>
-<script src="app.js?v=post-score-visible"></script>
+<script src="app.js?v=eligibility-over-buffer-red"></script>
 </body>
 </html>
