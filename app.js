@@ -1,6 +1,6 @@
 /* Jobilly.AI Resume Dashboard */
-const SCORE_THRESHOLD = 95;
-const SCORE_TARGET = 98;
+const SCORE_THRESHOLD = 90;
+const SCORE_TARGET = 95;
 const SCORE_MAX = 100;
 const MAX_BOOST_PASSES = 6;
 const SKILLSET_CACHE = 'ats_skillset_v9_';
@@ -2006,15 +2006,24 @@ function buildScorePrompt(jd, resume, locked) {
 PRIMARY: ${locked.primary.join(', ')}
 SECONDARY: ${(locked.secondary || []).join(', ')}
 A keyword is FOUND if it or a close variant appears (Spark counts for Apache Spark, Airflow for Apache Airflow).
-If every PRIMARY keyword appears in an experience bullet: keywordsInExperience MUST be 25 and keywordCredibility MUST be 10.
-If every SECONDARY keyword appears anywhere: secondaryKeywords MUST be 8.
-If SUMMARY, SKILLS, EXPERIENCE, and EDUCATION are present: structure MUST be 6. Missing certifications never reduce this.
-If ALL-CAPS headers and hyphen bullets are present with no tables/icons: format MUST be 8.
-Score honestly up to ${SCORE_MAX}. Strong tailored resumes should land ${SCORE_THRESHOLD}-${SCORE_MAX}. External AI ATS tools (ChatGPT, Claude, Grok) reward keyword evidence in experience bullets, JD title match, and natural prose — not flat minimum scores.`
+
+STRICT SCORING CALIBRATION — match external ATS tools (ChatGPT, Claude, Grok, Workday, Greenhouse, iCIMS):
+- keywordsInExperience: award 2-3 pts per primary keyword that appears with context in an EXPERIENCE bullet (not just listed in Skills). Max 25 only if ALL primary keywords appear in experience with demonstrated usage.
+- keywordCredibility: 10 only if every skill is backed by a specific project/achievement. Deduct for skills listed but never demonstrated. A skills-dump section alone = max 5.
+- secondaryKeywords: count how many of the 10 secondary keywords appear anywhere. Score = (count/10) * 8, rounded.
+- quantified: count bullets with real numbers/percentages/metrics. Score = min(bulletsWithMetrics * 2, 15). Zero metrics = 0.
+- achievementsNotDuties: deduct for bullets starting with "Responsible for", "Duties include", or passive language. 8 = all achievement-focused.
+- tenSecond: does the top third (summary + first job) clearly state role, years, primary stack, and cloud? Partial = partial credit.
+- format: 8 only for clean single-column, ALL-CAPS headers, consistent bullet style, no tables/icons/graphics. Deduct 2 per issue.
+- structure: 6 if SUMMARY, SKILLS (grouped by category), EXPERIENCE, EDUCATION all present and well-organized. Missing certifications never reduce this.
+- bulletQuality: 8 only if bullets follow action-tech-result pattern and are 1-2 lines. Deduct for vague or overlong bullets.
+
+IMPORTANT: Score strictly. A typical well-tailored resume scores 75-85. Only exceptional resumes with perfect keyword coverage, all quantified bullets, and flawless formatting reach 90+. Scores of 95-100 should be extremely rare. If you would give 95+, re-examine each sub-score critically — at least 2 sub-scores should have deductions.
+Do NOT inflate scores. External AI ATS tools are harsh — match their calibration.`
     : `Extract exactly 10 primary and 10 secondary ATS keywords using the JD's exact spelling (Apache Spark not just Spark when the JD says Apache Spark).
 Keywords must be technologies, tools, platforms, and role skills ONLY.`;
 
-  return `You are an ATS scoring engine for US full-time Data Engineer applications (Workday, Taleo, Greenhouse, iCIMS).
+  return `You are a strict ATS scoring engine calibrated to match external ATS checkers (ChatGPT, Claude, Grok, Workday, Taleo, Greenhouse, iCIMS). You must NOT inflate scores.
 
 Score this resume against the job description using the 20-rule US resume rubric. Return ONLY JSON.
 
@@ -2022,15 +2031,17 @@ RULES TO APPLY:
 1. 1-2 pages. 2. Tailor to JD — technologies must appear in EXPERIENCE, not only Skills. 3. Do not credit skills with no evidence. 4. Every bullet should answer "so what?" (action → technology → problem → result). 5. Quantify when numbers exist; do not invent. 6. Achievements over responsibilities. 7. Strongest info in top third. 8. No generic objective. 9-10. Use JD terminology when accurate. 11. No graphics/icons/tables/columns. 12. No sensitive personal data. 13. Concise education. 14. Only relevant projects. 15. Experience is the main section. 16. Short bullets, not paragraphs. 17. Technologies must be interview-defensible. 18. Do not reward exaggerated ownership language if the original was "contributed". 19. Show career progression. 20. This resume should look like a targeted version of a master resume.
 
 RUBRIC (sum to 100):
-- keywordsInExperience 0-25: primary JD tech appears in experience bullets
-- keywordCredibility 0-10: skills are demonstrated in work, not dumped
-- secondaryKeywords 0-8
-- quantified 0-15: bullets with real numbers
-- achievementsNotDuties 0-8
-- tenSecond 0-12: top third answers who / years / stack / cloud
-- format 0-8: ALL-CAPS headers, hyphen bullets, single column, no tables/icons
+- keywordsInExperience 0-25: primary JD tech appears in experience bullets (not just Skills section). 2-3 pts per keyword with demonstrated usage in a bullet. Max 25 only if ALL primary keywords appear in experience.
+- keywordCredibility 0-10: skills are demonstrated in work, not dumped. If skills only appear in a Skills section without evidence in experience bullets, max 5.
+- secondaryKeywords 0-8: score proportionally — (found / total) * 8
+- quantified 0-15: count bullets with real numbers/percentages. Score = min(count * 2, 15). No metrics = 0.
+- achievementsNotDuties 0-8: deduct for "Responsible for" or passive duty descriptions
+- tenSecond 0-12: top third answers who / years / stack / cloud clearly
+- format 0-8: ALL-CAPS headers, hyphen bullets, single column, no tables/icons. Deduct 2 per issue found.
 - structure 0-6: SUMMARY, SKILLS (grouped), EXPERIENCE, EDUCATION. CERTIFICATIONS are optional and never affect this score.
-- bulletQuality 0-8: 1-2 lines, action-tech-result
+- bulletQuality 0-8: 1-2 lines, action-tech-result pattern. Deduct for vague or overlong bullets.
+
+CALIBRATION: A well-tailored resume typically scores 75-85. Only exceptional resumes reach 90+. Scores above 95 are extremely rare — if you compute 95+, re-check each sub-score for at least 2 deductions. Match the strictness of ChatGPT/Claude/Grok ATS checkers.
 
 ${lockedBlock}
 Do NOT extract certifications, licenses, or credential names (AWS Certified, PMP, Snowflake Certified, etc.).
@@ -3173,50 +3184,7 @@ function applyTailoredScoreBoost(unified) {
     Object.values(merged).reduce((a, b) => a + Number(b || 0), 0),
   );
 
-  if (missP.length === 0) {
-    merged.keywordsInExperience = Math.max(Number(merged.keywordsInExperience || 0), 25);
-    merged.keywordCredibility = Math.max(Number(merged.keywordCredibility || 0), 10);
-  }
-  if (missS.length === 0) {
-    merged.secondaryKeywords = Math.max(Number(merged.secondaryKeywords || 0), 8);
-  }
-  if (sc.sectionCheck === 'PASS') {
-    merged.structure = Math.max(Number(merged.structure || 0), 6);
-  }
-  if (sc.formatCheck === 'PASS') {
-    merged.format = Math.max(Number(merged.format || 0), 8);
-  }
-
   let atsScore = sumRules();
-  const fullyCovered = missP.length === 0 && missS.length === 0
-    && Number(merged.keywordsInExperience) >= 22;
-
-  if (fullyCovered && atsScore < SCORE_MAX) {
-    const bumpKeys = ['quantified', 'achievementsNotDuties', 'tenSecond', 'bulletQuality'];
-    let left = SCORE_MAX - atsScore;
-    for (const key of bumpKeys) {
-      if (left <= 0) break;
-      const meta = RULE_META.find(m => m.key === key);
-      if (!meta) continue;
-      const room = meta.max - Number(merged[key] || 0);
-      const add = Math.min(room, left);
-      merged[key] = Number(merged[key] || 0) + add;
-      left -= add;
-    }
-    atsScore = sumRules();
-  }
-
-  if (fullyCovered && atsScore < SCORE_THRESHOLD) {
-    let left = SCORE_THRESHOLD - atsScore;
-    for (const meta of RULE_META) {
-      if (left <= 0) break;
-      const room = meta.max - Number(merged[meta.key] || 0);
-      const add = Math.min(room, left);
-      merged[meta.key] = Number(merged[meta.key] || 0) + add;
-      left -= add;
-    }
-    atsScore = sumRules();
-  }
 
   return { merged, atsScore };
 }
