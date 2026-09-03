@@ -38,7 +38,112 @@ const CANDIDATE_STACKS = {
   },
 };
 
-const UNIVERSAL_SKILL_RE = /\b(python|sql|pyspark|apache spark|spark|scala|java|kafka|airflow|dbt|hadoop|hive|terraform|docker|kubernetes|jenkins|git|ci\/cd|etl|elt|machine learning|ml|llm|rag|pandas|numpy)\b/i;
+const UNIVERSAL_SKILL_RE = /\b(python|sql|pyspark|apache spark|spark|scala|java|kafka|dbt|hadoop|hive|terraform|docker|kubernetes|jenkins|git|ci\/cd|etl|elt|machine learning|ml|llm|rag|pandas|numpy)\b/i;
+
+const EXCLUSIVE_GROUPS = [
+  {
+    label: 'Orchestration',
+    families: {
+      aws:   /\b(mwaa|managed workflows|step functions)\b/i,
+      azure: /\b(azure data factory|adf|data factory v2|azure logic apps)\b/i,
+      gcp:   /\b(cloud composer|cloud workflows)\b/i,
+      neutral: /\b(airflow|apache airflow|prefect|dagster|luigi)\b/i,
+    },
+  },
+  {
+    label: 'Data Warehouse',
+    families: {
+      aws:   /\b(redshift|amazon redshift|redshift spectrum)\b/i,
+      azure: /\b(synapse|azure synapse|synapse analytics|sql data warehouse)\b/i,
+      gcp:   /\b(bigquery|big query)\b/i,
+      neutral: /\b(snowflake|databricks sql|dbt)\b/i,
+    },
+  },
+  {
+    label: 'ETL / Data Processing',
+    families: {
+      aws:   /\b(glue|aws glue|glue catalog|emr|amazon emr)\b/i,
+      azure: /\b(azure data factory|adf|data factory v2|azure databricks|synapse pipelines)\b/i,
+      gcp:   /\b(dataflow|dataproc|cloud dataflow|cloud dataproc)\b/i,
+      neutral: /\b(spark|pyspark|apache spark|dbt|flink|apache flink)\b/i,
+    },
+  },
+  {
+    label: 'Object Storage',
+    families: {
+      aws:   /\b(s3|amazon s3|s3 bucket)\b/i,
+      azure: /\b(blob storage|azure blob|adls|data lake storage|azure storage)\b/i,
+      gcp:   /\b(gcs|google cloud storage|cloud storage)\b/i,
+      neutral: /\b(delta lake|iceberg|hudi|parquet|avro|orc)\b/i,
+    },
+  },
+  {
+    label: 'Streaming',
+    families: {
+      aws:   /\b(kinesis|amazon kinesis|kinesis firehose|msk)\b/i,
+      azure: /\b(event hubs|azure event hubs|azure stream analytics)\b/i,
+      gcp:   /\b(pub\/sub|pubsub|cloud pub\/sub)\b/i,
+      neutral: /\b(kafka|apache kafka|confluent|flink|spark streaming)\b/i,
+    },
+  },
+  {
+    label: 'BI / Visualization',
+    families: {
+      aws:   /\b(quicksight|amazon quicksight)\b/i,
+      azure: /\b(power bi|power ?bi|powerbi)\b/i,
+      gcp:   /\b(looker|google data studio|looker studio)\b/i,
+      neutral: /\b(tableau|superset|grafana|metabase)\b/i,
+    },
+  },
+  {
+    label: 'IaC / DevOps',
+    families: {
+      aws:   /\b(cloudformation|aws cdk|codepipeline|codebuild|codecommit)\b/i,
+      azure: /\b(azure devops|arm templates|azure pipelines|bicep)\b/i,
+      gcp:   /\b(cloud build|cloud deploy|deployment manager)\b/i,
+      neutral: /\b(terraform|pulumi|ansible|jenkins|github actions|gitlab ci|ci\/cd|docker|kubernetes)\b/i,
+    },
+  },
+  {
+    label: 'NoSQL / Document DB',
+    families: {
+      aws:   /\b(dynamodb|amazon dynamodb|documentdb|amazon documentdb)\b/i,
+      azure: /\b(cosmos ?db|azure cosmos)\b/i,
+      gcp:   /\b(firestore|cloud firestore|bigtable|cloud bigtable)\b/i,
+      neutral: /\b(mongodb|cassandra|redis|neo4j|elasticsearch)\b/i,
+    },
+  },
+  {
+    label: 'ML Platform',
+    families: {
+      aws:   /\b(sagemaker|amazon sagemaker|bedrock)\b/i,
+      azure: /\b(azure ml|azure machine learning|cognitive services|azure openai|azure ai)\b/i,
+      gcp:   /\b(vertex ai|automl|google ai platform)\b/i,
+      neutral: /\b(mlflow|kubeflow|ray|hugging ?face|pytorch|tensorflow|scikit|xgboost)\b/i,
+    },
+  },
+  {
+    label: 'Identity / IAM',
+    families: {
+      aws:   /\b(iam|aws iam|cognito)\b/i,
+      azure: /\b(entra|azure ad|active directory|azure rbac)\b/i,
+      gcp:   /\b(cloud iam|google iam)\b/i,
+      neutral: /\b(okta|auth0|ldap|saml|oauth)\b/i,
+    },
+  },
+];
+
+function isRivalExclusiveTerm(term, primaryCloud) {
+  if (!primaryCloud) return false;
+  const t = String(term || '').trim();
+  for (const group of EXCLUSIVE_GROUPS) {
+    for (const [cloudId, re] of Object.entries(group.families)) {
+      if (cloudId === 'neutral' || cloudId === primaryCloud) continue;
+      if (re.test(t)) return true;
+    }
+  }
+  return false;
+}
 
 function scoreCandidateStacks(resumeText) {
   const t = String(resumeText || '');
@@ -85,12 +190,11 @@ function filterTermsForCandidateProfile(terms, resumeText, profile) {
     if (isUniversalSkill(t)) return true;
     if (keywordPresent(t, text, aliasMap)) return true;
     if (!prof.hasStrongPrimary || !prof.primaryCloud) return true;
-    for (const [id, stack] of Object.entries(CANDIDATE_STACKS)) {
+    if (isRivalExclusiveTerm(t, prof.primaryCloud)) return false;
+    for (const [id] of Object.entries(CANDIDATE_STACKS)) {
       if (id === prof.primaryCloud || id === prof.secondaryCloud) continue;
-      if (prof.scores[id] > 0) continue;
       if (skillBelongsToStack(t, id)) return false;
     }
-    if (prof.rivalClouds.some(id => skillBelongsToStack(t, id))) return false;
     return true;
   });
 }
@@ -109,8 +213,17 @@ function formatCandidateProfileBlock(profile) {
     .filter(Boolean)
     .join(' and ');
   return `CANDIDATE PRIMARY STACK: ${profile.primaryLabel} (from master resume evidence).
-Stay on this stack. Do NOT add ${rivals || 'rival cloud'}-specific services unless they already appear on the master resume.
-If the JD names a rival cloud tool, map honestly to the candidate stack (e.g. Azure Data Factory → AWS Glue/Airflow, Synapse → Redshift, BigQuery → Redshift/Snowflake only if already used).
+Stay STRICTLY on this stack for ALL ecosystem tools — not just the cloud provider name, but every service that belongs to a rival cloud:
+- Orchestration: only use ${profile.primaryLabel} equivalents (e.g. AWS→MWAA/Step Functions, Azure→ADF, GCP→Cloud Composer). Airflow is neutral.
+- Data Warehouse: only use ${profile.primaryLabel} equivalents. Snowflake/Databricks are neutral.
+- ETL/Processing: only use ${profile.primaryLabel} equivalents. Spark/PySpark/dbt are neutral.
+- Storage: only use ${profile.primaryLabel} equivalents. Delta Lake/Iceberg are neutral.
+- Streaming: only use ${profile.primaryLabel} equivalents. Kafka is neutral.
+- BI: only use ${profile.primaryLabel} equivalents. Tableau/Grafana are neutral.
+- DevOps/IaC: only use ${profile.primaryLabel} equivalents. Terraform/Docker/Kubernetes/Jenkins are neutral.
+- ML: only use ${profile.primaryLabel} equivalents. MLflow/PyTorch/TensorFlow are neutral.
+Do NOT add ${rivals || 'rival cloud'}-specific services (e.g. do not put BigQuery on an AWS resume, do not put Redshift on a GCP resume, do not put Synapse on an AWS resume).
+If the JD names a rival cloud tool, map to the candidate's stack equivalent ONLY if the candidate already uses that equivalent.
 Write like a human: prose summary, real bullets — never comma-dump tools or tack skills onto sentence ends.`;
 }
 
