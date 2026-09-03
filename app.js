@@ -2468,6 +2468,7 @@ BULLETS:
 - Every bullet ends with a period
 - Tight spacing: no blank lines between bullets
 - NEVER tack a skill onto the end of a bullet as a comma dump (bad: "...decisions, Tableau." or "...latency, NumPy."). Work each tool into the sentence (good: "Built Tableau dashboards to..." or "...using NumPy to reduce pipeline latency by 30%.").
+- NEVER repeat the same verb pattern across bullets. Vary how you weave skills: "using X", "with X", "via X", "through X", "in X". Do NOT use the word "leveraging" or "leveraged" — use natural alternatives instead.
 
 Do NOT use tables, columns, icons, photos, skill bars, or ALL-CAPS name.
 
@@ -2535,6 +2536,7 @@ CURRENT RULE SCORES: ${JSON.stringify(sc.ruleScores || {})}
 POINTS STILL NEEDED: ${Math.max(0, SCORE_TARGET - Number(sc.atsScore || 0))} — close toward ${SCORE_MAX} for external ATS checkers.
 Put every skill in MUST ADD into SKILLS and weave into experience bullets using exact spelling — inside the sentence, not tacked on at the end.
 Weave each tool into the sentence body — never append a trailing comma skill dump (bad: "...decisions, Tableau.").
+NEVER use the word "leveraging" or "leveraged" — use natural alternatives (using, with, via, through, employing). Vary verb patterns across bullets.
 If a bullet has no number, add a metric already used elsewhere on this resume (or a modest % / count).
 Never break an existing metric — keep full values like "by 40%" intact. Do not write "by 4" or insert skills before a metric clause.
 GAPS:
@@ -3083,10 +3085,11 @@ function weaveTermIntoBullet(line, term) {
   if (dump) core = dump.main;
 
   const tryWeave = () => {
-    // Prefer weaving before the first comma clause — never split inside "by 40%" metrics.
+    const weaveVerbs = ['using', 'utilizing', 'with', 'via', 'through', 'employing'];
+    const pick = weaveVerbs[Math.floor(Math.random() * weaveVerbs.length)];
     const split = core.split(/,\s+/);
     if (split.length >= 2) {
-      split.splice(1, 0, `leveraging ${kw}`);
+      split.splice(1, 0, `${pick} ${kw}`);
       return split.join(', ');
     }
 
@@ -4439,17 +4442,29 @@ function extraSectionsPromptBlock(resume) {
   return `EXTRA SECTIONS ON THE MASTER — keep every one, same heading text, same relative order (wherever they sit among Summary / Skills / Experience / Education). Do not drop, merge, rename, or invent extra sections. Keep the original facts; you may tighten wording only.\n\n${extra.map(s => s.lines.join('\n').trim()).join('\n\n')}`;
 }
 
+function fuzzyHeaderMatch(a, b) {
+  const na = (a || '').replace(/[^a-z]/gi, '').toLowerCase();
+  const nb = (b || '').replace(/[^a-z]/gi, '').toLowerCase();
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (na.includes(nb) || nb.includes(na)) return true;
+  const coreA = na.replace(/^(key|selected|relevant|personal|academic|professional|notable)/, '');
+  const coreB = nb.replace(/^(key|selected|relevant|personal|academic|professional|notable)/, '');
+  if (coreA && coreB && (coreA === coreB || coreA.includes(coreB) || coreB.includes(coreA))) return true;
+  return false;
+}
+
 function restoreExtraSections(tailored, master) {
   const masterAll = extractResumeSections(master);
   const extra = masterAll.filter(s => !isCoreSection(s.header));
   if (!extra.length) return tailored;
   let text = String(tailored || '');
-  const present = () => new Set(extractResumeSections(text).map(s => normalizeHeader(s.header)));
+  const presentHeaders = () => extractResumeSections(text).map(s => normalizeHeader(s.header));
   for (let i = 0; i < masterAll.length; i++) {
     const sec = masterAll[i];
     if (isCoreSection(sec.header)) continue;
     const key = normalizeHeader(sec.header);
-    if (present().has(key)) continue;
+    if (presentHeaders().some(h => fuzzyHeaderMatch(h, key))) continue;
     const block = sec.lines.join('\n').replace(/\s+$/, '');
     const prev = [...masterAll.slice(0, i)].reverse().find(s => present().has(normalizeHeader(s.header)));
     const lines = text.split('\n');
