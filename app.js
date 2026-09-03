@@ -267,7 +267,7 @@ RULES:
 - Keep the master's skill category layout; add tools into existing lines
 - Weave each missing skill inside a bullet sentence — never tack ", Skill." at the end
 - Add realistic metrics to bullets that lack numbers (reuse the resume's scale)
-- Each role: 6-7 bullets. Preserve extra sections (Projects, Awards, etc.)
+- Each role: 6-7 bullets. Keep extra sections already on the resume. If PROJECTS exists, keep those same projects once as a name plus hyphen bullets — no dates. Do not invent a second Projects section.
 - No H1B, visa, or work authorization language in SUMMARY
 
 JOB DESCRIPTION:
@@ -2432,6 +2432,7 @@ Company | Location | Job Title Month YYYY – Month YYYY
 EDUCATION
 Degree | University, City, ST
 Then keep every extra master section in the same place it already sits (before or after these cores). Headings stay ALL CAPS.
+If the master has PROJECTS, output that section once: project name, then hyphen bullets only — no dates, no location/role line. Keep the same projects and facts. Do not add another PROJECTS heading. If the master has no PROJECTS section, do not create one.
 
 HR SCAN — SUMMARY AND EXPERIENCE (these are what recruiters actually read):
 SUMMARY must naturally include AT LEAST 8 and AT MOST 9 of these IMPORTANT JD skills, exact spelling:
@@ -2459,6 +2460,13 @@ ROLE LINE FORMAT (Anirudh template — mandatory):
   In plain text write: Company | Location | Job Title Month YYYY – Present
   Example: Netflix | CA | Machine Learning Engineer January 2025 – Present
   Example: Stripe | Remote | Software Engineer September 2024 – Present
+
+PROJECTS FORMAT (only if the master already has PROJECTS):
+  Heading, then each project name on its own line, then "- " bullets. No dates, no location, no role line.
+  Example:
+  Fraud Detection Pipeline
+  - Built an XGBoost classifier using Python and Spark to flag fraudulent claims and cut false positives by 18%.
+  Keep only the master's projects.
 
 BULLETS:
 - Start with hyphen-space "- "
@@ -2510,7 +2518,7 @@ ${formatExternalAtsBlock(jd, keywords)}
 ${profileBlock}
 
 Mode: ${aggressive ? 'AGGRESSIVE' : 'INTEGRITY / HONEST'}
-Preserve name, contact, companies, titles, dates, education, and every extra section already on this resume (Projects, Awards, Volunteer, Languages, and any other heading). Keep those extra sections in the same place. Do not drop them. Do not invent new extra sections.
+Preserve name, contact, companies, titles, dates, education, and every extra section already on this resume (Projects, Awards, Volunteer, Languages, and any other heading). Keep those extra sections in the same place. Do not drop them. Do not invent new extra sections. If PROJECTS is already on the resume, keep those same projects once as a name plus hyphen bullets — no dates, no location/role line. Do not create another Projects heading.
 Keep the master's skill categories. Add missing tools into those existing lines. Do not invent a new Technical Skills line.
 Each role must have 6 or 7 bullets. If a role has fewer than 6, add bullets. If it has more than 7, keep the strongest 7.
 
@@ -4438,8 +4446,23 @@ function extraMasterSections(resume) {
 
 function extraSectionsPromptBlock(resume) {
   const extra = extraMasterSections(resume);
-  if (!extra.length) return '';
-  return `EXTRA SECTIONS ON THE MASTER — keep every one, same heading text, same relative order (wherever they sit among Summary / Skills / Experience / Education). Do not drop, merge, rename, or invent extra sections. Keep the original facts; you may tighten wording only.\n\n${extra.map(s => s.lines.join('\n').trim()).join('\n\n')}`;
+  const hasProjects = extra.some(s => isProjectsHeader(s.header));
+  const projectRule = hasProjects
+    ? `PROJECTS: keep the master's projects only (same names and facts), output that section once.
+  Heading: PROJECTS (or the master's heading, ALL CAPS)
+  Then project name on its own line, then hyphen-space "- " bullets. No dates, no location, no role line.
+  Example:
+  Fraud Detection Pipeline
+  - Built an XGBoost classifier using Python and Spark to flag fraudulent claims and cut false positives by 18%.
+  Do not add new projects. Do not create a second PROJECTS heading.`
+    : `PROJECTS: the master has no PROJECTS section. Do not create one.`;
+  if (!extra.length) {
+    return `EXTRA SECTIONS: ${projectRule} Do not invent Awards, Volunteer, Languages, or other extra headings.`;
+  }
+  return `EXTRA SECTIONS ON THE MASTER — keep every one, same heading text, same relative order (wherever they sit among Summary / Skills / Experience / Education). Do not drop, merge, rename, or invent extra sections. Keep the original facts; you may tighten wording only.
+${projectRule}
+
+${extra.map(s => s.lines.join('\n').trim()).join('\n\n')}`;
 }
 
 function fuzzyHeaderMatch(a, b) {
@@ -4454,22 +4477,161 @@ function fuzzyHeaderMatch(a, b) {
   return false;
 }
 
+function isProjectsHeader(header) {
+  return /\bPROJECTS?\b/.test(normalizeHeader(header));
+}
+
+function projectTitleKey(title) {
+  return String(title || '').split('|')[0].replace(/[^a-z0-9]/gi, '').toLowerCase();
+}
+
+function isProjectTitleLine(line) {
+  const l = String(line || '').trim();
+  if (!l || isBulletLine(l) || isAnySectionHeader(l)) return false;
+  if (l.length > 140) return false;
+  const hasDate = /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{4}\b/i.test(l)
+    || /\b(19|20)\d{2}\s*[–—-]\s*((19|20)\d{2}|present)\b/i.test(l);
+  if (l.includes('|') || hasDate) return true;
+  if (/[.!?]$/.test(l) || l.length > 90) return false;
+  if (/^(Built|Developed|Created|Implemented|Designed|Worked|Engineered|Automated|Optimized|Led|Managed)\b/i.test(l)) return false;
+  return true;
+}
+
+function formatProjectBullet(text) {
+  const raw = bulletText(String(text || '').trim()).replace(/\s+/g, ' ').replace(/[.!?]*$/, '');
+  if (!raw) return '';
+  const body = raw.charAt(0).toUpperCase() + raw.slice(1);
+  return `- ${body}.`;
+}
+
+function formatProjectTitleLine(line) {
+  const raw = String(line || '').trim();
+  if (!raw) return '';
+  const { left } = splitRoleAndDates(raw);
+  const name = left.split('|')[0].trim() || left.trim();
+  return name.replace(/\s+/g, ' ').replace(/[–—-]\s*$/, '').trim();
+}
+
+function parseProjectEntries(block) {
+  const lines = String(block || '').split('\n').map(l => l.replace(/\s+$/, ''));
+  const header = lines.find(l => isProjectsHeader(l)) || 'PROJECTS';
+  const entries = [];
+  let current = null;
+  for (const raw of lines) {
+    const l = raw.trim();
+    if (!l || isProjectsHeader(l)) continue;
+    if (isBulletLine(raw) || isBulletLine(l)) {
+      if (!current) current = { title: '', bullets: [] };
+      current.bullets.push(bulletText(l));
+      continue;
+    }
+    if (isProjectTitleLine(l)) {
+      if (current) entries.push(current);
+      current = { title: l, bullets: [] };
+      continue;
+    }
+    if (!current) current = { title: '', bullets: [] };
+    if (!current.title && l.length < 90 && !/[.!?]$/.test(l)) current.title = l;
+    else current.bullets.push(l.replace(/^[-•*·◦▸▶]\s+/, ''));
+  }
+  if (current) entries.push(current);
+  return { header, entries: entries.filter(e => e.title || e.bullets.length) };
+}
+
+function formatProjectsBlock(masterBlock, tailoredBlock) {
+  const master = parseProjectEntries(masterBlock);
+  const tailored = parseProjectEntries(tailoredBlock || '');
+  const header = normalizeHeader(master.header) || 'PROJECTS';
+  const lines = [header];
+  for (const m of master.entries) {
+    const match = tailored.entries.find(p => {
+      const a = projectTitleKey(p.title);
+      const b = projectTitleKey(m.title);
+      return a && b && (a === b || a.includes(b) || b.includes(a));
+    });
+    const title = formatProjectTitleLine(m.title || match?.title || 'Project');
+    const bullets = (match?.bullets?.length ? match.bullets : m.bullets)
+      .map(formatProjectBullet)
+      .filter(Boolean);
+    if (title) lines.push(title);
+    lines.push(...(bullets.length ? bullets : m.bullets.map(formatProjectBullet).filter(Boolean)));
+  }
+  return lines.join('\n').trim();
+}
+
+function stripSectionsByHeader(text, predicate) {
+  const lines = String(text || '').split('\n');
+  const out = [];
+  let i = 0;
+  let firstAt = -1;
+  while (i < lines.length) {
+    if (isAnySectionHeader(lines[i]) && predicate(lines[i])) {
+      if (firstAt < 0) firstAt = out.length;
+      i += 1;
+      while (i < lines.length && !isAnySectionHeader(lines[i])) i += 1;
+      continue;
+    }
+    out.push(lines[i]);
+    i += 1;
+  }
+  return { lines: out, firstAt };
+}
+
+function syncProjectsFromMaster(tailored, master) {
+  const masterAll = extractResumeSections(master);
+  const masterProjects = masterAll
+    .filter(s => isProjectsHeader(s.header))
+    .map(s => s.lines.join('\n').replace(/\s+$/, ''))
+    .filter(Boolean);
+  const tailoredProjects = extractResumeSections(tailored)
+    .filter(s => isProjectsHeader(s.header))
+    .map(s => s.lines.join('\n').replace(/\s+$/, ''))
+    .filter(Boolean);
+  const { lines, firstAt } = stripSectionsByHeader(tailored, isProjectsHeader);
+  if (!masterProjects.length) return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  const block = formatProjectsBlock(masterProjects.join('\n\n'), tailoredProjects.join('\n\n')).split('\n');
+  if (firstAt >= 0) {
+    lines.splice(firstAt, 0, ...block);
+    return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+  const firstMasterIdx = masterAll.findIndex(s => isProjectsHeader(s.header));
+  const prev = firstMasterIdx > 0
+    ? [...masterAll.slice(0, firstMasterIdx)].reverse().find(s => {
+        const key = normalizeHeader(s.header);
+        return lines.some(l => isAnySectionHeader(l) && fuzzyHeaderMatch(normalizeHeader(l), key));
+      })
+    : null;
+  if (prev) {
+    const idx = lines.findIndex(l => fuzzyHeaderMatch(normalizeHeader(l), normalizeHeader(prev.header)));
+    if (idx >= 0) {
+      let end = lines.length;
+      for (let j = idx + 1; j < lines.length; j++) {
+        if (isAnySectionHeader(lines[j])) { end = j; break; }
+      }
+      lines.splice(end, 0, ...block);
+      return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    }
+  }
+  lines.push('', ...block);
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 function restoreExtraSections(tailored, master) {
   const masterAll = extractResumeSections(master);
-  const extra = masterAll.filter(s => !isCoreSection(s.header));
-  if (!extra.length) return tailored;
-  let text = String(tailored || '');
+  const extra = masterAll.filter(s => !isCoreSection(s.header) && !isProjectsHeader(s.header));
+  let text = syncProjectsFromMaster(tailored, master);
+  if (!extra.length) return text;
   const presentHeaders = () => extractResumeSections(text).map(s => normalizeHeader(s.header));
+  const hasHeader = (header) => presentHeaders().some(h => fuzzyHeaderMatch(h, normalizeHeader(header)));
   for (let i = 0; i < masterAll.length; i++) {
     const sec = masterAll[i];
-    if (isCoreSection(sec.header)) continue;
-    const key = normalizeHeader(sec.header);
-    if (presentHeaders().some(h => fuzzyHeaderMatch(h, key))) continue;
+    if (isCoreSection(sec.header) || isProjectsHeader(sec.header)) continue;
+    if (hasHeader(sec.header)) continue;
     const block = sec.lines.join('\n').replace(/\s+$/, '');
-    const prev = [...masterAll.slice(0, i)].reverse().find(s => present().has(normalizeHeader(s.header)));
+    const prev = [...masterAll.slice(0, i)].reverse().find(s => hasHeader(s.header));
     const lines = text.split('\n');
     if (prev) {
-      const idx = lines.findIndex(l => normalizeHeader(l) === normalizeHeader(prev.header));
+      const idx = lines.findIndex(l => fuzzyHeaderMatch(normalizeHeader(l), normalizeHeader(prev.header)));
       let end = lines.length;
       if (idx >= 0) {
         for (let j = idx + 1; j < lines.length; j++) {
@@ -4500,7 +4662,8 @@ function bulletText(l) {
 function isRoleLine(l, section) {
   if (!l || isBulletLine(l) || l.includes('@')) return false;
   const sec = (section || '').toUpperCase();
-  if (/SKILL|EDUCATION|CERTIF|PROJECT|SUMMARY/.test(sec)) return false;
+  if (/SKILL|EDUCATION|CERTIF|SUMMARY/.test(sec)) return false;
+  if (/PROJECT/.test(sec)) return isProjectTitleLine(l);
   if (/^client\s*:/i.test(l)) return true;
   const hasDate = /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{4}\b/i.test(l)
     || /\b(19|20)\d{2}\s*[–—-]\s*((19|20)\d{2}|present)\b/i.test(l);
