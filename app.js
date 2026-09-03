@@ -133,16 +133,55 @@ const EXCLUSIVE_GROUPS = [
   },
 ];
 
-function isRivalExclusiveTerm(term, primaryCloud) {
-  if (!primaryCloud) return false;
+function exclusiveCloudOfTerm(term) {
   const t = String(term || '').trim();
+  if (!t) return null;
   for (const group of EXCLUSIVE_GROUPS) {
     for (const [cloudId, re] of Object.entries(group.families)) {
-      if (cloudId === 'neutral' || cloudId === primaryCloud) continue;
-      if (re.test(t)) return true;
+      if (cloudId === 'neutral') continue;
+      if (re.test(t)) return cloudId;
     }
   }
+  for (const [id, stack] of Object.entries(CANDIDATE_STACKS)) {
+    if (stack.terms.test(t)) return id;
+  }
+  return null;
+}
+
+function cloudsInLine(line) {
+  const found = new Set();
+  const text = String(line || '');
+  for (const group of EXCLUSIVE_GROUPS) {
+    for (const [cloudId, re] of Object.entries(group.families)) {
+      if (cloudId === 'neutral') continue;
+      if (re.test(text)) found.add(cloudId);
+    }
+  }
+  for (const [id, stack] of Object.entries(CANDIDATE_STACKS)) {
+    if (stack.terms.test(text)) found.add(id);
+  }
+  return found;
+}
+
+function termConflictsWithLine(term, line, _primaryCloud) {
+  const termCloud = exclusiveCloudOfTerm(term);
+  if (!termCloud) return false;
+  const inLine = cloudsInLine(line);
+  if (inLine.size && ![...inLine].every(c => c === termCloud)) return true;
   return false;
+}
+
+function cloudIsEvidenced(cloudId, profile) {
+  if (!cloudId) return true;
+  return Number(profile?.scores?.[cloudId] || 0) > 0;
+}
+
+function evidencedCloudList(profile) {
+  const scores = profile?.scores || {};
+  return Object.entries(scores)
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([id]) => id);
 }
 
 function scoreCandidateStacks(resumeText) {
@@ -159,13 +198,15 @@ function detectCandidateProfile(resumeText) {
   const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]).filter(([, s]) => s > 0);
   const primaryCloud = ranked[0]?.[0] || null;
   const primaryScore = ranked[0]?.[1] || 0;
-  const secondaryCloud = ranked[1]?.[1] >= 2 ? ranked[1][0] : null;
+  const secondaryCloud = ranked[1]?.[0] || null;
   return {
     scores,
     primaryCloud,
     primaryLabel: primaryCloud ? CANDIDATE_STACKS[primaryCloud].label : '',
     secondaryCloud,
-    rivalClouds: primaryCloud ? (CANDIDATE_STACKS[primaryCloud].rivals || []) : [],
+    secondaryLabel: secondaryCloud ? CANDIDATE_STACKS[secondaryCloud].label : '',
+    evidencedClouds: ranked.map(([id]) => id),
+    rivalClouds: primaryCloud ? (CANDIDATE_STACKS[primaryCloud].rivals || []).filter(id => (scores[id] || 0) === 0) : [],
     hasStrongPrimary: primaryScore >= 2,
   };
 }
@@ -188,11 +229,12 @@ function filterTermsForCandidateProfile(terms, resumeText, profile) {
     const t = String(term || '').trim();
     if (!t || isEligibilityTerm(t)) return false;
     if (isUniversalSkill(t)) return true;
+    const termCloud = exclusiveCloudOfTerm(t);
+    if (termCloud && !cloudIsEvidenced(termCloud, prof)) return false;
     if (keywordPresent(t, text, aliasMap)) return true;
     if (!prof.hasStrongPrimary || !prof.primaryCloud) return true;
-    if (isRivalExclusiveTerm(t, prof.primaryCloud)) return false;
     for (const [id] of Object.entries(CANDIDATE_STACKS)) {
-      if (id === prof.primaryCloud || id === prof.secondaryCloud) continue;
+      if (cloudIsEvidenced(id, prof)) continue;
       if (skillBelongsToStack(t, id)) return false;
     }
     return true;
@@ -206,24 +248,33 @@ function filterAtsPhrasesForCandidate(phrases, resumeText, profile) {
 
 function formatCandidateProfileBlock(profile) {
   if (!profile?.hasStrongPrimary) {
-    return `CANDIDATE STACK: read the master resume — only add tools the candidate has actually used. Do not invent AWS + Azure mastery in the same resume unless both are already evidenced.`;
+    return `CANDIDATE STACK: read the master resume — only add tools the candidate has actually used. Do not invent a second cloud. If two clouds are already on the master, keep both but NEVER in the same bullet.`;
   }
-  const rivals = (profile.rivalClouds || [])
+  const evidenced = evidencedCloudList(profile)
+    .map(id => CANDIDATE_STACKS[id]?.label)
+    .filter(Boolean);
+  const missingClouds = (profile.rivalClouds || [])
     .map(r => CANDIDATE_STACKS[r]?.label)
-    .filter(Boolean)
-    .join(' and ');
+    .filter(Boolean);
+  if (evidenced.length >= 2) {
+    const roleHint = evidenced.map((id, i) => {
+      const name = CANDIDATE_STACKS[id]?.label || id;
+      return i === 0 ? `most recent company = ${name}` : `next company = ${name}`;
+    }).join('; ');
+    return `CANDIDATE CLOUDS ON MASTER: ${evidenced.map(id => CANDIDATE_STACKS[id]?.label).join(' + ')} (all evidenced — keep them).
+Assign one cloud per company: ${roleHint}.
+AWS (if present) goes on the current/most recent company. The other cloud goes on a different company.
+NEVER mix two clouds in the same bullet or the same company.
+Bad: one role with BigQuery + S3 + Redshift.
+Good: Company A bullets use AWS (S3, Glue, Redshift); Company B bullets use ${evidenced[1] === 'gcp' ? 'BigQuery/GCP' : evidenced[1] === 'azure' ? 'Azure/Synapse/ADF' : 'the other cloud'}.
+Do NOT invent ${missingClouds.join(' or ') || 'a cloud that is not on the master'}.
+dbt, Spark, Kafka, Airflow, Python, SQL, Terraform, Docker are cloud-neutral.
+Write like a human: prose summary, real bullets — never comma-dump tools.`;
+  }
+  const rivals = missingClouds.join(' and ');
   return `CANDIDATE PRIMARY STACK: ${profile.primaryLabel} (from master resume evidence).
-Stay STRICTLY on this stack for ALL ecosystem tools — not just the cloud provider name, but every service that belongs to a rival cloud:
-- Orchestration: only use ${profile.primaryLabel} equivalents (e.g. AWS→MWAA/Step Functions, Azure→ADF, GCP→Cloud Composer). Airflow is neutral.
-- Data Warehouse: only use ${profile.primaryLabel} equivalents. Snowflake/Databricks are neutral.
-- ETL/Processing: only use ${profile.primaryLabel} equivalents. Spark/PySpark/dbt are neutral.
-- Storage: only use ${profile.primaryLabel} equivalents. Delta Lake/Iceberg are neutral.
-- Streaming: only use ${profile.primaryLabel} equivalents. Kafka is neutral.
-- BI: only use ${profile.primaryLabel} equivalents. Tableau/Grafana are neutral.
-- DevOps/IaC: only use ${profile.primaryLabel} equivalents. Terraform/Docker/Kubernetes/Jenkins are neutral.
-- ML: only use ${profile.primaryLabel} equivalents. MLflow/PyTorch/TensorFlow are neutral.
-Do NOT add ${rivals || 'rival cloud'}-specific services (e.g. do not put BigQuery on an AWS resume, do not put Redshift on a GCP resume, do not put Synapse on an AWS resume).
-If the JD names a rival cloud tool, map to the candidate's stack equivalent ONLY if the candidate already uses that equivalent.
+Stay on this stack. Do NOT add ${rivals || 'rival cloud'}-specific services unless they already appear on the master resume.
+NEVER put two clouds in the same bullet.
 Write like a human: prose summary, real bullets — never comma-dump tools or tack skills onto sentence ends.`;
 }
 
@@ -302,9 +353,11 @@ function formatCandidateStackLine(profile) {
       className: 'neutral',
     };
   }
-  let detail = `Tailoring stays on ${profile.primaryLabel}. Rival cloud tools from the JD are skipped unless already on your resume.`;
-  if (profile.secondaryCloud) {
-    detail += ` Also evidenced: ${CANDIDATE_STACKS[profile.secondaryCloud].label}.`;
+  let detail = `Tailoring stays on ${profile.primaryLabel}.`;
+  if ((profile.evidencedClouds || []).length >= 2) {
+    detail = `Master shows ${(profile.evidencedClouds || []).map(id => CANDIDATE_STACKS[id]?.label).filter(Boolean).join(' + ')}. AWS on the current company; the other cloud on a different company — never the same bullet.`;
+  } else {
+    detail += ` Rival cloud tools from the JD are skipped unless already on your resume.`;
   }
   return {
     label: profile.primaryLabel,
@@ -2290,13 +2343,28 @@ function importantHrKeywords(keywords, resumeText) {
   return filterTermsForCandidateProfile(list, resumeText || '');
 }
 
+function isGenericMultiCloudPhrase(term) {
+  const t = String(term || '').toLowerCase();
+  const hits = [/\baws\b/, /\bazure\b/, /\bgcp\b/, /\bgoogle cloud\b/].filter(re => re.test(t));
+  return hits.length >= 2;
+}
+
 function summaryKeywordList(keywords, resumeText) {
   const list = dropEligibilityTerms(uniqTerms([
     ...dropCertTerms(keywords?.jdSkills || keywords?.primary || []),
-  ]));
+  ])).filter(t => !isGenericMultiCloudPhrase(t));
   const filtered = filterTermsForCandidateProfile(list, resumeText || '');
-  if (filtered.length <= 8) return filtered;
-  return filtered.slice(0, 9);
+  const profile = detectCandidateProfile(resumeText || '');
+  const primary = profile.primaryCloud;
+  const out = [];
+  for (const t of filtered) {
+    const c = exclusiveCloudOfTerm(t);
+    if (c && primary && c !== primary) continue;
+    if (c && out.some(x => exclusiveCloudOfTerm(x) && exclusiveCloudOfTerm(x) !== c)) continue;
+    out.push(t);
+  }
+  if (out.length <= 8) return out;
+  return out.slice(0, 9);
 }
 
 function roleTenureWeight(roleLine) {
@@ -2314,25 +2382,71 @@ function roleTenureWeight(roleLine) {
   return (present ? 40 : 0) + span;
 }
 
+function assignCloudsToRoles(roles, profile) {
+  const evidenced = evidencedCloudList(profile);
+  const ordered = evidenced.includes('aws')
+    ? ['aws', ...evidenced.filter(c => c !== 'aws')]
+    : evidenced.slice();
+  return (roles || []).map((text, i) => ({
+    text,
+    cloud: ordered.length ? (ordered[i] || ordered[0]) : null,
+    cloudLocked: ordered.length > 1 ? i < ordered.length : true,
+  }));
+}
+
+function filterTermsForRoleCloud(terms, cloud) {
+  return (terms || []).filter(t => {
+    const c = exclusiveCloudOfTerm(t);
+    if (!c) return true;
+    if (!cloud) return false;
+    return c === cloud;
+  });
+}
+
+function cloudToolkit(cloud) {
+  const map = {
+    aws: ['AWS', 'S3', 'Redshift', 'Glue', 'Lambda', 'Athena'],
+    azure: ['Azure', 'Azure Data Factory', 'Synapse', 'Power BI'],
+    gcp: ['GCP', 'BigQuery', 'Dataflow', 'Cloud Storage'],
+  };
+  return map[cloud] || [];
+}
+
 function planExperienceKeywords(resume, keywords) {
   const important = importantHrKeywords(keywords, resume);
   const roles = extractRolesFromResume(resume);
-  if (!roles.length || !important.length) {
-    return roles.map(text => ({ text, terms: important.slice() }));
+  const profile = detectCandidateProfile(resume);
+  const cloudAssign = assignCloudsToRoles(roles, profile);
+  if (!roles.length) return [];
+  if (!important.length) {
+    return cloudAssign.map(a => ({
+      text: a.text,
+      cloud: a.cloud,
+      terms: a.cloud ? filterTermsForRoleCloud(cloudToolkit(a.cloud), a.cloud) : [],
+    }));
   }
-  const ranked = roles.map((text, i) => ({ text, i, w: roleTenureWeight(text) }));
+  const ranked = roles.map((text, i) => ({ text, i, w: roleTenureWeight(text), cloud: cloudAssign[i]?.cloud }));
   const totalW = ranked.reduce((a, r) => a + r.w, 0) || ranked.length;
-  const bags = ranked.map(r => ({ text: r.text, i: r.i, terms: [] }));
+  const bags = ranked.map(r => ({ text: r.text, i: r.i, cloud: r.cloud, terms: [] }));
   const counts = ranked.map(r => Math.max(1, Math.round(important.length * (r.w / totalW))));
   let diff = important.length - counts.reduce((a, n) => a + n, 0);
   counts[0] = Math.max(1, counts[0] + diff);
   let cursor = 0;
   ranked.forEach((r, idx) => {
-    const take = Math.min(counts[idx], important.length - cursor);
-    bags[idx].terms = important.slice(cursor, cursor + take);
-    cursor += take;
+    const take = important.slice(cursor, cursor + Math.min(counts[idx], important.length - cursor));
+    cursor += take.length;
+    const extras = r.cloud ? cloudToolkit(r.cloud) : [];
+    bags[idx].terms = uniqTerms([
+      ...filterTermsForRoleCloud(take, r.cloud),
+      ...filterTermsForRoleCloud(extras, r.cloud),
+    ]);
   });
-  if (cursor < important.length) bags[0].terms = uniqTerms([...bags[0].terms, ...important.slice(cursor)]);
+  if (cursor < important.length && bags[0]) {
+    bags[0].terms = uniqTerms([
+      ...bags[0].terms,
+      ...filterTermsForRoleCloud(important.slice(cursor), bags[0].cloud),
+    ]);
+  }
   return bags.sort((a, b) => a.i - b.i);
 }
 
@@ -2340,7 +2454,11 @@ function formatRoleKeywordPlan(plan) {
   if (!plan.length) return 'Put more important skills in the current role, then earlier companies by years in the role.';
   return plan.map((p, i) => {
     const label = i === 0 ? 'Current / most recent' : `Role ${i + 1}`;
-    return `  ${label} — ${p.text}\n    Weave in: ${p.terms.join(', ') || 'support the same stack without repeating every tool'}`;
+    const cloudName = p.cloud ? (CANDIDATE_STACKS[p.cloud]?.label || p.cloud.toUpperCase()) : 'neutral tools only';
+    const cloudRule = p.cloud
+      ? `Cloud for THIS company only: ${cloudName}. Do not mention other clouds or their services in these bullets.`
+      : 'No exclusive cloud tools in this role.';
+    return `  ${label} — ${p.text}\n    ${cloudRule}\n    Weave in: ${p.terms.join(', ') || 'support the assigned stack without repeating every tool'}`;
   }).join('\n');
 }
 
@@ -2368,7 +2486,7 @@ function buildRewritePrompt(jd, resume, keywords, missingReport) {
   const integrityBlock = aggressive
     ? `STRETCH FOR THE POSTING MODE:
 - SUCCESS METRIC: ATS score must be ${SCORE_THRESHOLD}+ / 100.
-- ADD missing JD skills that fit the candidate's real stack into SKILLS and experience bullets — not rival cloud tools.
+- ADD missing JD skills that fit clouds already on the master resume. If AWS and another cloud are both evidenced, put AWS on the current company and the other cloud on a different company — never in the same bullet or the same role.
 - MUST ADD THESE SKILLS (stack-aligned): ${mustAdd.join(', ') || 'none — already covered'}
 - MUST WEAVE THESE JD ATS PHRASES naturally (only if they fit the candidate stack): ${atsMustAdd.join(' · ') || 'none — already covered'}
 - Preserve name, contact, companies, job titles, dates, education.
@@ -2377,7 +2495,7 @@ function buildRewritePrompt(jd, resume, keywords, missingReport) {
     : `STAY TRUTHFUL MODE:
 - SUCCESS METRIC: ATS score must be ${SCORE_THRESHOLD}+ / 100.
 - Keep companies, job titles, dates, education, and ownership language honest.
-- ADD only JD skills that match the candidate's evidenced stack (not rival clouds unless already on the master resume).
+- ADD only JD skills that match clouds already on the master resume (if AWS + Azure/GCP are both evidenced, AWS on current company, the other cloud on a different company).
 - MUST ADD THESE JD SKILLS (stack-aligned): ${mustAdd.join(', ') || 'none — already covered'}
 - MUST WEAVE THESE JD ATS PHRASES naturally: ${atsMustAdd.join(' · ') || 'none — already covered'}
 - Do NOT add market-only stretch skills that are not in the JD and not on the master resume.
@@ -2441,7 +2559,7 @@ Do not dump a comma list. Weave them into one readable paragraph that opens with
 Write in natural English — a recruiter should hear a career story, not a keyword checklist.
 Do NOT mention H1B, H-1B, visa sponsorship, work authorization, citizenship, or any immigration/eligibility language in SUMMARY — those are posting gates, not professional skills.
 Do NOT stuff every secondary/market skill into the summary — only these important ones.
-Do NOT list both AWS and Azure (or GCP) as co-equal mastery unless the master resume already shows both.
+SUMMARY names ONE primary cloud only. Never end with "including AWS, Azure, or GCP" or mix BigQuery with Redshift/S3 in the summary. Other evidenced clouds belong in SKILLS and in separate experience bullets.
 
 EXPERIENCE must keep every real company and date. Place remaining important skills by tenure (current / longer roles get more):
 ${formatRoleKeywordPlan(rolePlan)}
@@ -2524,9 +2642,10 @@ Each role must have 6 or 7 bullets. If a role has fewer than 6, add bullets. If 
 
 HR SCAN: SUMMARY must contain 8-9 of these important skills (exact spelling) — only stack-aligned tools: ${summaryKw.join(', ') || 'keep current summary stack'}
 Write naturally — a career story, not a keyword dump. Never mention H1B, visa sponsorship, work authorization, or citizenship in SUMMARY.
+Never close SUMMARY with "including AWS, Azure, or GCP" or mix BigQuery with Redshift/S3 in that paragraph. Name one primary cloud in SUMMARY; put other evidenced clouds in SKILLS and separate bullets.
 Place remaining important skills by company and years:
 ${formatRoleKeywordPlan(rolePlan)}
-Do not bold with **. Do not dump every secondary skill into the summary. Do not add rival cloud tools unless already on the master resume.
+Do not bold with **. Do not dump every secondary skill into the summary. If the master has AWS plus another cloud, keep both in SKILLS and in different bullets — never BigQuery and Redshift in the same sentence.
 
 ${aggressive
     ? `ADD remaining missing stack-aligned skills from the ATS REPORT into SKILLS and weave each into experience bullets where the work actually happened.`
@@ -3082,23 +3201,24 @@ function repairBrokenBulletMetrics(line) {
   return `${mark}${core}${punct}`;
 }
 
-function weaveTermIntoBullet(line, term) {
+function weaveTermIntoBullet(line, term, profile) {
   const kw = String(term || '').trim();
   if (!kw || termInLine(kw, line)) return line;
+  if (termConflictsWithLine(kw, line, profile?.primaryCloud)) return line;
   const parts = bulletLineParts(line);
   if (!parts) return line;
 
   let { mark, core, punct } = parts;
   const dump = isTrailingKeywordDump(core, [kw], {});
   if (dump) core = dump.main;
+  if (/\b(using|with|via|through|utilizing|employing)\s+[A-Za-z]/.test(core)) return line;
 
   const tryWeave = () => {
-    const weaveVerbs = ['using', 'utilizing', 'with', 'via', 'through', 'employing'];
+    const weaveVerbs = ['using', 'with', 'via', 'through'];
     const pick = weaveVerbs[Math.floor(Math.random() * weaveVerbs.length)];
     const split = core.split(/,\s+/);
-    if (split.length >= 2) {
-      split.splice(1, 0, `${pick} ${kw}`);
-      return split.join(', ');
+    if (split.length >= 2 && split[0].length > 20) {
+      return null;
     }
 
     const toHit = core.match(/^(.+?)(\s+to\s+(?:boost|reduce|improve|enhance|drive|enable|deliver|streamline|cut|increase|support|accelerate|optimize).+)$/i);
@@ -3146,22 +3266,24 @@ function cleanTrailingKeywordDumps(lines, keywords) {
     const dump = isTrailingKeywordDump(parts.core, pool, aliasMap);
     if (!dump) return line;
     const stripped = `${parts.mark}${dump.main}${parts.punct}`;
-    return weaveTermIntoBullet(stripped, dump.tail);
+    return weaveTermIntoBullet(stripped, dump.tail, detectCandidateProfile(lines.join('\n')));
   });
 }
 
-function appendTermsToLine(line, terms) {
+function appendTermsToLine(line, terms, profile) {
   const missing = (terms || []).filter(Boolean);
   if (!missing.length) return line;
+  const safe = missing.filter(t => !termConflictsWithLine(t, line, profile?.primaryCloud));
+  if (!safe.length) return line;
   if (isBulletLine(line)) {
     let out = line;
-    for (const t of missing) out = weaveTermIntoBullet(out, t);
+    for (const t of safe) out = weaveTermIntoBullet(out, t, profile);
     return out;
   }
   const trimmed = String(line || '').replace(/\s+$/, '');
   const punct = /[.!?]$/.test(trimmed) ? trimmed.slice(-1) : '.';
   const core = /[.!?]$/.test(trimmed) ? trimmed.slice(0, -1) : trimmed;
-  return core + ' using ' + missing.join(', ') + punct;
+  return core + ' using ' + safe.join(', ') + punct;
 }
 
 function appendAtsPhraseToLine(line, phrase) {
@@ -3215,7 +3337,7 @@ function polishResumeForAts(resume, keywords, masterResume) {
       const need = Math.max(0, Math.min(3, Math.min(9, summaryKw.length) - have.length));
       const missing = summaryKw.filter(k => !keywordPresent(k, lines[paraIdx], aliasMap)).slice(0, need);
       if (have.length < 7 && missing.length) {
-        lines[paraIdx] = appendTermsToLine(lines[paraIdx], missing.slice(0, 2));
+        lines[paraIdx] = appendTermsToLine(lines[paraIdx], missing.slice(0, 2), profile);
       }
     }
   }
@@ -3225,34 +3347,54 @@ function polishResumeForAts(resume, keywords, masterResume) {
   let bulletAdds = 0;
   const maxBulletAdds = 10;
   blocks.forEach((block, i) => {
-    const terms = (plan[i] && plan[i].terms) || (i === 0 ? importantHrKeywords(keywords, master) : []);
+    const roleCloud = plan[i] && plan[i].cloud;
+    const terms = filterTermsForRoleCloud(
+      (plan[i] && plan[i].terms) || (i === 0 ? importantHrKeywords(keywords, master) : []),
+      roleCloud,
+    );
     const missing = terms.filter(k => !keywordPresent(k, block.bullets.map(idx => lines[idx]).join('\n'), aliasMap));
     let bi = 0;
     for (const kw of missing.slice(0, 3)) {
       if (!block.bullets.length || bulletAdds >= maxBulletAdds) break;
-      const idx = block.bullets[bi % block.bullets.length];
+      let placed = false;
+      for (let t = 0; t < block.bullets.length && !placed; t++) {
+        const idx = block.bullets[(bi + t) % block.bullets.length];
+        if (keywordPresent(kw, lines[idx], aliasMap)) continue;
+        if (termConflictsWithLine(kw, lines[idx], roleCloud)) continue;
+        const next = appendTermsToLine(lines[idx], [kw], profile);
+        if (next === lines[idx]) continue;
+        lines[idx] = next;
+        bulletAdds += 1;
+        placed = true;
+      }
       bi += 1;
-      if (keywordPresent(kw, lines[idx], aliasMap)) continue;
-      lines[idx] = appendTermsToLine(lines[idx], [kw]);
-      bulletAdds += 1;
     }
   });
 
   const expAfter = experienceBounds(lines);
   const expText = lines.slice(expAfter.start, expAfter.end).join('\n');
   const stillMissing = inject.filter(k => !keywordPresent(k, expText, aliasMap));
-  const bulletIdx = [];
-  for (let i = expAfter.start; i < expAfter.end; i++) {
-    if (isBulletLine(lines[i])) bulletIdx.push(i);
-  }
   let bi = 0;
   for (const kw of stillMissing.slice(0, Math.max(0, maxBulletAdds - bulletAdds))) {
-    if (!bulletIdx.length) break;
-    const idx = bulletIdx[bi % bulletIdx.length];
+    const termCloud = exclusiveCloudOfTerm(kw);
+    const targetBullets = blocks.flatMap((b, i) => {
+      const roleCloud = plan[i] && plan[i].cloud;
+      if (termCloud && roleCloud && termCloud !== roleCloud) return [];
+      return b.bullets;
+    });
+    if (!targetBullets.length) continue;
+    let placed = false;
+    for (let t = 0; t < targetBullets.length && !placed; t++) {
+      const idx = targetBullets[(bi + t) % targetBullets.length];
+      if (keywordPresent(kw, lines[idx], aliasMap)) continue;
+      if (termConflictsWithLine(kw, lines[idx], termCloud || profile.primaryCloud)) continue;
+      const next = appendTermsToLine(lines[idx], [kw], profile);
+      if (next === lines[idx]) continue;
+      lines[idx] = next;
+      bulletAdds += 1;
+      placed = true;
+    }
     bi += 1;
-    if (keywordPresent(kw, lines[idx], aliasMap)) continue;
-    lines[idx] = appendTermsToLine(lines[idx], [kw]);
-    bulletAdds += 1;
   }
 
   let missingAts = filterAtsPhrasesForCandidate(
@@ -4282,18 +4424,39 @@ function stripEligibilityFromSummary(text) {
   const lines = String(text || '').split('\n');
   const bounds = summaryBounds(lines);
   if (!bounds) return text;
-  const scrub = (line) => String(line || '')
-    .replace(/\b(?:including|with|and|or|for|on)\s+(?:an?\s+)?(?:h-?1b|h1b)(?:\s+visa)?(?:\s+sponsorship)?\b/gi, '')
-    .replace(/\b(?:h-?1b|h1b)(?:\s+visa)?(?:\s+sponsorship)?\b/gi, '')
-    .replace(/\b(?:visa sponsorship|work authorization|work authorisation|authorized to work|authorised to work|eligible to work|without sponsorship|no sponsorship)\b/gi, '')
-    .replace(/\b(?:us|u\.s\.)\s*citizenship\b/gi, '')
-    .replace(/\s{2,}/g, ' ')
-    .replace(/\s+([,.;])/g, '$1')
-    .replace(/,\s*,+/g, ',')
-    .replace(/,\s+and\s+\./gi, '.')
-    .replace(/,\s*\./g, '.')
-    .replace(/\s+\./g, '.')
-    .trim();
+  const master = ($('resumeInput') && $('resumeInput').value) || text;
+  const primary = detectCandidateProfile(master).primaryCloud;
+  const scrub = (line) => {
+    let s = String(line || '');
+    s = s.replace(/\b(?:including|with|and|or|for|on)\s+(?:an?\s+)?(?:h-?1b|h1b)(?:\s+visa)?(?:\s+sponsorship)?\b/gi, '');
+    s = s.replace(/\b(?:h-?1b|h1b)(?:\s+visa)?(?:\s+sponsorship)?\b/gi, '');
+    s = s.replace(/\b(?:visa sponsorship|work authorization|work authorisation|authorized to work|authorised to work|eligible to work|without sponsorship|no sponsorship)\b/gi, '');
+    s = s.replace(/\b(?:us|u\.s\.)\s*citizenship\b/gi, '');
+    s = s.replace(/\s*,?\s*including\s+AWS,?\s*Azure,?\s*(?:and|or)?\s*GCP\.?/gi, '');
+    s = s.replace(/\s*,?\s*including\s+AWS\.?/gi, '');
+    s = s.replace(/\bAWS,\s*Azure,\s*(?:or|and)\s*GCP\b/gi, primary === 'azure' ? 'Azure' : primary === 'gcp' ? 'GCP' : 'AWS');
+    if (primary && primary !== 'gcp') {
+      s = s.replace(/\s*,?\s*(?:and\s+)?BigQuery\b/gi, '');
+      s = s.replace(/\s*,?\s*(?:and\s+)?(?:Google Cloud|GCP)\b/gi, '');
+    }
+    if (primary && primary !== 'aws') {
+      s = s.replace(/\s*,?\s*(?:and\s+)?Redshift\b/gi, '');
+      s = s.replace(/\s*,?\s*(?:and\s+)?(?:Amazon\s+)?S3\b/gi, '');
+    }
+    if (primary && primary !== 'azure') {
+      s = s.replace(/\s*,?\s*(?:and\s+)?(?:Azure\s+)?Synapse\b/gi, '');
+      s = s.replace(/\s*,?\s*(?:and\s+)?Azure Data Factory\b/gi, '');
+    }
+    s = s.replace(/\bincluding\s+including\b/gi, 'including');
+    s = s.replace(/\s{2,}/g, ' ');
+    s = s.replace(/\s+([,.;])/g, '$1');
+    s = s.replace(/,\s*,+/g, ',');
+    s = s.replace(/,\s+and\s+\./gi, '.');
+    s = s.replace(/,\s*\./g, '.');
+    s = s.replace(/\s+\./g, '.');
+    s = s.replace(/\(\s*\)/g, '');
+    return s.trim();
+  };
   for (let i = bounds.start + 1; i < bounds.end; i++) {
     if (!lines[i].trim() || isSectionHeader(lines[i]) || isBulletLine(lines[i])) continue;
     lines[i] = scrub(lines[i]);
