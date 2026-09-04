@@ -257,17 +257,14 @@ function formatCandidateProfileBlock(profile) {
     .map(r => CANDIDATE_STACKS[r]?.label)
     .filter(Boolean);
   if (evidenced.length >= 2) {
-    const roleHint = evidenced.map((id, i) => {
-      const name = CANDIDATE_STACKS[id]?.label || id;
-      return i === 0 ? `most recent company = ${name}` : `next company = ${name}`;
-    }).join('; ');
-    return `CANDIDATE CLOUDS ON MASTER: ${evidenced.map(id => CANDIDATE_STACKS[id]?.label).join(' + ')} (all evidenced — keep them).
-Assign one cloud per company: ${roleHint}.
-AWS (if present) goes on the current/most recent company. The other cloud goes on a different company.
-NEVER mix two clouds in the same bullet or the same company.
-Bad: one role with BigQuery + S3 + Redshift.
-Good: Company A bullets use AWS (S3, Glue, Redshift); Company B bullets use ${evidenced[1] === 'gcp' ? 'BigQuery/GCP' : evidenced[1] === 'azure' ? 'Azure/Synapse/ADF' : 'the other cloud'}.
-Do NOT invent ${missingClouds.join(' or ') || 'a cloud that is not on the master'}.
+    return `CANDIDATE CLOUDS ON MASTER: ${evidenced.map(id => CANDIDATE_STACKS[id]?.label).join(' + ')}.
+Do NOT force every master cloud into every experience role.
+Only weave a cloud tool into a role when:
+1) that cloud already appears on that role in the master, OR
+2) the employer matches it (Microsoft→Azure, Amazon→AWS, Google→GCP) AND that cloud is on the master, OR
+3) the JD needs that tool and it fits the role's existing cloud.
+NEVER invent a cloud that is not on the master. NEVER mix two clouds in one company/bullet.
+Keep other evidenced clouds in SKILLS if needed — not dumped across all roles.
 dbt, Spark, Kafka, Airflow, Python, SQL, Terraform, Docker are cloud-neutral.
 Write like a human: prose summary, real bullets — never comma-dump tools.`;
   }
@@ -287,7 +284,7 @@ function formatExternalAtsBlock(jd, keywords) {
   const atsPhrases = filterExtractedSkills(keywords?.atsKeywords || []);
   return `EXTERNAL ATS ALIGNMENT — optimize for ChatGPT, Claude, Grok, and enterprise parsers (Workday, Greenhouse, iCIMS):
 - Line 2 title MUST match the posting: ${role}
-- SUMMARY opens with that title + years of experience + primary stack + one quantified win
+- SUMMARY opens with that title + years of experience + primary stack. Do NOT put percentages, dollar amounts, or quantified metrics in SUMMARY — keep metrics in experience bullets only.
 - EVERY must-have JD skill must appear in SKILLS and in at least one EXPERIENCE bullet with real context (external tools penalize skills-only lists)
 - Use the JD's exact spelling for tools: ${primary.slice(0, 14).join(', ') || 'see locked set'}
 - Weave ATS phrases naturally (not comma dumps): ${atsPhrases.slice(0, 10).join(' · ') || 'n/a'}
@@ -355,7 +352,7 @@ function formatCandidateStackLine(profile) {
   }
   let detail = `Tailoring stays on ${profile.primaryLabel}.`;
   if ((profile.evidencedClouds || []).length >= 2) {
-    detail = `Master shows ${(profile.evidencedClouds || []).map(id => CANDIDATE_STACKS[id]?.label).filter(Boolean).join(' + ')}. AWS on the current company; the other cloud on a different company — never the same bullet.`;
+    detail = `Master shows ${(profile.evidencedClouds || []).map(id => CANDIDATE_STACKS[id]?.label).filter(Boolean).join(' + ')}. Weave a cloud into a role only if it already fits that role/employer — do not force every cloud into experience.`;
   } else {
     detail += ` Rival cloud tools from the JD are skipped unless already on your resume.`;
   }
@@ -2382,52 +2379,98 @@ function roleTenureWeight(roleLine) {
   return (present ? 40 : 0) + span;
 }
 
-function assignCloudsToRoles(roles, profile) {
-  const evidenced = evidencedCloudList(profile);
-  const ordered = evidenced.includes('aws')
-    ? ['aws', ...evidenced.filter(c => c !== 'aws')]
-    : evidenced.slice();
-  return (roles || []).map((text, i) => ({
-    text,
-    cloud: ordered.length ? (ordered[i] || ordered[0]) : null,
-    cloudLocked: ordered.length > 1 ? i < ordered.length : true,
-  }));
+const COMPANY_CLOUD_HINTS = [
+  { cloud: 'aws', re: /\b(amazon|aws|amazon\.com|amazon web services)\b/i },
+  { cloud: 'azure', re: /\b(microsoft|msft|azure|xbox|linkedin|github|bing)\b/i },
+  { cloud: 'gcp', re: /\b(google|alphabet|gcp|google cloud|youtube|waymo)\b/i },
+];
+
+function companyPreferredCloud(roleText) {
+  const t = String(roleText || '');
+  const companyPart = t.split('|')[0] || t;
+  for (const hint of COMPANY_CLOUD_HINTS) {
+    if (hint.re.test(companyPart) || hint.re.test(t)) return hint.cloud;
+  }
+  return null;
 }
 
-function filterTermsForRoleCloud(terms, cloud) {
-  return (terms || []).filter(t => {
-    const c = exclusiveCloudOfTerm(t);
-    if (!c) return true;
-    if (!cloud) return false;
-    return c === cloud;
+function roleBlockTextOnMaster(roleLine, master) {
+  const lines = String(master || '').split('\n');
+  const blocks = experienceRoleBlocks(lines);
+  if (!blocks.length) return '';
+  const key = projectTitleKey(String(roleLine || '').split('|')[0] || roleLine);
+  const idx = blocks.findIndex(b => {
+    const company = projectTitleKey(String(b.text || '').split('|')[0] || b.text);
+    return key && company && (company === key || company.includes(key) || key.includes(company));
+  });
+  if (idx < 0) return '';
+  const end = idx + 1 < blocks.length ? blocks[idx + 1].line : experienceBounds(lines).end;
+  return lines.slice(blocks[idx].line, end).join('\n');
+}
+
+function cloudsPresentInRole(roleLine, master) {
+  const chunk = roleBlockTextOnMaster(roleLine, master);
+  if (!chunk) return new Set();
+  return cloudsInLine(chunk);
+}
+
+function assignCloudsToRoles(roles, profile, master) {
+  const evidenced = evidencedCloudList(profile);
+  return (roles || []).map(text => {
+    const preferred = companyPreferredCloud(text);
+    const onRole = cloudsPresentInRole(text, master);
+    if (preferred && evidenced.includes(preferred)) {
+      return { text, cloud: preferred, cloudLocked: true, reason: 'company' };
+    }
+    if (onRole.size === 1) {
+      const only = [...onRole][0];
+      if (evidenced.includes(only)) {
+        return { text, cloud: only, cloudLocked: true, reason: 'master-role' };
+      }
+    }
+    if (onRole.size > 1) {
+      const ordered = evidenced.filter(c => onRole.has(c));
+      if (ordered[0]) {
+        return { text, cloud: ordered[0], cloudLocked: true, reason: 'master-role' };
+      }
+    }
+    return { text, cloud: null, cloudLocked: false, reason: '' };
   });
 }
 
-function cloudToolkit(cloud) {
-  const map = {
-    aws: ['AWS', 'S3', 'Redshift', 'Glue', 'Lambda', 'Athena'],
-    azure: ['Azure', 'Azure Data Factory', 'Synapse', 'Power BI'],
-    gcp: ['GCP', 'BigQuery', 'Dataflow', 'Cloud Storage'],
-  };
-  return map[cloud] || [];
+function filterTermsForRoleCloud(terms, cloud, roleLine, master) {
+  const onRole = roleLine && master ? cloudsPresentInRole(roleLine, master) : new Set();
+  return (terms || []).filter(t => {
+    const c = exclusiveCloudOfTerm(t);
+    if (!c) return true;
+    if (cloud) return c === cloud;
+    return onRole.has(c);
+  });
 }
 
 function planExperienceKeywords(resume, keywords) {
   const important = importantHrKeywords(keywords, resume);
   const roles = extractRolesFromResume(resume);
   const profile = detectCandidateProfile(resume);
-  const cloudAssign = assignCloudsToRoles(roles, profile);
+  const cloudAssign = assignCloudsToRoles(roles, profile, resume);
   if (!roles.length) return [];
   if (!important.length) {
     return cloudAssign.map(a => ({
       text: a.text,
       cloud: a.cloud,
-      terms: a.cloud ? filterTermsForRoleCloud(cloudToolkit(a.cloud), a.cloud) : [],
+      reason: a.reason,
+      terms: [],
     }));
   }
-  const ranked = roles.map((text, i) => ({ text, i, w: roleTenureWeight(text), cloud: cloudAssign[i]?.cloud }));
+  const ranked = roles.map((text, i) => ({
+    text,
+    i,
+    w: roleTenureWeight(text),
+    cloud: cloudAssign[i]?.cloud,
+    reason: cloudAssign[i]?.reason,
+  }));
   const totalW = ranked.reduce((a, r) => a + r.w, 0) || ranked.length;
-  const bags = ranked.map(r => ({ text: r.text, i: r.i, cloud: r.cloud, terms: [] }));
+  const bags = ranked.map(r => ({ text: r.text, i: r.i, cloud: r.cloud, reason: r.reason, terms: [] }));
   const counts = ranked.map(r => Math.max(1, Math.round(important.length * (r.w / totalW))));
   let diff = important.length - counts.reduce((a, n) => a + n, 0);
   counts[0] = Math.max(1, counts[0] + diff);
@@ -2435,16 +2478,12 @@ function planExperienceKeywords(resume, keywords) {
   ranked.forEach((r, idx) => {
     const take = important.slice(cursor, cursor + Math.min(counts[idx], important.length - cursor));
     cursor += take.length;
-    const extras = r.cloud ? cloudToolkit(r.cloud) : [];
-    bags[idx].terms = uniqTerms([
-      ...filterTermsForRoleCloud(take, r.cloud),
-      ...filterTermsForRoleCloud(extras, r.cloud),
-    ]);
+    bags[idx].terms = uniqTerms(filterTermsForRoleCloud(take, r.cloud, r.text, resume));
   });
   if (cursor < important.length && bags[0]) {
     bags[0].terms = uniqTerms([
       ...bags[0].terms,
-      ...filterTermsForRoleCloud(important.slice(cursor), bags[0].cloud),
+      ...filterTermsForRoleCloud(important.slice(cursor), bags[0].cloud, bags[0].text, resume),
     ]);
   }
   return bags.sort((a, b) => a.i - b.i);
@@ -2454,11 +2493,11 @@ function formatRoleKeywordPlan(plan) {
   if (!plan.length) return 'Put more important skills in the current role, then earlier companies by years in the role.';
   return plan.map((p, i) => {
     const label = i === 0 ? 'Current / most recent' : `Role ${i + 1}`;
-    const cloudName = p.cloud ? (CANDIDATE_STACKS[p.cloud]?.label || p.cloud.toUpperCase()) : 'neutral tools only';
+    const cloudName = p.cloud ? (CANDIDATE_STACKS[p.cloud]?.label || p.cloud.toUpperCase()) : '';
     const cloudRule = p.cloud
-      ? `Cloud for THIS company only: ${cloudName}. Do not mention other clouds or their services in these bullets.`
-      : 'No exclusive cloud tools in this role.';
-    return `  ${label} — ${p.text}\n    ${cloudRule}\n    Weave in: ${p.terms.join(', ') || 'support the assigned stack without repeating every tool'}`;
+      ? `If weaving a cloud tool here, use ${cloudName} only${p.reason === 'company' ? ' (employer match)' : p.reason === 'master-role' ? ' (already on this role in the master)' : ''}. Do not invent other clouds for this company.`
+      : 'Do not force-add AWS/Azure/GCP tools into this role unless that cloud already appears on this role in the master resume.';
+    return `  ${label} — ${p.text}\n    ${cloudRule}\n    Weave only if needed (JD/missing skills): ${p.terms.join(', ') || 'no extra cloud dump — keep existing honest stack'}`;
   }).join('\n');
 }
 
@@ -2486,7 +2525,7 @@ function buildRewritePrompt(jd, resume, keywords, missingReport) {
   const integrityBlock = aggressive
     ? `STRETCH FOR THE POSTING MODE:
 - SUCCESS METRIC: ATS score must be ${SCORE_THRESHOLD}+ / 100.
-- ADD missing JD skills that fit clouds already on the master resume. If AWS and another cloud are both evidenced, put AWS on the current company and the other cloud on a different company — never in the same bullet or the same role.
+- ADD missing JD skills that fit the master. Weave a cloud into experience only when it already fits that role or employer (Microsoft→Azure, Amazon→AWS, Google→GCP). Do not force every master cloud into every company.
 - MUST ADD THESE SKILLS (stack-aligned): ${mustAdd.join(', ') || 'none — already covered'}
 - MUST WEAVE THESE JD ATS PHRASES naturally (only if they fit the candidate stack): ${atsMustAdd.join(' · ') || 'none — already covered'}
 - Preserve name, contact, companies, job titles, dates, education.
@@ -2495,7 +2534,7 @@ function buildRewritePrompt(jd, resume, keywords, missingReport) {
     : `STAY TRUTHFUL MODE:
 - SUCCESS METRIC: ATS score must be ${SCORE_THRESHOLD}+ / 100.
 - Keep companies, job titles, dates, education, and ownership language honest.
-- ADD only JD skills that match clouds already on the master resume (if AWS + Azure/GCP are both evidenced, AWS on current company, the other cloud on a different company).
+- ADD only JD skills evidenced on the master. Do not force every cloud into experience — weave a cloud only when it fits that role/employer.
 - MUST ADD THESE JD SKILLS (stack-aligned): ${mustAdd.join(', ') || 'none — already covered'}
 - MUST WEAVE THESE JD ATS PHRASES naturally: ${atsMustAdd.join(' · ') || 'none — already covered'}
 - Do NOT add market-only stretch skills that are not in the JD and not on the master resume.
@@ -2555,8 +2594,9 @@ If the master has PROJECTS, output that section once: project name, then hyphen 
 HR SCAN — SUMMARY AND EXPERIENCE (these are what recruiters actually read):
 SUMMARY must naturally include AT LEAST 8 and AT MOST 9 of these IMPORTANT JD skills, exact spelling:
   ${summaryKw.join(', ') || primary.slice(0, 9).join(', ')}
-Do not dump a comma list. Weave them into one readable paragraph that opens with the JD title and years, names the stack, and ends with one quantified result.
+Do not dump a comma list. Weave them into one readable paragraph that opens with the JD title and years and names the stack.
 Write in natural English — a recruiter should hear a career story, not a keyword checklist.
+Do NOT put percentages, dollar amounts, ROI figures, or quantified wins in SUMMARY (no "40%", no "$500K", no "valued at…"). Put metrics only in experience bullets.
 Do NOT mention H1B, H-1B, visa sponsorship, work authorization, citizenship, or any immigration/eligibility language in SUMMARY — those are posting gates, not professional skills.
 Do NOT stuff every secondary/market skill into the summary — only these important ones.
 SUMMARY names ONE primary cloud only. Never end with "including AWS, Azure, or GCP" or mix BigQuery with Redshift/S3 in the summary. Other evidenced clouds belong in SKILLS and in separate experience bullets.
@@ -2574,10 +2614,11 @@ Spread phrases across roles; do not stack them all in one bullet.
 BOLDING: do not wrap words in ** in the output. The dashboard bolds the important JD skills after you write.
 
 ROLE LINE FORMAT (Anirudh template — mandatory):
-  Company | Job Title on the left; Location | Month YYYY – Present on the right.
-  In plain text write: Company | Location | Job Title Month YYYY – Present
+  Display: Company | Job Title on the LEFT; Location | Month YYYY – Present on the RIGHT (same line — never stack location above dates).
+  In plain text write exactly one line: Company | Location | Job Title Month YYYY – Present
   Example: Netflix | CA | Machine Learning Engineer January 2025 – Present
   Example: Stripe | Remote | Software Engineer September 2024 – Present
+  Do NOT put dates on a second line. Do NOT write Company | Title | Location | Dates.
 
 PROJECTS FORMAT (only if the master already has PROJECTS):
   Heading, then each project name on its own line, then "- " bullets. No dates, no location, no role line.
@@ -2642,10 +2683,11 @@ Each role must have 6 or 7 bullets. If a role has fewer than 6, add bullets. If 
 
 HR SCAN: SUMMARY must contain 8-9 of these important skills (exact spelling) — only stack-aligned tools: ${summaryKw.join(', ') || 'keep current summary stack'}
 Write naturally — a career story, not a keyword dump. Never mention H1B, visa sponsorship, work authorization, or citizenship in SUMMARY.
+Never put percentages, dollar amounts, or quantified metrics in SUMMARY (no "40%", "$500K", "valued at…"). Keep metrics in experience bullets only.
 Never close SUMMARY with "including AWS, Azure, or GCP" or mix BigQuery with Redshift/S3 in that paragraph. Name one primary cloud in SUMMARY; put other evidenced clouds in SKILLS and separate bullets.
 Place remaining important skills by company and years:
 ${formatRoleKeywordPlan(rolePlan)}
-Do not bold with **. Do not dump every secondary skill into the summary. If the master has AWS plus another cloud, keep both in SKILLS and in different bullets — never BigQuery and Redshift in the same sentence.
+Do not bold with **. Do not dump every secondary skill into the summary. Match cloud to employer when evidenced (Microsoft→Azure, Amazon→AWS, Google→GCP). Never put AWS tools on a Microsoft role.
 
 ${aggressive
     ? `ADD remaining missing stack-aligned skills from the ATS REPORT into SKILLS and weave each into experience bullets where the work actually happened.`
@@ -3351,6 +3393,8 @@ function polishResumeForAts(resume, keywords, masterResume) {
     const terms = filterTermsForRoleCloud(
       (plan[i] && plan[i].terms) || (i === 0 ? importantHrKeywords(keywords, master) : []),
       roleCloud,
+      block.text,
+      master,
     );
     const missing = terms.filter(k => !keywordPresent(k, block.bullets.map(idx => lines[idx]).join('\n'), aliasMap));
     let bi = 0;
@@ -3379,7 +3423,13 @@ function polishResumeForAts(resume, keywords, masterResume) {
     const termCloud = exclusiveCloudOfTerm(kw);
     const targetBullets = blocks.flatMap((b, i) => {
       const roleCloud = plan[i] && plan[i].cloud;
-      if (termCloud && roleCloud && termCloud !== roleCloud) return [];
+      if (termCloud) {
+        if (roleCloud && termCloud !== roleCloud) return [];
+        if (!roleCloud) {
+          const onRole = cloudsPresentInRole(b.text, master);
+          if (!onRole.has(termCloud)) return [];
+        }
+      }
       return b.bullets;
     });
     if (!targetBullets.length) continue;
@@ -4420,6 +4470,31 @@ async function boostScore() {
   }
 }
 
+function scrubSummaryMetrics(line) {
+  let s = String(line || '');
+  s = s.replace(/\([^)]*(?:\$|\d+\s*%|\d+(?:\.\d+)?\s*(?:k|m|b)\b|percent)[^)]*\)/gi, '');
+  s = s.replace(/\bvalued at\s+\$?\d[\d,]*(?:\.\d+)?\s*(?:k|m|b|million|billion)?\b/gi, '');
+  s = s.replace(/\b(?:saving|saved|worth|costing|generating|delivering)\s+\$?\d[\d,]*(?:\.\d+)?\s*(?:k|m|b|million|billion)?\b/gi, '');
+  s = s.replace(/\$\s?\d[\d,]*(?:\.\d+)?\s*(?:k|m|b|million|billion)?\b/gi, '');
+  s = s.replace(/\ba?\s*\d+(?:\.\d+)?\s*%(?:\s*(?:reduction|increase|improvement|growth|savings?|gain|boost|decrease))?/gi, '');
+  s = s.replace(/\bby\s+\d+(?:\.\d+)?\s*%/gi, '');
+  s = s.replace(/\b\d+(?:\.\d+)?\s*percent(?:age)?(?:\s*(?:reduction|increase|improvement|growth|savings?|gain|boost|decrease))?/gi, '');
+  s = s.replace(/\b(?:reducing|reduced|improved|increased|boosted|cut|decreased)\s+[^.]*?\bby\s+\d+[^.,;]*/gi, (m) => {
+    const lead = m.match(/^(reducing|reduced|improved|increased|boosted|cut|decreased)/i);
+    return lead ? lead[1] : '';
+  });
+  s = s.replace(/\bdelivering\s+[^.,;]*?\b(?:insights|opportunities|results)\b[^.,;]*?(?=,|\.|$)/gi, 'delivering actionable insights');
+  s = s.replace(/\s*,\s*,+/g, ',');
+  s = s.replace(/\s{2,}/g, ' ');
+  s = s.replace(/\s+([,.;])/g, '$1');
+  s = s.replace(/,\s+and\s+\./gi, '.');
+  s = s.replace(/,\s*\./g, '.');
+  s = s.replace(/\s+\./g, '.');
+  s = s.replace(/\(\s*\)/g, '');
+  s = s.replace(/,\s*$/g, '.');
+  return s.trim();
+}
+
 function stripEligibilityFromSummary(text) {
   const lines = String(text || '').split('\n');
   const bounds = summaryBounds(lines);
@@ -4447,6 +4522,7 @@ function stripEligibilityFromSummary(text) {
       s = s.replace(/\s*,?\s*(?:and\s+)?(?:Azure\s+)?Synapse\b/gi, '');
       s = s.replace(/\s*,?\s*(?:and\s+)?Azure Data Factory\b/gi, '');
     }
+    s = scrubSummaryMetrics(s);
     s = s.replace(/\bincluding\s+including\b/gi, 'including');
     s = s.replace(/\s{2,}/g, ' ');
     s = s.replace(/\s+([,.;])/g, '$1');
@@ -4469,6 +4545,7 @@ function cleanupResume(text) {
   t = t.replace(/^here is[^\n]*\n+/i, '');
   t = sanitizeResumeHeadline(t);
   t = stripEligibilityFromSummary(t);
+  t = normalizeExperienceRoleLines(t);
   t = t.split('\n').map(repairBrokenBulletMetrics).join('\n');
   return normalizeContactInResume(t).trim();
 }
@@ -4855,36 +4932,81 @@ function linkify(text) {
 }
 
 function splitRoleAndDates(line) {
-  const m = line.match(ROLE_DATE_RE);
-  if (!m) return { left: line, dates: '' };
+  const m = String(line || '').match(ROLE_DATE_RE);
+  if (!m) return { left: String(line || '').trim(), dates: '' };
   return {
-    left: line.slice(0, m.index).replace(/[\s|]+$/, '').trim(),
+    left: String(line || '').slice(0, m.index).replace(/[\s|]+$/, '').trim(),
     dates: m[1].replace(/\s*[–—-]\s*/g, ' – ').replace(/\s+to\s+/i, ' – '),
   };
 }
 
-function formatRoleHtml(line) {
+function looksLikeLocationToken(s) {
+  const t = String(s || '').trim();
+  if (!t || t.length > 40) return false;
+  if (/^(remote|hybrid|onsite|on-site|usa|u\.s\.a\.|united states|india|uk|u\.k\.)$/i.test(t)) return true;
+  if (/^[A-Z]{2}$/.test(t)) return true;
+  if (/^[A-Za-z .'-]+,\s*[A-Z]{2}$/.test(t)) return true;
+  if (/\b(engineer|analyst|scientist|developer|manager|architect|consultant|specialist|lead|director|associate|intern|officer)\b/i.test(t)) return false;
+  return t.length <= 22 && !/\d{4}/.test(t);
+}
+
+function parseRoleLineParts(line) {
   const { left, dates } = splitRoleAndDates(line);
   const parts = left.split('|').map(s => s.trim()).filter(Boolean);
   let company = '';
-  let title = '';
   let location = '';
+  let title = '';
   if (parts.length >= 3) {
     company = parts[0];
-    location = parts[1];
-    title = parts.slice(2).join(' | ');
+    if (looksLikeLocationToken(parts[1]) && !looksLikeLocationToken(parts[2])) {
+      location = parts[1];
+      title = parts.slice(2).join(' ');
+    } else if (looksLikeLocationToken(parts[parts.length - 1])) {
+      location = parts[parts.length - 1];
+      title = parts.slice(1, -1).join(' ');
+    } else {
+      location = parts[1];
+      title = parts.slice(2).join(' ');
+    }
   } else if (parts.length === 2) {
     company = parts[0];
-    title = parts[1];
+    if (looksLikeLocationToken(parts[1])) location = parts[1];
+    else title = parts[1];
   } else {
     company = left;
   }
+  return { company, location, title, dates };
+}
+
+function normalizeOneRoleLine(line) {
+  const { company, location, title, dates } = parseRoleLineParts(line);
+  if (!company) return String(line || '').trim();
+  if (location && title) {
+    return `${company} | ${location} | ${title}${dates ? ' ' + dates : ''}`.replace(/\s+/g, ' ').trim();
+  }
+  if (title) return `${company} | ${title}${dates ? ' ' + dates : ''}`.replace(/\s+/g, ' ').trim();
+  if (location) return `${company} | ${location}${dates ? ' ' + dates : ''}`.replace(/\s+/g, ' ').trim();
+  return `${company}${dates ? ' ' + dates : ''}`.replace(/\s+/g, ' ').trim();
+}
+
+function normalizeExperienceRoleLines(text) {
+  const lines = String(text || '').split('\n');
+  const { start, end } = experienceBounds(lines);
+  for (let i = start; i < end; i++) {
+    if (isRoleLine(lines[i], 'EXPERIENCE')) lines[i] = normalizeOneRoleLine(lines[i]);
+  }
+  return lines.join('\n');
+}
+
+function formatRoleHtml(line) {
+  const { company, location, title, dates } = parseRoleLineParts(line);
   const leftHtml = escapeHtml(company) + (title ? ' | <i>' + escapeHtml(title) + '</i>' : '');
-  const rightHtml = [location, dates].filter(Boolean).join(' | ');
+  const rightBits = [location, dates].filter(Boolean);
+  const rightHtml = rightBits.join(' | ');
   if (!rightHtml) return `<p class="r-role">${leftHtml}</p>`;
   return `<table class="r-job" width="100%" cellspacing="0" cellpadding="0"><tr>`
-    + `<td>${leftHtml}</td>`
-    + `<td class="r-dates">${escapeHtml(rightHtml)}</td>`
+    + `<td class="r-job-left">${leftHtml}</td>`
+    + `<td class="r-dates">${escapeHtml(rightHtml).replace(/ \| /g, '&nbsp;|&nbsp;')}</td>`
     + `</tr></table>`;
 }
 
@@ -5082,9 +5204,9 @@ function resumeCssBlock(bodyPt, lh, sel = '') {
     ${s}.r-headline { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsTitle}; font-weight: bold; text-align: center; color: #000000; margin: 3.2pt 0 0 0; padding: 0; line-height: ${t.fsTitle}; mso-line-height-rule: exactly; }
     ${s}.r-contact { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsBody}; text-align: center; color: #000000; margin: 0; padding: 0; line-height: ${t.lhBody}; mso-line-height-rule: exactly; }
     ${s}.r-section { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsTitle}; font-weight: bold; color: #000000; text-transform: uppercase; letter-spacing: 0; border-bottom: 0.5pt solid #000000; margin: ${t.spSection} 0 0 4.55pt; padding: 0; line-height: ${t.fsTitle}; mso-line-height-rule: exactly; text-align: left; }
-    ${s}.r-job { width: 100%; border-collapse: collapse; margin: ${t.spJob} 0 0 0; border: none; }
+    ${s}.r-job { width: 100%; border-collapse: collapse; table-layout: fixed; margin: ${t.spJob} 0 0 0; border: none; }
     ${s}.r-job td { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsRole}; font-weight: bold; color: #000000; padding: 0; line-height: ${t.lhRole}; vertical-align: bottom; mso-line-height-rule: exactly; border: none; text-align: left; }
-    ${s}.r-job td:first-child { padding-left: 4.55pt; }
+    ${s}.r-job td:first-child, ${s}.r-job-left { padding-left: 4.55pt; width: 62%; }
     ${s}.r-role { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsRole}; font-weight: bold; color: #000000; margin: ${t.spJob} 0 0 4.55pt; line-height: ${t.lhRole}; text-align: left; }
     ${s}.r-role i, ${s}.r-job i { font-style: italic; font-weight: bold; }
     ${s}.r-bullet { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsBody}; color: #000000; margin: 0 0 0 18pt; text-indent: -13.5pt; line-height: ${t.lhBody}; mso-line-height-rule: exactly; padding: 0; text-align: left; }
@@ -5101,7 +5223,7 @@ function resumeCss() {
     p { margin: 0; padding: 0; }
     .WordSection1 { text-align: left; }
     .r-rule { font-family: Calibri, Arial, sans-serif; font-size: 1pt; line-height: 1pt; mso-line-height-rule: exactly; margin: 0; padding: 0; height: 1pt; border: none; border-top: 0.5pt solid #000000; overflow: hidden; }
-    .r-dates { text-align: right; white-space: nowrap; width: 32%; }
+    .r-dates { text-align: right; white-space: nowrap; width: 38%; vertical-align: bottom; }
     .r-bmark, .r-btext { text-align: left; }
     .r-skill-label { font-weight: bold; color: #000000; }
     b, strong { font-weight: bold; color: #000000; }
@@ -5518,15 +5640,15 @@ function resumePaperLayoutCss() {
       break-after: avoid; page-break-after: avoid;
     }
     .resume-paper .r-job {
-      width: 100%; border-collapse: collapse; margin: var(--sp-job, 1.85pt) 0 0 0;
+      width: 100%; border-collapse: collapse; table-layout: fixed; margin: var(--sp-job, 1.85pt) 0 0 0;
       break-inside: avoid; page-break-inside: avoid;
     }
     .resume-paper .r-job td {
       font-size: var(--fs-role, 13.2pt); font-weight: 700; color: #000; padding: 0; line-height: var(--lh-role, 13.2pt);
       vertical-align: bottom; font-family: Calibri, Arial, sans-serif; text-align: left;
     }
-    .resume-paper .r-job td:first-child { padding-left: 4.55pt; }
-    .resume-paper .r-dates { text-align: right; white-space: nowrap; width: 32%; }
+    .resume-paper .r-job td:first-child { padding-left: 4.55pt; width: 62%; }
+    .resume-paper .r-dates { text-align: right; white-space: nowrap; width: 38%; vertical-align: bottom; }
     .resume-paper .r-role {
       font-size: var(--fs-role, 13.2pt); font-weight: 700; color: #000;
       margin: var(--sp-job, 1.85pt) 0 0 4.55pt; line-height: var(--lh-role, 13.2pt); text-align: left;

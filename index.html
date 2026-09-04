@@ -887,13 +887,14 @@
       border-bottom: 0.5pt solid #000; margin: var(--sp-section, 7.1pt) 0 0 4.55pt; padding: 0;
       color: #000; line-height: var(--fs-title, 16.8pt);
     }
-    .resume-paper .r-job { width: 100%; border-collapse: collapse; margin: var(--sp-job, 1.85pt) 0 0 0; }
+    .resume-paper .r-job { width: 100%; border-collapse: collapse; table-layout: fixed; margin: var(--sp-job, 1.85pt) 0 0 0; }
     .resume-paper .r-job td {
       font-size: var(--fs-role, 13.2pt); font-weight: 700; color: #000; padding: 0; line-height: var(--lh-role, 13.2pt);
       vertical-align: bottom; font-family: Calibri, Arial, sans-serif;
     }
-    .resume-paper .r-job td:first-child { padding-left: 4.55pt; }
-    .resume-paper .r-dates { text-align: right; white-space: nowrap; width: 32%; }
+    .resume-paper .r-job td:first-child,
+    .resume-paper .r-job-left { padding-left: 4.55pt; width: 62%; }
+    .resume-paper .r-dates { text-align: right; white-space: nowrap; width: 38%; vertical-align: bottom; }
     .resume-paper .r-role {
       font-size: var(--fs-role, 13.2pt); font-weight: 700; color: #000;
       margin: var(--sp-job, 1.85pt) 0 0 4.55pt; line-height: var(--lh-role, 13.2pt);
@@ -1289,6 +1290,6 @@
 
 <div id="toast"></div>
 <script src="rag-engine.js?v=jdtitles"></script>
-<script src="app.js?v=cloud-per-company"></script>
+<script src="app.js?v=role-line-layout"></script>
 </body>
 </html>
