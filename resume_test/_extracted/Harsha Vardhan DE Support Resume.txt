@@ -1,0 +1,51 @@
+Harsha Vardhan Vinjamuri
+SUMMARY
+Results-driven Data Engineer with 5+ years of experience designing enterprise-scale data pipelines, real-time streaming architectures, and cloud
+integration solutions across financial services, healthcare, aerospace, and manufacturing domains. Proficient in Palantir Foundry, Apache Spark,
+PySpark, Kafka, and Mu leSoft, delivering high -performance ETL/ELT workflows and ML feature engineering pipelines processing billions of
+records daily across AWS and Azure environments. Experienced integrating complex enterprise ecosystems including SAP S/4HANA, MES, PLM,
+and IoT systems , with strong knowledge of data governance and security compliance (HIPAA, SOC 2, FedRAMP, ITAR) . Skilled in DevOps
+automation using Docker, Kubernetes, and CI/CD pipelines, consistently delivering scalable, reliable data solutions in Agile environments.
+SKILLS
+Programming & Scripting: Python, SQL, PySpark, Scala, Shell Scripting (Unix)
+Big Data & Distributed Computing: Apache Spark, PySpark, Spark SQL, Apache Hadoop, Apache Hive, Apache Kafka, Amazon EMR
+Data Engineering & ETL Tools: dbt (Data Build Tool), Apache Airflow, MuleSoft Anypoint, Foundry Pipeline Builder, Azure Data Factory, AWS
+Glue, SQL Server Integration Services (SSIS)
+Cloud Platforms & Services: AWS (EC2, S3, Glue, Redshift, RDS, DynamoDB), Azure (Databricks, Synapse Analytics, Da ta Lake, Service Bus, API
+Management, Azure DevOps), Palantir Foundry, Palantir AIP
+Databases & Data Warehousing: Snowflake, SQL Server, PostgreSQL, MySQL, Oracle, MongoDB, Teradata
+Streaming & Real-Time Data: Apache Kafka, RabbitMQ, Amazon Kinesis, Azure Event Hubs, Spark Streaming, MQTT, OPC UA, IoT Data Streams
+Machine Learning & AI: Palantir AIP, PySpark ML, Scikit-learn, Azure ML, TensorFlow, PyTorch, LangChain, RAG, Pandas, NumPy, SciPy, Feature
+Engineering, Model Deployment, Hyperparameter Tuning
+DevOps & Infrastructure as Code: Git, GitLab CI/CD, Jenkins, Docker, Kubernetes (AKS), Terraform, Azure DevOps
+Data Visualization & BI: Power BI, Tableau, Microsoft Excel, QlikView, Seaborn, Matplotlib, SQL Server Reporting Services (SSRS)
+Methodologies: Agile, Scrum, Waterfall, Software Development Life Cycle (SDLC)
+EXPERIENCE
+Palantir | NY | Data Engineer                                                                                                                                                                                      May 2024 – Present
+• Designed and implemented enterprise data integration pipelines on Palantir Foundry using Apache Spark, PySpark, SQL and Python
+ingesting real-time trading feeds, transactional records, and market data streams  to support fraud detection, risk scoring and compliance
+analytics processing $2B+ in daily transaction volume.
+• Built ML feature engineering and feature store pipelines using Palantir AIP, PySpark and Spark SQL transforming raw transactional and
+behavioral datasets into model-ready feature sets, improving fraud model precision by 23% and reducing false positives by 31%.
+• Optimized Spark-based ETL/ELT transformation jobs and Foundry Pipeline Builder workflows  through incremental processing, partition
+pruning, caching and cluster tuning, reducing data latency from daily to 15-minute refresh cycles and lowering compute costs by 34%.
+• Supported healthcare data integration initiatives, ingesting 40M+ de-identified EHR and clinical datasets from HL7/FHIR sources, REST
+APIs, and cloud storage into Foundry ontology models for patient outcome analytics while ensuring full HIPAA compliance.
+• Automated deployment of Foundry transformation pipelines using Apache Airflow, GitLab CI/CD, Docker and infrastructure-as-code
+practices, standardizing build, test, and release workflows across client workstreams and reducing deployment errors by 25%.
+• Implemented enterprise data governance, lineage, metadata management, and role -based access control (RBAC) within Palantir Foundry,
+ensuring compliance with SOC 2 Type II, HIPAA, and FedRAMP mentored junior engineers on Foundry development best practices and
+PySpark performance optimization.
+Cyient | India | Data Engineer                                                                                                                                                                January  2020 – May 2023
+• Designed and implemented enterprise data integration pipelines  using MuleSoft, Azure Service Bus , enabling real-time data exchange
+between SAP S/4HANA, Solumina MES, Teamcenter PLM, and 2,500+ IoT devices across 8 aerospace manufacturing sites.
+• Built large-scale event-driven data pipelines using Apache Kafka and RabbitMQ, processing 450M+ streaming telemetry events daily with
+99.96% reliability and sub-3-second latency to support real-time analytics and operational data synchronization.
+• Engineered data transformation pipelines  and protocol integration layers (OPC UA, MQTT, Modbus, EDI X12, REST/SOAP APIs) to connect
+legacy industrial systems with modern cloud data platforms, ensuring 99%+ data accuracy and consistency.
+• Implemented CI/CD pipelines, Docker containers and Kubernetes (AKS) deployments using Azure DevOps improving release efficiency and
+maintaining 99.9% uptime for production data services.
+• Applied data security, API security and governance controls using OAuth 2.0, mutual TLS (mTLS) and API Management, ensuring compliance
+with ITAR, AS9100, and SOC 2 standards in regulated environments.
+EDUCATION
+Master of Information Systems, Cleveland State University, Cleveland, Ohio

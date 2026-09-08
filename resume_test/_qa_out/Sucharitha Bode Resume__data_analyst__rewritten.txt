@@ -1,0 +1,42 @@
+Sucharitha Bode
+AI Operations Analyst
+Sunnyvale, CA | sucharithab25@gmail.com | +1 704-420-4474 | LinkedIn
+
+SUMMARY
+AI Operations and Technical Business Analyst with 6+ years of experience driving workflow automation, business process optimization, operational analytics, KPI reporting, and AI-enabled solutions. Experienced in translating business requirements into scalable solutions, collaborating with engineering and product teams, and supporting enterprise AI initiatives. Strong hands-on experience with SQL, Python, Power BI, Excel, REST APIs, Agile SDLC, Jira, CI/CD, ChatGPT, Microsoft Copilot, and Generative AI.
+
+SKILLS
+Languages: SQL, Python
+Analytics: Power BI, Tableau, Excel, KPI Dashboards, Data Analysis
+AI: ChatGPT, Microsoft Copilot, Generative AI, Prompt Engineering
+Business: Business Analysis, Technical Business Analysis, Process Mapping, Documentation
+Development: REST APIs, Node.js, MongoDB, Git/GitHub, CI/CD
+Methodologies: Agile, Scrum, SDLC, Jira
+
+PROFESSIONAL EXPERIENCE
+Marriott International | United States | AI Operations Analyst | June 2024 – Present
+- Supported AI-powered business applications using Python and SQL to improve workflow efficiency and reduce manual operational effort.
+- Monitored AI systems, chatbot performance, and automation workflows using Power BI to ensure accuracy, reliability, and optimal user experience.
+- Collaborated with business stakeholders, product managers, and engineering teams using Jira to gather requirements and implement AI-driven solutions.
+- Analyzed operational datasets using SQL, Excel, and Python to identify trends, measure KPIs, and generate actionable insights for stakeholders.
+- Developed Power BI dashboards that enabled leadership to monitor KPIs and improve operational decision-making.
+- Assisted in developing, testing, and deploying AI-enabled applications using Generative AI tools such as ChatGPT and Microsoft Copilot.
+- Performed User Acceptance Testing (UAT), validated AI outputs, and documented issues for engineering teams using CI/CD pipelines.
+
+ADP | India | Business Operations AI Analyst | July 2018 – January 2023
+- Analyzed business operations using SQL and Python, identifying opportunities to improve efficiency, productivity, and service quality.
+- Collected, analyzed, and interpreted operational data to support business decisions and strategic initiatives.
+- Developed and maintained KPI dashboards, reports, and executive scorecards using Excel, SQL, and Power BI.
+- Monitored operational performance and prepared weekly and monthly business reports for leadership using Tableau.
+- Gathered, documented, and validated business requirements from stakeholders to streamline cross-functional workflows.
+- Identified process bottlenecks and recommended automation solutions using Power Automate to reduce manual work.
+- Performed User Acceptance Testing (UAT) and validated system enhancements before production deployment within an Agile SDLC.
+
+EDUCATION
+Master of Science in Business Analysis & Project Management, St. Francis College, Brooklyn, New York, USA.
+Bachelor of Science in Computer Science, India.
+
+ACADEMIC PROJECTS
+Business Analytics & Reporting Project
+- Performed data analysis using Python, SQL, and Excel to identify business trends and generate actionable insights.
+- Created dashboards and KPI reports to support operational monitoring and business decision-making.

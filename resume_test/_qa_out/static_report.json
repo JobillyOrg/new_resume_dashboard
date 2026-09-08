@@ -1,0 +1,276 @@
+[
+  {
+    "name": "Harsha Vardhan DE Support Resume",
+    "chars": 5530,
+    "clouds": {
+      "aws": 10,
+      "azure": 11,
+      "gcp": 0
+    },
+    "primaryCloud": "azure",
+    "projectSections": 0,
+    "leverageCount": 0,
+    "headers": [
+      "SUMMARY",
+      "SKILLS",
+      "EXPERIENCE",
+      "EDUCATION"
+    ],
+    "issues": [
+      "Contains bullet glyphs (\u2022) \u2014 template expects '- ' bullets",
+      "Multiple clouds present: {'aws': 10, 'azure': 11, 'gcp': 0}",
+      "Primary=azure but rival 'aws' still appears (10 hits)"
+    ]
+  },
+  {
+    "name": "Lokesh_Bathala_Network_Deployment_Technician",
+    "chars": 3717,
+    "clouds": {
+      "aws": 0,
+      "azure": 0,
+      "gcp": 1
+    },
+    "primaryCloud": "gcp",
+    "projectSections": 0,
+    "leverageCount": 0,
+    "headers": [
+      "SUMMARY",
+      "SKILLS",
+      "EXPERIENCE",
+      "PROJECTS",
+      "EDUCATION",
+      "CERTIFICATIONS"
+    ],
+    "issues": [
+      "Contains bullet glyphs (\u2022) \u2014 template expects '- ' bullets"
+    ]
+  },
+  {
+    "name": "Maheshwari Vallapu AI Engineer Resume",
+    "chars": 6221,
+    "clouds": {
+      "aws": 24,
+      "azure": 1,
+      "gcp": 0
+    },
+    "primaryCloud": "aws",
+    "projectSections": 0,
+    "leverageCount": 1,
+    "headers": [
+      "VALLAPU MAHESHWARI",
+      "SUMMARY",
+      "PROFESSIONAL EXPERIENCE",
+      "TECHNICAL SKILLS",
+      "EDUCATION",
+      "CERTIFICATIONS"
+    ],
+    "issues": [
+      "'leveraging/leveraged' appears 1 time(s)",
+      "LinkedIn uses full URL \u2014 template prefers linkedin.com/in/username",
+      "Missing space between job title and start month",
+      "Multiple clouds present: {'aws': 24, 'azure': 1, 'gcp': 0}",
+      "Primary=aws but rival 'azure' still appears (1 hits)"
+    ]
+  },
+  {
+    "name": "Prasanna Gandla SOC Resume (1)",
+    "chars": 7171,
+    "clouds": {
+      "aws": 6,
+      "azure": 3,
+      "gcp": 0
+    },
+    "primaryCloud": "aws",
+    "projectSections": 0,
+    "leverageCount": 0,
+    "headers": [
+      "PROFESSIONAL SUMMARY",
+      "TECHNICAL SKILLS",
+      "PROFESSIONAL EXPERIENCE",
+      "HIPAA, GDPR",
+      "EDUCATION",
+      "CERTIFICATIONS"
+    ],
+    "issues": [
+      "Contains bullet glyphs (\u2022) \u2014 template expects '- ' bullets",
+      "Possible trailing comma skill dumps on bullets",
+      "Multiple clouds present: {'aws': 6, 'azure': 3, 'gcp': 0}",
+      "Primary=aws but rival 'azure' still appears (3 hits)"
+    ]
+  },
+  {
+    "name": "Reshmi Support",
+    "chars": 8845,
+    "clouds": {
+      "aws": 13,
+      "azure": 8,
+      "gcp": 2
+    },
+    "primaryCloud": "aws",
+    "projectSections": 0,
+    "leverageCount": 7,
+    "headers": [
+      "PROFESSIONAL SUMMARY",
+      "PROFESSIONAL EXPERIENCE",
+      "TECHNICAL SKILLS",
+      "EDUCATION"
+    ],
+    "issues": [
+      "Contains bullet glyphs (\u2022) \u2014 template expects '- ' bullets",
+      "'leveraging/leveraged' appears 7 time(s)",
+      "Possible trailing comma skill dumps on bullets",
+      "Multiple clouds present: {'aws': 13, 'azure': 8, 'gcp': 2}",
+      "Primary=aws but rival 'azure' still appears (8 hits)",
+      "Primary=aws but rival 'gcp' still appears (2 hits)"
+    ]
+  },
+  {
+    "name": "Sucharitha Bode Resume",
+    "chars": 4607,
+    "clouds": {
+      "aws": 0,
+      "azure": 4,
+      "gcp": 0
+    },
+    "primaryCloud": "azure",
+    "projectSections": 1,
+    "leverageCount": 0,
+    "headers": [
+      "SUMMARY",
+      "TECHNICALSKILLS",
+      "PROFESSIONAL EXPERIENCE",
+      "EDUCATION",
+      "ACADEMIC PROJECTS"
+    ],
+    "issues": [
+      "Possible trailing comma skill dumps on bullets",
+      "Pipe separators missing spaces around '|' in some lines",
+      "Missing space between job title and start month"
+    ]
+  },
+  {
+    "name": "Sucharitha Bode_AIAnalyst",
+    "chars": 4394,
+    "clouds": {
+      "aws": 8,
+      "azure": 9,
+      "gcp": 1
+    },
+    "primaryCloud": "azure",
+    "projectSections": 0,
+    "leverageCount": 1,
+    "headers": [
+      "PROFESSIONAL SUMMARY",
+      "PROFESSIONAL EXPERIENCE",
+      "TECHNICAL SKILLS",
+      "EDUCATION"
+    ],
+    "issues": [
+      "Contains bullet glyphs (\u2022) \u2014 template expects '- ' bullets",
+      "'leveraging/leveraged' appears 1 time(s)",
+      "Possible trailing comma skill dumps on bullets",
+      "Multiple clouds present: {'aws': 8, 'azure': 9, 'gcp': 1}",
+      "Primary=azure but rival 'aws' still appears (8 hits)",
+      "Primary=azure but rival 'gcp' still appears (1 hits)"
+    ]
+  },
+  {
+    "name": "Sucharitha Bode_dataAnalyst",
+    "chars": 4355,
+    "clouds": {
+      "aws": 8,
+      "azure": 9,
+      "gcp": 1
+    },
+    "primaryCloud": "azure",
+    "projectSections": 0,
+    "leverageCount": 1,
+    "headers": [
+      "PROFESSIONAL SUMMARY",
+      "PROFESSIONAL EXPERIENCE",
+      "TECHNICAL SKILLS",
+      "EDUCATION"
+    ],
+    "issues": [
+      "'leveraging/leveraged' appears 1 time(s)",
+      "Possible trailing comma skill dumps on bullets",
+      "Missing space between job title and start month",
+      "Multiple clouds present: {'aws': 8, 'azure': 9, 'gcp': 1}",
+      "Primary=azure but rival 'aws' still appears (8 hits)",
+      "Primary=azure but rival 'gcp' still appears (1 hits)"
+    ]
+  },
+  {
+    "name": "SUPPORT Anirudh Machine Learning Engineer (2)",
+    "chars": 4650,
+    "clouds": {
+      "aws": 14,
+      "azure": 10,
+      "gcp": 0
+    },
+    "primaryCloud": "aws",
+    "projectSections": 0,
+    "leverageCount": 0,
+    "headers": [
+      "SUMMARY",
+      "TECHNICAL SKILLS",
+      "PROFESSIONAL EXPERIENCE",
+      "EDUCATION"
+    ],
+    "issues": [
+      "Possible trailing comma skill dumps on bullets",
+      "Resume does not start with candidate name (starts with section header)",
+      "Multiple clouds present: {'aws': 14, 'azure': 10, 'gcp': 0}",
+      "Primary=aws but rival 'azure' still appears (10 hits)"
+    ]
+  },
+  {
+    "name": "Tejashwini_DA_Resume",
+    "chars": 5723,
+    "clouds": {
+      "aws": 9,
+      "azure": 8,
+      "gcp": 0
+    },
+    "primaryCloud": "aws",
+    "projectSections": 1,
+    "leverageCount": 2,
+    "headers": [
+      "SUMMARY",
+      "TECHNICAL SKILLS",
+      "PROFESSIONAL EXPERIENCE",
+      "EDUCATION",
+      "PROJECTS"
+    ],
+    "issues": [
+      "'leveraging/leveraged' appears 2 time(s)",
+      "Possible trailing comma skill dumps on bullets",
+      "Multiple clouds present: {'aws': 9, 'azure': 8, 'gcp': 0}",
+      "Primary=aws but rival 'azure' still appears (8 hits)"
+    ]
+  },
+  {
+    "name": "Vasanthi_Vaddelli_Resume",
+    "chars": 8531,
+    "clouds": {
+      "aws": 8,
+      "azure": 9,
+      "gcp": 0
+    },
+    "primaryCloud": "azure",
+    "projectSections": 0,
+    "leverageCount": 0,
+    "headers": [
+      "PROFESSIONAL SUMMARY",
+      "TECHNICAL SKILLS",
+      "PROFESSIONAL EXPERIENCE",
+      "EDUCATION"
+    ],
+    "issues": [
+      "Contains bullet glyphs (\u2022) \u2014 template expects '- ' bullets",
+      "LinkedIn uses full URL \u2014 template prefers linkedin.com/in/username",
+      "Multiple clouds present: {'aws': 8, 'azure': 9, 'gcp': 0}",
+      "Primary=azure but rival 'aws' still appears (8 hits)"
+    ]
+  }
+]

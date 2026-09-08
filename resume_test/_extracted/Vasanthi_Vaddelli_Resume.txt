@@ -1,0 +1,110 @@
+Vasanthi Vaddelli
+(331) 225-9707 | Vasanthikaniganti@gmail.com | https://www.linkedin.com/in/vaddelli-vasanthi-68354512b/
+PROFESSIONAL SUMMARY
+• Accomplished Senior Software Engineer with 8+ years of hands-on experience designing, building, and deploying
+scalable, event-driven, and cloud-native systems across healthcare, finance, and tech sectors. Expert in Python, Java,
+React.js, and cloud platforms including AWS and Azure.
+• Specialized in microservices architecture, real-time data processing (Kafka, Spark), CI/CD automation (Jenkins,
+GitHub Actions, Azure DevOps), and container orchestration using Docker and Kubernetes.
+• Proven success delivering high-impact solutions, such as predictive ML models (XGBoost, TensorFlow), LLM-powered
+development workflows (OpenAI API, LangChain, RAG), and cloud cost optimizations (serverless, autoscaling) that
+reduced operational overhead by up to 40%.
+• Strong background in full-stack development and performance tuning, with significant achievements including 90%+ test
+coverage, latency reductions, and feature delivery ahead of schedule.
+• Demonstrated leadership in Agile teams, driving cross-functional collaboration, architectural modernization, and
+productivity boosts through automation, infrastructure-as-code, and modern DevOps best practices.
+
+TECHNICAL SKILLS
+• Programming Languages: Java (8–21), Python (Pandas, NumPy), JavaScript (ES6+), TypeScript, SQL, C++, Bash
+• Frontend Development: React.js, Angular, Redux, HTML5, CSS3, Bootstrap, WebSocket, REST APIs
+• Backend & Middleware: Spring Boot, Spring MVC, Spring Security, Hibernate, JPA, Microservices Architecture, Node.js,
+Django, Flask, FastAPI, Apache Kafka, RabbitMQ, JMS
+• Cloud Platforms & MLOps: AWS (Lambda, EKS, S3, RDS, SageMaker), Microsoft Azure (Event Hubs, Azure ML,
+DevOps), Docker, Kubernetes, Terraform, Helm, Jenkins, GitHub Actions, CI/CD, Model Deployment & Monitoring
+• Machine Learning & AI: TensorFlow, PyTorch, Scikit-learn, XGBoost, Keras, BERT, NLP, Transformers, LLM
+Integration, LangChain, OpenAI API, RAG, SHAP, LIME, Hyperparameter Tuning, Feature Engineering, Prompt
+Engineering
+• Big Data & Data Engineering: Apache Spark, Hadoop, Apache Airflow, Data Modeling, PostgreSQL, MySQL,
+MongoDB, Oracle
+• Architecture & Services: RESTful APIs, GraphQL, gRPC, Service Discovery (Eureka), API Gateway, Circuit Breaker
+(Hystrix)
+• DevOps & Monitoring: Git, Bitbucket, Jenkins, Prometheus, Grafana, ELK Stack, Splunk
+• Testing & Quality Assurance: JUnit, TestNG, Mockito, Selenium, Cypress, Playwright, Pytest, unittest
+• Messaging & Integration: Apache Kafka, RabbitMQ, JMS, Protocol Buffers
+• Methodologies & Tools: Agile/Scrum, SAFe, Jira, Confluence, Cross-Functional Collaboration, Technical Leadership
+
+PROFESSIONAL EXPERIENCE
+CVS Health Corporation | AZ June 2025 – Present
+Senior Software Engineer
+• Engineered event-driven microservices using Python (FastAPI/Flask), Apache Kafka, and Kubernetes to process high-
+volume healthcare transactions, achieving 99.99% uptime and horizontal scalability for peak demand periods.
+• Automated CI/CD pipelines with Jenkins and GitHub Actions, reducing manual deployment efforts by 40% and
+accelerating release cycles.
+• Designed and deployed AWS cloud infrastructure (Lambda, EKS, S3) to optimize claims processing workflows, reducing
+operational costs by 25% through serverless automation and intelligent auto-scaling policies.
+• Developed predictive models using XGBoost and TensorFlow to forecast medication adherence risks, achieving 92%
+accuracy in identifying high-risk patients for targeted interventions.
+
+• Architected LLM-powered code assistance and documentation workflows using OpenAI's API, LangChain, and RAG
+pipelines to automate documentation generation and code reviews, enhancing developer productivity while maintaining
+code quality standards.
+• Created comprehensive unit, integration, and end-to-end test suites using pytest, unittest, Selenium, and Playwright
+(Python), increasing test coverage from 65% to 90% and reducing production issues by 40%.
+• Designed and optimized PostgreSQL and MySQL database schemas, applying indexing and normalization strategies to
+improve query performance by 35% and reduce storage costs by 20%.
+• Led a cross-functional team of 5 engineers in modernizing the pharmacy benefits management platform, coordinating
+architecture decisions and sprint planning to deliver features 2 weeks ahead of schedule.
+Microsoft | India March 2021 – December 2022
+Software Engineer
+• Designed and implemented scalable cloud services using Java, Spring Boot, and Microsoft Azure, increasing system
+throughput by 40% and supporting over 2 million monthly active users.
+• Optimized real-time data pipelines with Azure Event Hubs and Apache Spark, reducing data processing latency by 50%
+for mission-critical analytics workloads.
+• Delivered full-stack features using React.js and TypeScript on the frontend and Java/Spring Boot on the backend for
+internal productivity tools, improving team efficiency by 25%.
+• Optimized a BERT-based NLP model for Azure Cognitive Services using quantization and ONNX runtime, significantly
+improving inference speed while preserving high accuracy for text processing workloads.
+• Integrated LLM-powered features using OpenAI API and LangChain into internal developer tooling, automating code
+review summaries and accelerating documentation workflows.
+• Developed an automated testing framework with JUnit, Mockito, and Selenium, increasing test coverage from 65% to
+90% and reducing production bugs by 35%.
+• Implemented automated CI/CD pipelines using Azure DevOps, decreasing manual QA workload by 60% and accelerating
+release timelines.
+• Automated infrastructure provisioning using Terraform and Azure Bicep, reducing deployment times by 50% and
+supporting multi-region scalability.
+• Led Agile transformation for 3 feature teams using Scrum and SAFe practices, optimizing Jira workflows, sprint
+retrospectives, and planning processes to improve delivery speed by 30% and reduce sprint carryover by 20%.
+JPMorgan Chase | India December 2018 – February 2021
+Software Engineer
+• Developed core functionalities for a Single Page Application (SPA) using JavaScript (ES6+), React, and Redux,
+improving state management and increasing user engagement by 12%.
+• Designed and deployed cloud-native microservices using Docker, Kubernetes, YAML manifests, and Helm charts for
+automated and scalable deployments.
+• Built and integrated RESTful APIs using Java 8 and Spring Boot, implementing JWT authentication, optimized
+payloads, and caching strategies to improve data transfer efficiency by 18%.
+• Implemented high-performance inter-service communication using gRPC and protocol buffers, replacing REST
+endpoints for latency-sensitive trading systems to enable real-time data streaming between microservices.
+• Achieved 98% code coverage by implementing robust unit and integration testing strategies using JUnit, Mockito,
+Selenium, and Cypress.
+• Worked with quantitative analysts to optimize derivatives pricing models using Monte Carlo simulations with Dask and
+Ray, improving P&L accuracy by 15%.
+• Engineered Python-based data pipelines with Pandas, NumPy, and Apache Airflow to automate daily P&L reporting
+and trade reconciliation, reducing manual workload by 65% and improving compliance accuracy.
+Oracle | India May 2015 – December 2018
+Python Developer
+• Developed and optimized backend services and RESTful APIs using Python, Django, and Flask, improving system
+performance by 30% and reducing response times by 40%.
+
+• Designed and implemented data processing scripts using Python, Pandas, and NumPy for enterprise applications
+integrating with Oracle databases, streamlining data access and improving response times by 25%.
+• Built automated ETL pipelines using Python and SQL to streamline data ingestion and reporting workflows, reducing
+manual data-handling effort by 35%.
+• Increased unit test coverage from 60% to 85% by implementing automated testing frameworks using Pytest and
+unittest, leading to a 35% reduction in post-release defects.
+• Deployed applications using Docker and Kubernetes in collaboration with DevOps teams, cutting deployment time by
+50% and enhancing scalability.
+• Resolved high-priority production issues by analyzing logs using SQL Profiler and the ELK Stack (Elasticsearch,
+Logstash, Kibana), reducing system downtime by 20%.
+
+EDUCATION
+• Master's in Business Analytics, University of New Haven, Connecticut — 07/2023 to 05/2025

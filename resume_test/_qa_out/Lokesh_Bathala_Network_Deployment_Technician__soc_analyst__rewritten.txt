@@ -1,0 +1,44 @@
+Lokesh Bathala
+Security Operations Center Analyst
+Virginia | (508) 292-5209 | lbath.@gmail.com | linkedin.com/in/lokesh-b-18a7b3382
+
+SUMMARY
+Security Operations Center Analyst with 3+ years of experience monitoring, triaging, and responding to security threats in 24/7 environments. Skilled in utilizing SIEM tools, investigating phishing and malware incidents, and validating indicators of compromise. Adept at writing detection logic, applying MITRE ATT&CK frameworks, and collaborating with cross-functional IT teams. Proven ability to maintain robust security standards, conduct vulnerability assessments, and ensure rapid incident resolution.
+
+SKILLS
+Technical Skills: Cybersecurity, SIEM, Threat Intelligence, Phishing Analysis, Vulnerability Assessment, Incident Response, Network Security, Linux, TCP/IP, LAN/WAN, DNS, DHCP, VLANs, VPN
+Tools & Platforms: Splunk, Microsoft Sentinel, CrowdStrike, Wireshark, SolarWinds, ServiceNow, JIRA, Linux CLI
+Methodologies: Agile, ITIL, Incident Resolution, Threat Hunting, Detection Engineering
+Core Competencies: Security Operations, Threat Monitoring, Alert Triage, Technical Documentation
+
+PROFESSIONAL EXPERIENCE
+
+Data Center Technician | Liberty Mutual Insurance | Virginia | January 2025 – Present
+- Monitor security telemetry and triage SIEM alerts using Splunk and Microsoft Sentinel to identify potential network threats across 4 production data center zones.
+- Investigate phishing, malware, and identity threats targeting internal users using CrowdStrike and network diagnostic tools.
+- Validate indicators of compromise (IOCs) and support incident response workflows to mitigate emerging security risks.
+- Write detection logic and tune alerts using KQL and SPL to minimize false positives and improve threat detection fidelity.
+- Apply MITRE ATT&CK frameworks for security investigations, threat mapping, and incident reporting.
+- Resolve 45+ monthly security and hardware tickets on ServiceNow, directly enhancing system integrity and internal stakeholder safety scores by 18%.
+- Author comprehensive technical documentation and standard operating procedures for 15 new data center expansion and security audit workflows.
+
+Data Center Technician | Iron Mountain | Hyderabad, India | January 2022 – July 2023
+- Configured and monitored network hardware components, switches, and secure links across 200+ server racks in a 24/7 environment.
+- Diagnosed and resolved 75+ physical-layer connectivity, routing, and potential intrusion issues using Wireshark, SolarWinds, and Linux CLI within 2-hour SLA windows.
+- Coordinated with network engineering and cybersecurity teams to implement firewall policies, VLAN segmentation, and secure DNS/DHCP configurations.
+- Maintained structured cabling standards and port documentation across 12 distinct data center cabinets, reducing audit discrepancies by 35%.
+- Provided reliable incident response support and threat awareness for 50+ enterprise clients during scheduled maintenance and circuit turn-ups.
+- Conducted vulnerability assessments on physical and network assets to ensure compliance with enterprise security baselines.
+- Participated in root cause analysis for infrastructure anomalies to prevent future security vulnerabilities and network disruptions.
+
+PROJECTS
+Enterprise Network Infrastructure Automation
+- Designed an infrastructure provisioning pipeline incorporating security validation principles to deploy 20 virtual network nodes across a multi-region environment.
+- Documented deployment runbooks and security architecture diagrams, reducing manual setup time by 40% for subsequent cloud rollouts.
+
+EDUCATION
+M.S. - University of New Haven | West Haven, CT | August 2023 – May 2025
+B.Tech - Malla Reddy Engineering College | Hyderabad, India | June 2019 – May 2022
+
+CERTIFICATIONS
+Cisco Certified Network Associate (CCNA)

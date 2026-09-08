@@ -1,0 +1,651 @@
+{
+  "jdsUsed": [
+    "data_engineer_aws",
+    "ml_engineer_aws",
+    "data_analyst",
+    "ai_engineer",
+    "soc_analyst"
+  ],
+  "static": [
+    {
+      "name": "Harsha Vardhan DE Support Resume",
+      "chars": 5530,
+      "clouds": {
+        "aws": 10,
+        "azure": 11,
+        "gcp": 0
+      },
+      "primaryCloud": "azure",
+      "projectSections": 0,
+      "leverageCount": 0,
+      "headers": [
+        "SUMMARY",
+        "SKILLS",
+        "EXPERIENCE",
+        "EDUCATION"
+      ],
+      "issues": [
+        "Contains bullet glyphs (\u2022) \u2014 template expects '- ' bullets",
+        "Multiple clouds present: {'aws': 10, 'azure': 11, 'gcp': 0}",
+        "Primary=azure but rival 'aws' still appears (10 hits)"
+      ]
+    },
+    {
+      "name": "Lokesh_Bathala_Network_Deployment_Technician",
+      "chars": 3717,
+      "clouds": {
+        "aws": 0,
+        "azure": 0,
+        "gcp": 1
+      },
+      "primaryCloud": "gcp",
+      "projectSections": 0,
+      "leverageCount": 0,
+      "headers": [
+        "SUMMARY",
+        "SKILLS",
+        "EXPERIENCE",
+        "PROJECTS",
+        "EDUCATION",
+        "CERTIFICATIONS"
+      ],
+      "issues": [
+        "Contains bullet glyphs (\u2022) \u2014 template expects '- ' bullets"
+      ]
+    },
+    {
+      "name": "Maheshwari Vallapu AI Engineer Resume",
+      "chars": 6221,
+      "clouds": {
+        "aws": 24,
+        "azure": 1,
+        "gcp": 0
+      },
+      "primaryCloud": "aws",
+      "projectSections": 0,
+      "leverageCount": 1,
+      "headers": [
+        "VALLAPU MAHESHWARI",
+        "SUMMARY",
+        "PROFESSIONAL EXPERIENCE",
+        "TECHNICAL SKILLS",
+        "EDUCATION",
+        "CERTIFICATIONS"
+      ],
+      "issues": [
+        "'leveraging/leveraged' appears 1 time(s)",
+        "LinkedIn uses full URL \u2014 template prefers linkedin.com/in/username",
+        "Missing space between job title and start month",
+        "Multiple clouds present: {'aws': 24, 'azure': 1, 'gcp': 0}",
+        "Primary=aws but rival 'azure' still appears (1 hits)"
+      ]
+    },
+    {
+      "name": "Prasanna Gandla SOC Resume (1)",
+      "chars": 7171,
+      "clouds": {
+        "aws": 6,
+        "azure": 3,
+        "gcp": 0
+      },
+      "primaryCloud": "aws",
+      "projectSections": 0,
+      "leverageCount": 0,
+      "headers": [
+        "PROFESSIONAL SUMMARY",
+        "TECHNICAL SKILLS",
+        "PROFESSIONAL EXPERIENCE",
+        "HIPAA, GDPR",
+        "EDUCATION",
+        "CERTIFICATIONS"
+      ],
+      "issues": [
+        "Contains bullet glyphs (\u2022) \u2014 template expects '- ' bullets",
+        "Possible trailing comma skill dumps on bullets",
+        "Multiple clouds present: {'aws': 6, 'azure': 3, 'gcp': 0}",
+        "Primary=aws but rival 'azure' still appears (3 hits)"
+      ]
+    },
+    {
+      "name": "Reshmi Support",
+      "chars": 8845,
+      "clouds": {
+        "aws": 13,
+        "azure": 8,
+        "gcp": 2
+      },
+      "primaryCloud": "aws",
+      "projectSections": 0,
+      "leverageCount": 7,
+      "headers": [
+        "PROFESSIONAL SUMMARY",
+        "PROFESSIONAL EXPERIENCE",
+        "TECHNICAL SKILLS",
+        "EDUCATION"
+      ],
+      "issues": [
+        "Contains bullet glyphs (\u2022) \u2014 template expects '- ' bullets",
+        "'leveraging/leveraged' appears 7 time(s)",
+        "Possible trailing comma skill dumps on bullets",
+        "Multiple clouds present: {'aws': 13, 'azure': 8, 'gcp': 2}",
+        "Primary=aws but rival 'azure' still appears (8 hits)",
+        "Primary=aws but rival 'gcp' still appears (2 hits)"
+      ]
+    },
+    {
+      "name": "Sucharitha Bode Resume",
+      "chars": 4607,
+      "clouds": {
+        "aws": 0,
+        "azure": 4,
+        "gcp": 0
+      },
+      "primaryCloud": "azure",
+      "projectSections": 1,
+      "leverageCount": 0,
+      "headers": [
+        "SUMMARY",
+        "TECHNICALSKILLS",
+        "PROFESSIONAL EXPERIENCE",
+        "EDUCATION",
+        "ACADEMIC PROJECTS"
+      ],
+      "issues": [
+        "Possible trailing comma skill dumps on bullets",
+        "Pipe separators missing spaces around '|' in some lines",
+        "Missing space between job title and start month"
+      ]
+    },
+    {
+      "name": "Sucharitha Bode_AIAnalyst",
+      "chars": 4394,
+      "clouds": {
+        "aws": 8,
+        "azure": 9,
+        "gcp": 1
+      },
+      "primaryCloud": "azure",
+      "projectSections": 0,
+      "leverageCount": 1,
+      "headers": [
+        "PROFESSIONAL SUMMARY",
+        "PROFESSIONAL EXPERIENCE",
+        "TECHNICAL SKILLS",
+        "EDUCATION"
+      ],
+      "issues": [
+        "Contains bullet glyphs (\u2022) \u2014 template expects '- ' bullets",
+        "'leveraging/leveraged' appears 1 time(s)",
+        "Possible trailing comma skill dumps on bullets",
+        "Multiple clouds present: {'aws': 8, 'azure': 9, 'gcp': 1}",
+        "Primary=azure but rival 'aws' still appears (8 hits)",
+        "Primary=azure but rival 'gcp' still appears (1 hits)"
+      ]
+    },
+    {
+      "name": "Sucharitha Bode_dataAnalyst",
+      "chars": 4355,
+      "clouds": {
+        "aws": 8,
+        "azure": 9,
+        "gcp": 1
+      },
+      "primaryCloud": "azure",
+      "projectSections": 0,
+      "leverageCount": 1,
+      "headers": [
+        "PROFESSIONAL SUMMARY",
+        "PROFESSIONAL EXPERIENCE",
+        "TECHNICAL SKILLS",
+        "EDUCATION"
+      ],
+      "issues": [
+        "'leveraging/leveraged' appears 1 time(s)",
+        "Possible trailing comma skill dumps on bullets",
+        "Missing space between job title and start month",
+        "Multiple clouds present: {'aws': 8, 'azure': 9, 'gcp': 1}",
+        "Primary=azure but rival 'aws' still appears (8 hits)",
+        "Primary=azure but rival 'gcp' still appears (1 hits)"
+      ]
+    },
+    {
+      "name": "SUPPORT Anirudh Machine Learning Engineer (2)",
+      "chars": 4650,
+      "clouds": {
+        "aws": 14,
+        "azure": 10,
+        "gcp": 0
+      },
+      "primaryCloud": "aws",
+      "projectSections": 0,
+      "leverageCount": 0,
+      "headers": [
+        "SUMMARY",
+        "TECHNICAL SKILLS",
+        "PROFESSIONAL EXPERIENCE",
+        "EDUCATION"
+      ],
+      "issues": [
+        "Possible trailing comma skill dumps on bullets",
+        "Resume does not start with candidate name (starts with section header)",
+        "Multiple clouds present: {'aws': 14, 'azure': 10, 'gcp': 0}",
+        "Primary=aws but rival 'azure' still appears (10 hits)"
+      ]
+    },
+    {
+      "name": "Tejashwini_DA_Resume",
+      "chars": 5723,
+      "clouds": {
+        "aws": 9,
+        "azure": 8,
+        "gcp": 0
+      },
+      "primaryCloud": "aws",
+      "projectSections": 1,
+      "leverageCount": 2,
+      "headers": [
+        "SUMMARY",
+        "TECHNICAL SKILLS",
+        "PROFESSIONAL EXPERIENCE",
+        "EDUCATION",
+        "PROJECTS"
+      ],
+      "issues": [
+        "'leveraging/leveraged' appears 2 time(s)",
+        "Possible trailing comma skill dumps on bullets",
+        "Multiple clouds present: {'aws': 9, 'azure': 8, 'gcp': 0}",
+        "Primary=aws but rival 'azure' still appears (8 hits)"
+      ]
+    },
+    {
+      "name": "Vasanthi_Vaddelli_Resume",
+      "chars": 8531,
+      "clouds": {
+        "aws": 8,
+        "azure": 9,
+        "gcp": 0
+      },
+      "primaryCloud": "azure",
+      "projectSections": 0,
+      "leverageCount": 0,
+      "headers": [
+        "PROFESSIONAL SUMMARY",
+        "TECHNICAL SKILLS",
+        "PROFESSIONAL EXPERIENCE",
+        "EDUCATION"
+      ],
+      "issues": [
+        "Contains bullet glyphs (\u2022) \u2014 template expects '- ' bullets",
+        "LinkedIn uses full URL \u2014 template prefers linkedin.com/in/username",
+        "Multiple clouds present: {'aws': 8, 'azure': 9, 'gcp': 0}",
+        "Primary=azure but rival 'aws' still appears (8 hits)"
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "resume": "Harsha Vardhan DE Support Resume",
+      "jd": "data_engineer_aws",
+      "atsScore": 92,
+      "scoreMeta": {
+        "atsScore": 92,
+        "gaps": [],
+        "cloudMix": true,
+        "projectsOk": true,
+        "notes": "Exceptional resume with a strong match for all JD requirements, including Python, SQL, Spark, Airflow, AWS stack, Kafka, and DevOps tools."
+      },
+      "masterClouds": {
+        "aws": 10,
+        "azure": 11,
+        "gcp": 0
+      },
+      "rewrittenClouds": {
+        "aws": 18,
+        "azure": 1,
+        "gcp": 0
+      },
+      "issues": [
+        "Multiple clouds present: {'aws': 18, 'azure': 1, 'gcp': 0}",
+        "Possible new company/role lines not in master: ['Remote, USA ']"
+      ],
+      "rewrittenPreview": "Harsha Vardhan Vinjamuri\nData Engineer\nRemote, USA | harsha@email.com | 555-019-2834 | linkedin.com/in/harshavardhan | github.com/harshavardhan\n\nSUMMARY\nResults-driven Data Engineer with 5+ years of experience designing enterprise-scale data pipelines, real-time streaming architectures, and AWS cloud integration solutions across financial services, healthcare, aerospace, and manufacturing domains. Proficient in Python, SQL, Apache Spark, PySpark, and Kafka, delivering high-performance ETL/ELT workflows and feature engineering pipelines processing billions of records daily. Experienced integrating complex enterprise ecosystems with strong knowledge of data governance and security compliance. Skilled in DevOps automation using Docker and Terraform, consistently delivering scalable, reliable data solutions in Agile environments.\n\nSKILLS\nProgramming & Scripting: Python, SQL, PySpark, Scala, Shell Scripting\nBig Data & Distributed Computing: Apache Spark, PySpark, Spark SQL, Apache Kafka, Amazon EMR\nData Engineering & ETL Tools: dbt, Apache Airflow, AWS Glue, SQL Server Integration Services (SSIS)\nCloud Platforms & Services: AWS (EC2, S3, Glue, Redshift, RDS, DynamoDB, Lambda, Kinesis, Athena)\nDatabases & Data Warehousing: Snowflake, SQL Server, PostgreSQL, MySQL, Oracle, MongoDB\nStreaming & Real-Time Data: Apache Kafka, RabbitMQ, Amazon Kinesis, Spark Streaming\nMachine Learning & AI: PySpark ML, Scikit-learn, Pandas, NumPy, Feature Engineering, Model Deployment\nDevOps & Infrastructure as Code: Git, GitLab CI/CD, Jenkins, Docker, Terraform\nData Visualization & BI: Power BI, Tableau, Excel\nMethodologies: Agile, Scrum, Software Development Life Cycle (SDLC)",
+      "rewrittenChars": 4952
+    },
+    {
+      "resume": "Lokesh_Bathala_Network_Deployment_Technician",
+      "jd": "soc_analyst",
+      "atsScore": 82,
+      "scoreMeta": {
+        "atsScore": 82,
+        "gaps": [
+          "Primarily has a Data Center Technician background rather than a dedicated full-time SOC Analyst background, though security duties are clearly integrated.",
+          "Lacks cloud-native security certifications (e.g., Azure Security Engineer, AWS Security, or GIAC/CompTIA Security+).",
+          "Projects section leans heavily towards network infrastructure automation rather than dedicated threat detection engineering."
+        ],
+        "cloudMix": true,
+        "projectsOk": true,
+        "notes": "Strong resume that closely mirrors the required JD keywords (Splunk, Sentinel, CrowdStrike, KQL, SPL, MITRE ATT&CK). Experience bullets successfully map to SOC requirements despite the job title being Data Center Technician."
+      },
+      "masterClouds": {
+        "aws": 0,
+        "azure": 0,
+        "gcp": 1
+      },
+      "rewrittenClouds": {
+        "aws": 0,
+        "azure": 0,
+        "gcp": 0
+      },
+      "issues": [
+        "Possible new company/role lines not in master: ['B.Tech - Malla Reddy Engineering College ', 'Data Center Technician ', 'M.S. - University of New Haven ', 'Virginia ']",
+        "Invented PROJECTS section (master had none)"
+      ],
+      "rewrittenPreview": "Lokesh Bathala\nSecurity Operations Center Analyst\nVirginia | (508) 292-5209 | lbath.@gmail.com | linkedin.com/in/lokesh-b-18a7b3382\n\nSUMMARY\nSecurity Operations Center Analyst with 3+ years of experience monitoring, triaging, and responding to security threats in 24/7 environments. Skilled in utilizing SIEM tools, investigating phishing and malware incidents, and validating indicators of compromise. Adept at writing detection logic, applying MITRE ATT&CK frameworks, and collaborating with cross-functional IT teams. Proven ability to maintain robust security standards, conduct vulnerability assessments, and ensure rapid incident resolution.\n\nSKILLS\nTechnical Skills: Cybersecurity, SIEM, Threat Intelligence, Phishing Analysis, Vulnerability Assessment, Incident Response, Network Security, Linux, TCP/IP, LAN/WAN, DNS, DHCP, VLANs, VPN\nTools & Platforms: Splunk, Microsoft Sentinel, CrowdStrike, Wireshark, SolarWinds, ServiceNow, JIRA, Linux CLI\nMethodologies: Agile, ITIL, Incident Resolution, Threat Hunting, Detection Engineering\nCore Competencies: Security Operations, Threat Monitoring, Alert Triage, Technical Documentation\n\nPROFESSIONAL EXPERIENCE\n\nData Center Technician | Liberty Mutual Insurance | Virginia | January 2025 \u2013 Present\n- Monitor security telemetry and triage SIEM alerts using Splunk and Microsoft Sentinel to identify potential network threats across 4 production data center zones.\n- Investigate phishing, malware, and identity threats targeting internal users using CrowdStrike and network diagnostic tools.",
+      "rewrittenChars": 3845
+    },
+    {
+      "resume": "Maheshwari Vallapu AI Engineer Resume",
+      "jd": "ai_engineer",
+      "atsScore": 88,
+      "scoreMeta": {
+        "atsScore": 88,
+        "gaps": [
+          "Timeline overlap or future-dated experience (Netflix listed as starting July 2025)",
+          "Lack of explicit mention of Flink in the professional experience bullets (Kafka is mentioned, but Flink is omitted from the Netflix/HCL bullets despite being in skills)"
+        ],
+        "cloudMix": true,
+        "projectsOk": true,
+        "notes": "Strong resume that directly hits almost all requirements (LLMs, RAG, Python, AWS SageMaker/Lambda, Docker/Kubernetes). Minor deduction for the suspicious future date on the Netflix experience (July 2025)."
+      },
+      "masterClouds": {
+        "aws": 24,
+        "azure": 1,
+        "gcp": 0
+      },
+      "rewrittenClouds": {
+        "aws": 23,
+        "azure": 1,
+        "gcp": 0
+      },
+      "issues": [
+        "LinkedIn uses full URL \u2014 template prefers linkedin.com/in/username",
+        "Multiple clouds present: {'aws': 23, 'azure': 1, 'gcp': 0}",
+        "Primary=aws but rival 'azure' still appears (1 hits)"
+      ],
+      "rewrittenPreview": "VALLAPU MAHESHWARI\nAI Engineer\nmahimaheshwari9652@gmail.com | 203-690-4452 | NJ, USA | https://www.linkedin.com/in/vallapu-maheshwari-067363412/\n\nSUMMARY\nAI Engineer with 4+ years of experience designing, deploying, and scaling generative AI and machine learning systems in high-traffic production environments. Proven expertise building LLM-powered applications (GPT-4, Llama 2), retrieval-augmented generation (RAG), prompt engineering, and embedding-based evaluation pipelines, alongside real-time recommendation and personalization systems for large-scale consumer platforms. Skilled in distributed feature stores, AWS cloud AI infrastructure (SageMaker, Lambda, Glue), and containerized model deployment (Docker, Kubernetes, Jenkins). Strong foundation in deep learning (CNNs, Transformers), ensemble modeling (XGBoost, Random Forest), and big data pipelines (PySpark, Apache Flink, Kafka), consistently delivering measurable gains in accuracy, latency, and operational efficiency for enterprise-scale users.\n\nSKILLS\nGenerative AI & LLMs: LLM Fine-tuning (GPT-4, Llama 2), Prompt Engineering, Retrieval-Augmented Generation (RAG, LlamaIndex), Embeddings, Model Evaluation, NLP (BERT, spaCy, GPT models)\nProgramming & Scripting: Python (NumPy, Pandas, SciPy, TensorFlow, PyTorch, Keras, scikit-learn, NLTK, Matplotlib, Plotly), SQL (MySQL, PostgreSQL), NoSQL (MongoDB, Cassandra, DynamoDB)\nMachine Learning & AI: Supervised & Unsupervised Learning, Deep Learning (CNNs, Transformers), Time Series Forecasting, Anomaly Detection, Generative Models, Feature Engineering, Model Evaluation\nBig Data & Data Engineering: Apache Spark, Kafka, Apache Flink, Airflow, AWS EMR, Data Warehousing (Snowflake, Redshift)\nCloud Platforms & MLOps: AWS (EC2, S3, Glue, Redshift, SageMaker, Lambda, Athena, RDS), CI/CD Pipelines, Model Deployment & Monitoring, Experiment Tracking (MLflow, TensorBoard)\nDevOps & Infrastructure: Docker, Kubernetes, Jenkins, GitHub Actions, Git, Terraform, Serverless Architecture, API Development (Flask, FastAPI, Django)\nVisualization & Analytics: Tableau, Power BI, EDA, A/B Testing, Statistical Modeling, Predictive Analytics\n\nPROFESSIONAL EXPERIENCE\nNetflix | CA | AI Engineer | July 2025 \u2013 Present",
+      "rewrittenChars": 5487
+    },
+    {
+      "resume": "Prasanna Gandla SOC Resume (1)",
+      "jd": "soc_analyst",
+      "atsScore": 88,
+      "scoreMeta": {
+        "atsScore": 88,
+        "gaps": [
+          "None significant; resume strongly aligns with all core JD requirements including SIEM tools, threat intelligence, and detection logic."
+        ],
+        "cloudMix": true,
+        "projectsOk": true,
+        "notes": "Strong SOC resume that directly hits the required experience level, toolsets (Splunk, Sentinel, QRadar, CrowdStrike), and technical tasks (KQL, SPL, MITRE ATT&CK)."
+      },
+      "masterClouds": {
+        "aws": 6,
+        "azure": 3,
+        "gcp": 0
+      },
+      "rewrittenClouds": {
+        "aws": 0,
+        "azure": 1,
+        "gcp": 0
+      },
+      "issues": [
+        "Contains bullet glyphs (\u2022) \u2014 template expects '- ' bullets"
+      ],
+      "rewrittenPreview": "Prasanna Gandla\nSecurity Operations Analyst | Threat Intelligence | Penetration Testing\nwww.linkedin.com/in/prasanna-g-720395300 | gandla.prasanna.12@gmail.com | 9452674172\n\nSUMMARY\nSecurity Operations Analyst with 5 years of experience in SOC monitoring, threat intelligence, phishing analysis, vulnerability assessment, and penetration testing across Healthcare, Banking, and E-commerce environments. Skilled in using Splunk, Microsoft Sentinel, QRadar, and CrowdStrike Falcon to triage alerts, validate IOCs (malicious IPs, domains, file hashes, URLs) via VirusTotal, AbuseIPDB, and OSINT sources, and support incident response investigations. Experienced in applying the MITRE ATT&CK framework, building KQL/SPL queries, and analyzing Windows event logs, VPN activity, and authentication records to detect abnormal access and credential misuse. Proficient in phishing triage, Microsoft Sentinel detection tuning, and vulnerability assessment against the OWASP Top 10 using Burp Suite, Nmap, and Nessus. Strong background in regulatory-aligned documentation under HIPAA, GDPR, and SOC 2, with hands-on exposure to access control, MFA enforcement, and cross-functional collaboration with IT and security teams to drive audit-ready incident reporting and continuous detection improvement.\n\nSKILLS\n\u2022 SIEM & Log Analysis: Splunk, Microsoft Sentinel, QRadar, SPL, KQL, Windows Event Logs, Linux System Logs\n\u2022 EDR & Endpoint Security: CrowdStrike Falcon, Microsoft Defender for Endpoint, Endpoint Alert Triage, Process Investigation, Malware Alert Review\n\u2022 Threat Intelligence & IOC Analysis: MITRE ATT&CK, OSINT, VirusTotal, AbuseIPDB, URLVoid, WHOIS, IOC Enrichment\n\u2022 Phishing & Email Security: Email Header Analysis, URL Analysis, Attachment Review, Sender/Domain Validation, Phishing Triage\n\u2022 Penetration Testing & Web Security: Burp Suite, Nmap, Metasploit, Kali Linux, OWASP Top 10, Reconnaissance, Enumeration, Vulnerability Validation\n\u2022 Vulnerability Assessment: Nessus, CVE Review, Risk Rating, Remediation Validation, Retesting\n\u2022 Network Security: Wireshark, TCP/IP, DNS, HTTP/HTTPS, Firewall & VPN Log Review\n\u2022 Cloud & Identity Security: Azure AD, MFA, Least Privilege, Access Control Review, Suspicious Login Investigation\n\u2022 Scripting & Automation: Python, PowerShell, Bash\n\u2022 Operating Systems: Windows, Linux, Active Directory",
+      "rewrittenChars": 6066
+    },
+    {
+      "resume": "Reshmi Support",
+      "jd": "data_analyst",
+      "atsScore": 88,
+      "scoreMeta": {
+        "atsScore": 88,
+        "gaps": [
+          "Lacks explicit mention of A/B testing execution in professional experience bullet points, despite being listed in skills."
+        ],
+        "cloudMix": true,
+        "projectsOk": true,
+        "notes": "Strong resume with 5+ years of experience, matching all core tech stack requirements (SQL, Python, Tableau, Power BI, AWS) and stakeholder communication."
+      },
+      "masterClouds": {
+        "aws": 13,
+        "azure": 8,
+        "gcp": 2
+      },
+      "rewrittenClouds": {
+        "aws": 14,
+        "azure": 4,
+        "gcp": 0
+      },
+      "issues": [
+        "Multiple clouds present: {'aws': 14, 'azure': 4, 'gcp': 0}",
+        "Primary=aws but rival 'azure' still appears (4 hits)",
+        "Possible new company/role lines not in master: ['Dallas, TX ']"
+      ],
+      "rewrittenPreview": "Reshmi Divi\nData Analyst\nDallas, TX | contact@reshmidivi.com | linkedin.com/in/reshmidivi\n\nPROFESSIONAL SUMMARY\nData Analyst with 5+ years of experience transforming complex datasets into actionable insights using SQL, Python, R, Tableau, Power BI, and Excel. Expertise in data wrangling, visualization, and statistical analysis, with a strong foundation in ETL, A/B testing, and cloud data platforms. Skilled in partnering with cross-functional product and operations teams to optimize business performance and drive data-backed decision-making.\n\nSKILLS\nProgramming & Analysis: Python, R, SQL, PL/SQL, Spark, Pandas, NumPy, Matplotlib, Seaborn, SciPy, A/B Testing, Statistical Analysis\nCloud & Databases: AWS (S3, Redshift, Glue, Lambda), MySQL, SQL Server, Snowflake, Oracle, ETL\nVisualization & Tools: Tableau, Power BI, MS Excel, Alteryx, JIRA, Confluence, Git\nMethodologies: Agile, Scrum, Project Management, Data Cleansing, Data Wrangling\n\nPROFESSIONAL EXPERIENCE\nMicrosoft | TX | Data Analyst | December 2023 \u2013 Present\n- Built a data analytics pipeline processing millions of records daily, using Python, Pandas, and Matplotlib to uncover trends, boosting predictive accuracy by 35% and driving data-informed decisions.\n- Designed ETL processes using AWS data services to streamline data integration and reduce data pipeline latency by 30%.\n- Collaborated cross-functional with stakeholders in a startup environment, ensuring compliance and validating APIs and deployment flows using strong communication and problem-solving skills.",
+      "rewrittenChars": 4495
+    },
+    {
+      "resume": "Sucharitha Bode Resume",
+      "jd": "data_analyst",
+      "atsScore": 68,
+      "scoreMeta": {
+        "atsScore": 68,
+        "gaps": [
+          "No explicit mention of cloud data platforms (AWS or Azure) required by the JD",
+          "Lack of explicit mention of ETL workflow design or data quality maintenance experience",
+          "No explicit mention of A/B testing or formal statistical analysis experience"
+        ],
+        "cloudMix": false,
+        "projectsOk": true,
+        "notes": "Strong candidate with solid SQL, Python, and BI dashboard experience, but loses points for missing cloud platform experience (AWS/Azure) and specific analytics requirements like A/B testing."
+      },
+      "masterClouds": {
+        "aws": 0,
+        "azure": 4,
+        "gcp": 0
+      },
+      "rewrittenClouds": {
+        "aws": 0,
+        "azure": 5,
+        "gcp": 0
+      },
+      "issues": [
+        "Possible trailing comma skill dumps on bullets",
+        "Possible new company/role lines not in master: ['ADP ', 'Marriott International ', 'Sunnyvale, CA ']"
+      ],
+      "rewrittenPreview": "Sucharitha Bode\nAI Operations Analyst\nSunnyvale, CA | sucharithab25@gmail.com | +1 704-420-4474 | LinkedIn\n\nSUMMARY\nAI Operations and Technical Business Analyst with 6+ years of experience driving workflow automation, business process optimization, operational analytics, KPI reporting, and AI-enabled solutions. Experienced in translating business requirements into scalable solutions, collaborating with engineering and product teams, and supporting enterprise AI initiatives. Strong hands-on experience with SQL, Python, Power BI, Excel, REST APIs, Agile SDLC, Jira, CI/CD, ChatGPT, Microsoft Copilot, and Generative AI.\n\nSKILLS\nLanguages: SQL, Python\nAnalytics: Power BI, Tableau, Excel, KPI Dashboards, Data Analysis\nAI: ChatGPT, Microsoft Copilot, Generative AI, Prompt Engineering\nBusiness: Business Analysis, Technical Business Analysis, Process Mapping, Documentation\nDevelopment: REST APIs, Node.js, MongoDB, Git/GitHub, CI/CD\nMethodologies: Agile, Scrum, SDLC, Jira\n\nPROFESSIONAL EXPERIENCE\nMarriott International | United States | AI Operations Analyst | June 2024 \u2013 Present\n- Supported AI-powered business applications using Python and SQL to improve workflow efficiency and reduce manual operational effort.",
+      "rewrittenChars": 3399
+    },
+    {
+      "resume": "Sucharitha Bode_AIAnalyst",
+      "jd": "ai_engineer",
+      "atsScore": 88,
+      "scoreMeta": {
+        "atsScore": 88,
+        "gaps": [
+          "Fleshing out explicit mention of Flink (only Spark and Kafka are listed)"
+        ],
+        "cloudMix": true,
+        "projectsOk": true,
+        "notes": "Strong resume that closely matches the AI Engineer requirements with solid experience in LLMs, RAG, AWS, and streaming tools."
+      },
+      "masterClouds": {
+        "aws": 8,
+        "azure": 9,
+        "gcp": 1
+      },
+      "rewrittenClouds": {
+        "aws": 16,
+        "azure": 0,
+        "gcp": 0
+      },
+      "issues": [],
+      "rewrittenPreview": "Sucharitha Bode\nAI Engineer\nsucharithab25@gmail.com | +1 704-420-4474 | LinkedIn\n\nSUMMARY\nAI Engineer with 5+ years of experience building generative AI models, RAG pipelines, and production machine learning systems using Python, SQL, and AWS. Experienced in deploying scalable AI infrastructure with SageMaker and Lambda, implementing real-time data pipelines with Kafka and Spark, and optimizing model performance for business applications. Skilled in cloud data architecture, predictive analytics, and cross-functional collaboration to deliver robust AI solutions that improve operational efficiency and decision-making.\n\nSKILLS\nProgramming & Libraries: Python, SQL, PyTorch, TensorFlow, Pandas, NumPy, Scikit-Learn\nArtificial Intelligence & Machine Learning: Large Language Models (LLMs), RAG Pipelines, Prompt Engineering, Natural Language Processing (NLP), Predictive Modeling, Time Series Forecasting\nCloud & DevOps: AWS (SageMaker, Lambda, S3, Redshift, Athena), Docker, Kubernetes, CI/CD, Git\nData & Streaming: Apache Spark, Apache Kafka, ETL Pipelines, Data Warehousing, SQL Server, MySQL\n\nPROFESSIONAL EXPERIENCE\nMarriott International | TX | AI Engineer June 2024 \u2013 Present\n- Designed LLM-based applications and RAG pipelines using Python, LangChain, and OpenAI APIs, improving generative response accuracy by 35%.\n- Deployed machine learning models on AWS using SageMaker and Lambda, reducing inference latency by 30% through optimized containerization with Docker.\n- Implemented real-time feature stores and personalization systems using Apache Kafka and Apache Spark, accelerating streaming data ingestion.",
+      "rewrittenChars": 3489
+    },
+    {
+      "resume": "Sucharitha Bode_dataAnalyst",
+      "jd": "data_analyst",
+      "atsScore": 92,
+      "scoreMeta": {
+        "atsScore": 92,
+        "gaps": [],
+        "cloudMix": true,
+        "projectsOk": true,
+        "notes": "Strong match exceeding experience requirements with robust Python, SQL, Tableau/Power BI, AWS, and cross-functional experience."
+      },
+      "masterClouds": {
+        "aws": 8,
+        "azure": 9,
+        "gcp": 1
+      },
+      "rewrittenClouds": {
+        "aws": 10,
+        "azure": 4,
+        "gcp": 0
+      },
+      "issues": [
+        "Multiple clouds present: {'aws': 10, 'azure': 4, 'gcp': 0}",
+        "Primary=azure but rival 'aws' still appears (10 hits)"
+      ],
+      "rewrittenPreview": "Sucharitha Bode\nData Analyst\nsucharithab25@gmail.com | +1 704-420-4474 | LinkedIn\n\nSUMMARY\nData Analyst with 5+ years of experience using Python, SQL, and cloud technologies to transform complex datasets into actionable business insights. Experienced in developing automated analytics workflows, building scalable ETL pipelines, and creating interactive dashboards that support data-driven decision-making. Skilled in data preprocessing, statistical analysis, A/B testing, and business intelligence using Python, SQL, Power BI, Tableau, and AWS. Strong expertise in data visualization, cloud-based data platforms, and cross-functional collaboration to deliver analytics solutions that improve operational efficiency and business performance.\n\nSKILLS\nLanguages & Databases: Python, R, SQL, PL-SQL, Spark, NumPy, Pandas, Matplotlib, SciPy, MySQL, SQL Server, Oracle, Teradata, MS Access\nCloud & Big Data: AWS (S3, Glue, Athena, Redshift), ETL, Spark\nVisualization & Tools: Tableau, Power BI, Excel, JIRA, Google Analytics, Alteryx, Seaborn, Looker, QlikView, RESTful API\nMethodologies: A/B Testing, Predictive Analytics, Statistical Modeling, Data Cleaning, Data Wrangling, Agile, Scrum\n\nPROFESSIONAL EXPERIENCE\nMarriott International | TX | Data Analyst June 2024 \u2013 Present\n- Designed analytics solutions using Python, SQL, Pandas, and statistical techniques to analyze business records, improving predictive accuracy by 35%.\n- Developed scalable ETL pipelines using Python and cloud workflows, reducing data processing latency by 30% while improving data availability.\n- Built predictive analytics models and statistical algorithms to forecast operational trends using Python, enabling business stakeholders to make proactive, data-driven decisions.",
+      "rewrittenChars": 3590
+    },
+    {
+      "resume": "SUPPORT Anirudh Machine Learning Engineer (2)",
+      "jd": "ml_engineer_aws",
+      "atsScore": 91,
+      "scoreMeta": {
+        "atsScore": 91,
+        "gaps": [
+          "Specific production metrics for RAG and LLM evaluation (beyond recommendation and general deep learning)"
+        ],
+        "cloudMix": true,
+        "projectsOk": true,
+        "notes": "Extremely strong resume that closely aligns with all required qualifications, featuring solid experience in AWS, PyTorch, MLOps, and big data tools."
+      },
+      "masterClouds": {
+        "aws": 14,
+        "azure": 10,
+        "gcp": 0
+      },
+      "rewrittenClouds": {
+        "aws": 16,
+        "azure": 0,
+        "gcp": 0
+      },
+      "issues": [],
+      "rewrittenPreview": "Anirudh Reddy Kunduru\nMachine Learning Engineer\nanirudh@email.com | +1-555-555-5555 | LinkedIn: /in/anirudh | GitHub: /github/anirudh\n\nSUMMARY\nMachine Learning Engineer with 5+ years of experience delivering production-ready ML systems across cloud and distributed environments. Strong in deep learning, sequence modeling, and hands-on development with Python, PyTorch, TensorFlow, and scikit-learn. Skilled in AWS, Kafka, Spark, and end-to-end MLOps using MLflow, Airflow, Docker, and Kubernetes. Experienced in building real-time inference pipelines, optimizing latency and throughput, and designing scalable architectures that support predictive modeling, recommendation engines, and high-impact business applications.\n\nSKILLS\nProgramming & Scripting: Python (NumPy, Pandas, scikit-learn, TensorFlow, PyTorch), R, Scala\nMachine Learning & AI: Supervised & Unsupervised Learning, Deep Learning (CNNs, RNNs), NLP (BERT, spaCy, Transformers), Time Series Forecasting, Feature Engineering, Ensemble Methods (XGBoost, Random Forest), Generative AI, Retrieval-Augmented Generation (RAG)\nCloud Platforms: AWS (EC2, S3, Glue, SageMaker, Lambda, EKS)\nMLOps & Deployment: Docker, Kubernetes, MLflow, Flask, FastAPI, CI/CD, Model Monitoring, Model Versioning\nData Engineering & Big Data: Apache Spark, Hadoop, Kafka, Airflow, AWS EMR, Data Lakes, SQL (MySQL, PostgreSQL), NoSQL\nTools & Environments: Jupyter Notebook, Linux Shell, VS Code, Git/GitHub, RESTful Services\n\nPROFESSIONAL EXPERIENCE\nNetflix | Los Gatos, CA | Machine Learning Engineer | January 2025 \u2013 Present\n- Designed and deployed a sequence prediction system using Transformer architectures on AWS SageMaker and EC2 GPU clusters, improving 6-month member retention by 7% through accurate long-term viewing behavior modeling.",
+      "rewrittenChars": 4735
+    },
+    {
+      "resume": "Tejashwini_DA_Resume",
+      "jd": "data_analyst",
+      "atsScore": 88,
+      "scoreMeta": {
+        "atsScore": 88,
+        "gaps": [
+          "Does not explicitly detail hands-on execution of A/B testing in the professional experience bullets, despite mentioning it in the summary and skills."
+        ],
+        "cloudMix": true,
+        "projectsOk": true,
+        "notes": "Strong resume that closely matches the JD requirements with 4 years of experience, SQL, Python, Tableau/Power BI, AWS, and strong cross-functional collaboration."
+      },
+      "masterClouds": {
+        "aws": 9,
+        "azure": 8,
+        "gcp": 0
+      },
+      "rewrittenClouds": {
+        "aws": 6,
+        "azure": 4,
+        "gcp": 0
+      },
+      "issues": [
+        "Multiple clouds present: {'aws': 6, 'azure': 4, 'gcp': 0}",
+        "Primary=aws but rival 'azure' still appears (4 hits)"
+      ],
+      "rewrittenPreview": "Tejaswini Pallepati\nData Analyst\n+1 3144506367 | pallepatitejaswini12@gmail.com | LinkedIn\n\nSUMMARY\nData Analyst with 4 years of experience using SQL, Python, and BI tools to drive data-driven decision-making across healthcare, supply chain, and corporate sectors. Skilled in designing ETL pipelines, managing cloud infrastructure on AWS, and building interactive dashboards with Power BI and Tableau. Proven ability to conduct statistical analysis, perform A/B testing, and collaborate cross-functional in Agile environments. Adept at improving reporting efficiency, optimizing data workflows, and delivering actionable insights that enhance operational performance and ROI.\n\nSKILLS\nLanguages: Python, R, SQL, Spark, NumPy, Pandas, Matplotlib, SciPy\nVisualization & BI Tools: Tableau, Power BI, Excel, Alteryx, Google Analytics\nDatabases & Cloud: MySQL, SQL Server, AWS (S3, Redshift), Snowflake\nMethodologies & Tools: Agile, Scrum, JIRA, Confluence, ETL, Data Cleaning, Data Wrangling, A/B Testing\n\nPROFESSIONAL EXPERIENCE\nBlueCross BlueShield | MO | Clinical Data Analyst | June 2024 \u2013 Present\n- Validated, codified, and normalized clinical data across multiple vendor platforms using Python and SQL, developing optimized queries and stored procedures that reduced report generation time by 30% and improved data accessibility.\n- Constructed and quality-tested clinical quality measures via SQL, coordinating with IT to move validated measures from development to production while ensuring 99% data accuracy across regular production job runs.\n- Analyzed data integrity issues and validated practice-level measures via SQL across multiple practices, identifying coding patterns causing measure discrepancies and partnering with project teams to resolve root causes, reducing data inconsistencies by 20%.",
+      "rewrittenChars": 4783
+    },
+    {
+      "resume": "Vasanthi_Vaddelli_Resume",
+      "jd": "ai_engineer",
+      "atsScore": 88,
+      "scoreMeta": {
+        "atsScore": 88,
+        "gaps": [
+          "Lacks explicit mention of Flink (though Spark and Kafka are present)",
+          "No direct mention of prompt evaluation frameworks"
+        ],
+        "cloudMix": true,
+        "projectsOk": true,
+        "notes": "Strong resume with 8+ years experience, solid AWS, LLM/RAG experience, and Kafka/Spark usage. Minor gaps in specific tool mentions like Flink."
+      },
+      "masterClouds": {
+        "aws": 8,
+        "azure": 9,
+        "gcp": 0
+      },
+      "rewrittenClouds": {
+        "aws": 12,
+        "azure": 0,
+        "gcp": 0
+      },
+      "issues": [
+        "LinkedIn uses full URL \u2014 template prefers linkedin.com/in/username"
+      ],
+      "rewrittenPreview": "Vasanthi Vaddelli\nAI Engineer\n(331) 225-9707 | Vasanthikaniganti@gmail.com | https://www.linkedin.com/in/vaddelli-vasanthi-68354512b/\n\nSUMMARY\n- Accomplished AI Engineer with 8+ years of experience designing, building, and deploying scalable, event-driven, and cloud-native systems using Python, AWS, and modern machine learning technologies.\n- Specialized in microservices architecture, real-time data processing with Apache Kafka and Spark, container orchestration using Docker and Kubernetes, and rigorous CI/CD automation.\n- Proven success delivering high-impact solutions, such as predictive ML models with XGBoost and TensorFlow, LLM-powered development workflows using OpenAI API, LangChain, and RAG, and cloud cost optimizations reducing operational overhead.\n- Strong background in performance tuning, achieving high test coverage, latency reductions, and feature delivery ahead of schedule through modern engineering practices.\n- Demonstrated leadership in Agile teams, driving cross-functional collaboration, architectural modernization, and productivity boosts through automation and infrastructure-as-code.\n\nSKILLS\n- Programming Languages: Python (Pandas, NumPy), Java, TypeScript, JavaScript, SQL, C++, Bash\n- Backend & Frameworks: FastAPI, Flask, Spring Boot, Node.js, Django, RESTful APIs, gRPC, Microservices\n- Cloud Platforms & MLOps: AWS (Lambda, EKS, S3, RDS, SageMaker), Docker, Kubernetes, Terraform, Helm, Jenkins, GitHub Actions, CI/CD, Model Deployment & Monitoring\n- Machine Learning & AI: TensorFlow, PyTorch, Scikit-learn, XGBoost, BERT, NLP, Transformers, LLM Integration, LangChain, OpenAI API, RAG, Prompt Engineering, Hyperparameter Tuning\n- Big Data & Data Engineering: Apache Spark, Apache Airflow, PostgreSQL, MySQL, MongoDB, Oracle\n- DevOps & Monitoring: Git, Bitbucket, Prometheus, Grafana, ELK Stack, Splunk",
+      "rewrittenChars": 7004
+    },
+    {
+      "resume": "SUPPORT Anirudh Machine Learning Engineer (2)",
+      "jd": "data_engineer_aws",
+      "atsScore": 88,
+      "scoreMeta": {
+        "atsScore": 88,
+        "gaps": [
+          "Master's degree listed instead of strictly a Bachelor's, though educational requirement is fully met and exceeded.",
+          "No explicit mention of dbt projects in the experience section, despite being listed in skills."
+        ],
+        "cloudMix": true,
+        "projectsOk": true,
+        "notes": "Extremely strong resume that closely mirrors the required qualifications and responsibilities of the JD, boasting exact keyword matches for tech stack (Python, Spark, Airflow, Kafka, S3, Glue, Redshift) and over 5 years of experience."
+      },
+      "masterClouds": {
+        "aws": 14,
+        "azure": 10,
+        "gcp": 0
+      },
+      "rewrittenClouds": {
+        "aws": 33,
+        "azure": 2,
+        "gcp": 0
+      },
+      "issues": [
+        "Multiple clouds present: {'aws': 33, 'azure': 2, 'gcp': 0}",
+        "Primary=aws but rival 'azure' still appears (2 hits)",
+        "Possible new company/role lines not in master: ['Remote, USA ']"
+      ],
+      "rewrittenPreview": "Anirudh Reddy Kunduru\nData Engineer\nRemote, USA | contact@email.com | (555) 555-5555 | linkedin.com/in/anirudhreddy | github.com/anirudhreddy\n\nSUMMARY\nData Engineer with 5+ years of experience building and operating scalable data pipelines and cloud data infrastructure. Strong in Python, SQL, Apache Spark, and modern orchestration tools. Skilled in AWS data services including S3, Glue, Redshift, Athena, Lambda, and EMR, alongside streaming technologies like Kafka and Kinesis. Experienced in partnering with analytics and ML teams to deliver trusted datasets, improve data quality, and implement CI/CD for robust production workflows.\n\nSKILLS\nProgramming & Scripting: Python (NumPy, Pandas), SQL (MySQL, PostgreSQL), Scala, R, Linux Shell\nCloud Platforms & Warehousing: AWS (S3, Glue, Redshift, Athena, Lambda, EMR, EC2, SageMaker)\nData Engineering & Big Data: Apache Spark, PySpark, Apache Kafka, Apache Flink, Kinesis, Airflow, dbt, Data Lakes, Data Warehousing, Hadoop\nDevOps & MLOps: Docker, Kubernetes, Terraform, Jenkins, CI/CD, MLflow, Git/GitHub\nData Analysis & Visualization: Tableau, Power BI, EDA, Statistical Analysis\n\nPROFESSIONAL EXPERIENCE\nNetflix | Los Gatos, CA | Data Engineer January 2025 \u2013 Present\n- Designed and maintained scalable ETL and ELT pipelines using Python, SQL, and Apache Spark on AWS EMR to process large-scale streaming datasets and improve overall data reliability.\n- Built enterprise data lake and data warehouse solutions using Amazon S3, AWS Glue, and Amazon Redshift, ensuring optimal query performance and structured data availability for downstream consumers.",
+      "rewrittenChars": 3904
+    }
+  ],
+  "summary": {
+    "resumesExtracted": 11,
+    "rewritesRun": 12,
+    "rewritesFailed": 0,
+    "withIssues": 10
+  }
+}

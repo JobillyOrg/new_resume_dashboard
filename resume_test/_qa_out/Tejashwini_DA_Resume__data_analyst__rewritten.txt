@@ -1,0 +1,47 @@
+Tejaswini Pallepati
+Data Analyst
++1 3144506367 | pallepatitejaswini12@gmail.com | LinkedIn
+
+SUMMARY
+Data Analyst with 4 years of experience using SQL, Python, and BI tools to drive data-driven decision-making across healthcare, supply chain, and corporate sectors. Skilled in designing ETL pipelines, managing cloud infrastructure on AWS, and building interactive dashboards with Power BI and Tableau. Proven ability to conduct statistical analysis, perform A/B testing, and collaborate cross-functional in Agile environments. Adept at improving reporting efficiency, optimizing data workflows, and delivering actionable insights that enhance operational performance and ROI.
+
+SKILLS
+Languages: Python, R, SQL, Spark, NumPy, Pandas, Matplotlib, SciPy
+Visualization & BI Tools: Tableau, Power BI, Excel, Alteryx, Google Analytics
+Databases & Cloud: MySQL, SQL Server, AWS (S3, Redshift), Snowflake
+Methodologies & Tools: Agile, Scrum, JIRA, Confluence, ETL, Data Cleaning, Data Wrangling, A/B Testing
+
+PROFESSIONAL EXPERIENCE
+BlueCross BlueShield | MO | Clinical Data Analyst | June 2024 – Present
+- Validated, codified, and normalized clinical data across multiple vendor platforms using Python and SQL, developing optimized queries and stored procedures that reduced report generation time by 30% and improved data accessibility.
+- Constructed and quality-tested clinical quality measures via SQL, coordinating with IT to move validated measures from development to production while ensuring 99% data accuracy across regular production job runs.
+- Analyzed data integrity issues and validated practice-level measures via SQL across multiple practices, identifying coding patterns causing measure discrepancies and partnering with project teams to resolve root causes, reducing data inconsistencies by 20%.
+- Served as a key project member coordinating measure definitions and reporting across cross-functional clinical teams, establishing KPIs and data requirements that streamlined integration and strengthened stakeholder confidence.
+- Managed clinical data within scalable AWS S3 data lakes, executing end-to-end ETL pipelines and rigorous data cleaning to support accurate, timely analytics and consistent adherence to project reporting deadlines.
+- Delivered ad-hoc and recurring reports and dashboards using Power BI, Excel, and Python-based statistical analysis, uncovering actionable insights and cost-saving opportunities while supporting predictive analytics initiatives.
+- Partnered with product and operations teams to translate complex business requirements into clear data specifications and tracking frameworks.
+
+Cargill | India | Data Analyst | January 2022 – July 2023
+- Executed advanced analytics and workflow automation on supply chain and production datasets with Python and SQL, resulting in a 25% decrease in manual operations.
+- Analyzed large datasets stored in cloud environments to uncover operational inefficiencies and track key performance indicators.
+- Implemented Scrum methodologies to optimize project workflows, applying structured time management practices to meet tight deadlines and increase team productivity by 30%.
+- Reduced processing time by 20% by using Python libraries for data analysis and manipulation, such as Pandas and NumPy.
+- Assembled and streamlined ETL pipelines for integrating multi-source data from procurement, logistics, and manufacturing, improving overall data integrity and reducing latency in analytics delivery.
+- Designed, implemented, and managed Power BI and Tableau dashboards, empowering stakeholders to track KPIs and make data-backed decisions, increasing reporting efficiency by 30%.
+- Used Excel advanced formulas and functions to perform data cleansing, validation, and manipulation tasks efficiently alongside cross-functional partners.
+
+EDUCATION
+Master's in Health Data Science
+Saint Louis University, MO, USA
+
+Bachelor's in Sciences
+Gokaraju Rangaraju College of Pharmacy, India
+
+PROJECTS
+EHR Data Normalization & Quality Measure Validation
+- Consolidated and normalized clinical data across multiple EHR platforms, developing SQL-based validation rules to identify and correct coding inconsistencies across diverse practices.
+- Built and quality-tested clinical quality measures via SQL, partnering with IT to migrate validated measures from development to production and reduce measure discrepancies by 20%.
+
+Clinical Data Integrity & Practice Performance Analysis
+- Investigated low-performing measure scores across provider practices, identifying root-cause coding patterns and documentation gaps affecting quality reporting accuracy.
+- Collaborated with project coaches and practice staff to implement data validation protocols, improving measure confidence and reducing reporting turnaround time.

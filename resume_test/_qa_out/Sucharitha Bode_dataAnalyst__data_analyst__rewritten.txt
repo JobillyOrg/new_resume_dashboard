@@ -1,0 +1,38 @@
+Sucharitha Bode
+Data Analyst
+sucharithab25@gmail.com | +1 704-420-4474 | LinkedIn
+
+SUMMARY
+Data Analyst with 5+ years of experience using Python, SQL, and cloud technologies to transform complex datasets into actionable business insights. Experienced in developing automated analytics workflows, building scalable ETL pipelines, and creating interactive dashboards that support data-driven decision-making. Skilled in data preprocessing, statistical analysis, A/B testing, and business intelligence using Python, SQL, Power BI, Tableau, and AWS. Strong expertise in data visualization, cloud-based data platforms, and cross-functional collaboration to deliver analytics solutions that improve operational efficiency and business performance.
+
+SKILLS
+Languages & Databases: Python, R, SQL, PL-SQL, Spark, NumPy, Pandas, Matplotlib, SciPy, MySQL, SQL Server, Oracle, Teradata, MS Access
+Cloud & Big Data: AWS (S3, Glue, Athena, Redshift), ETL, Spark
+Visualization & Tools: Tableau, Power BI, Excel, JIRA, Google Analytics, Alteryx, Seaborn, Looker, QlikView, RESTful API
+Methodologies: A/B Testing, Predictive Analytics, Statistical Modeling, Data Cleaning, Data Wrangling, Agile, Scrum
+
+PROFESSIONAL EXPERIENCE
+Marriott International | TX | Data Analyst June 2024 – Present
+- Designed analytics solutions using Python, SQL, Pandas, and statistical techniques to analyze business records, improving predictive accuracy by 35%.
+- Developed scalable ETL pipelines using Python and cloud workflows, reducing data processing latency by 30% while improving data availability.
+- Built predictive analytics models and statistical algorithms to forecast operational trends using Python, enabling business stakeholders to make proactive, data-driven decisions.
+- Automated enterprise reporting through Power BI and Excel dashboards, reducing manual reporting efforts by 50% while delivering real-time KPI monitoring.
+- Implemented Spark-based data cleansing and transformation pipelines, significantly improving data quality, processing performance, and reporting accuracy.
+- Applied statistical analysis and data mining techniques to identify business patterns that optimized operational efficiency and reduced costs by 20%.
+- Partnered with product and operations teams to translate complex business requirements into clear data specifications and reporting metrics.
+
+ADP | India | Data Analyst July 2018 – January 2023
+- Built scalable cloud-based analytics pipelines using AWS S3, Glue, and Amazon Redshift, reducing reporting latency by 40% while improving enterprise data accessibility.
+- Developed analytical models using Python, Pandas, and machine learning algorithms to support predictive analytics, business forecasting, and decision-making.
+- Performed statistical analysis using Python and R to extract insights from structured and unstructured datasets.
+- Designed advanced Power BI dashboards with DAX calculations, integrating multiple enterprise data sources to improve operational visibility by 25%.
+- Implemented SQL-based data cleansing, transformation, and validation processes to ensure high-quality datasets for business intelligence applications.
+- Built forecasting models using R and ggplot2, increasing demand prediction accuracy by 30% and improving operational planning.
+- Communicated key insights and analytical findings to cross-functional stakeholders through data storytelling and executive presentations.
+
+EDUCATION
+Master's in Computers Science
+University of North Texas, Denton, TX, USA
+
+Bachelors in Computers Science
+K L University, Guntur, Andhra Pradesh, India

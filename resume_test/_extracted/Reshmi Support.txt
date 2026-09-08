@@ -1,0 +1,57 @@
+Reshmi Divi
+Data Analyst
+PROFESSIONAL SUMMARY
+A Data Analyst with 5+ years of experience transforming complex datasets into actionable insights. Proficient in SQL, Python, R, Tableau, Power
+BI, and Excel, with expertise in data wrangling, visualization, and statistical analysis. Skilled in ETL, A/B testing, and predictive modeling, driving
+data-driven decision-making to optimize business performance. Adept at collaborating with cross-functional teams to improve processes and
+uncover growth opportunities. Experienced in working with cloud platforms like AWS, Azure to build scalable data solutions.
+PROFESSIONAL EXPERIENCE
+Microsoft | TX | Data Analyst                                                                                                                                                                December 2023 – Present
+ Built a data analytics pipeline processing millions of records daily, leveraging Python, Pandas, and Matplotlib to uncover trends, and
+implementing ML models to boost predictive accuracy by 35%, driving data-informed decisions.
+ Leveraged Azure Data Factory and Azure Synapse Analytics to streamline ETL processes, enabling efficient data integration and reducing
+data pipeline latency by 30%. Applied strong time management and critical thinking skills to collaborate cross-functionally with stakeholders in a startup environment, ensuring compliance and validating APIs and deployment flows. Utilized problem-solving and communication skills to implement best practices and enhance CS and analytics, delivering clear written and verbal updates.
+ Applied expertise in Supply Chain Management and Project Management to optimize workflows, reduce operational costs by 20%, and
+successfully deliver projects on time, enhancing overall business efficiency.
+ Executed a data cleansing pipeline using SQL and Apache Spark, streamlining data processing times and improving the accuracy of analytics.
+ Designed interactive dashboards and automated reports using Power BI and MS Excel, enabling real-time insights and reducing manual
+reporting efforts by 50%, improving data-driven decision-making. Exhibited strong collaboration, critical thinking, and problem-solving skills in a fast-growing B2B SaaS startup, providing data-driven solutions and delivering excellent customer service while ensuring compliance and clear communication across teams, leading to enhanced product development and 20% improvement in customer satisfaction.
+ Implemented data mining and machine learning models using SAS, uncovering hidden patterns that enhanced predictive accuracy by 35%
+and optimized business decisions. Leveraged cloud-based analytics and relational databases to provide data-driven recommendations, improving ROI and marketing strategies. Collaborated with Account Managers and cross-functional teams to validate metrics, enhance media analytics, and optimize digital marketing campaigns through Google Ads and Marketing Platform tools, while ensuring security and effective communication with strong interpersonal and analytical skills.
+PayPal | TX | Data Analyst                                                                                                                                                     September 2022 – November 2023
+ Created and optimized ETL workflows using SSIS, SAS, and SPSS, automating data transformations and improving reporting efficiency by 40%
+for large-scale analytics. Leveraged machine learning, deep learning, and programming languages like Scala, Java, and Hive to drive continuous improvement and innovation in consulting projects, enhancing business performance and strategy. Utilized tools such as Databricks, Airflow, and SAP for data analysis and security, while applying object-oriented design principles to optimize solutions and support change management in finance and analytics.
+ Optimized MySQL storage and retrieval, automating data processing with Python, improving efficiency, and cutting query time by 30%.
+ Established AI-driven analytics models using Python and Seaborn, visualizing complex trends and increasing predictive accuracy by 35% for
+data-driven decision-making. Utilized Microsoft Office, including PowerPoint and pivot tables, to analyze business processes and deliver data-driven insights, while applying strong attention to detail and interpersonal skills. Led business analysis and quality assurance efforts, focusing on content management, database architecture, and contract management, driving innovation and process improvements across enterprise-level projects.
+ Assassinated problem-solving strategies to streamline data processes and generate actionable insights, while using Tableau for
+sophisticated data analysis and visualization to find important trends and solutions that enhanced business operations.
+ Engineered a scalable data pipeline on AWS, utilizing S3, Lambda, and Redshift to process terabytes of data daily, enhancing efficiency and
+cutting ETL processing time by 40%. Utilized tools like Slack, HubSpot, and Confluence to align analytics with business objectives, driving marketing strategies and Go-to-Market (GTM) roadmaps. Leveraged A WS Redshift and BigQuery to analyze market trends and consumer behavior, optimizing business processes and delivering actionable insights through Business Intelligence.
+ Leveraged MS Excel for data analysis, automation, and streamlined reporting with formulas and pivot tables.
+Zensar Technologies | India | Data Analyst                                                                                                                                            August 2018 - July 2021
+ Modeled and deployed a scalable data pipeline on AWS using S3, Glue, and Redshift, automating data ingestion and transformation for real-
+time analytics, reducing query latency by 40%, and enhancing data availability for business intelligence teams.
+ Engineered machine learning models using Python and Pandas, optimizing data pipelines for predictive analytics, automation, scalability,
+and actionable insights. Led the development of predictive models and strategies using quantitative and analytical methods to address regulatory and business issues, optimizing the customer journey through AB testing and SEO. Applied strong communication and leadership skills to collaborate on strategy development, keyword research, and usability improvements, while leveraging NoSQL and Information Systems to enhance research and funnel performance.
+ Constructed statistical models in R and visualized key insights using ggplot2, enabling trend analysis and forecasting that improved demand
+predictions by 30%, optimizing inventory management and business operations. Applied analytical skills and statistical methods to troubleshoot technical problems, validate applications, and drive process improvements, while effectively communicating findings and collaborating cross-functionally to enhance documentation and solution development.
+ Implemented data cleaning and wrangling using SQL, transforming raw datasets into structured, high-quality data for analytics, reporting,
+and decision-making. Collaborated on writing detailed specifications, acceptance criteria, and documentation for API integration and UAT processes, ensuring smooth backlog management and seamless integration with REST APIs and web technologies. Utilized organizational skills and tools like PowerPoint and Confluence to streamline development and support enterprise-level accounting projects.
+ Generated dynamic Power BI dashboards with DAX calculations and MS Excel integration, combining real-time KPIs from multiple sources
+to enhance operational efficiency by 25% and deliver interactive, drill-down reports.
+TECHNICAL SKILLS
+Languages/Packages: Python, R, SQL, PL-SQL, Restful API, Spark, NLP , NumPy, A/B Testing and Experimentation, SSIS, SAS, SPSS, Pandas,
+Matplotlib, SciPy, ggplot2, TensorFlow, Keras
+Visualization Tools/Database: Tableau, Power BI, ETL, JIRA, Google Analytics, Alteryx, Seaborn, Salesforce, Looker, QlikView, Pardot, Marketo,
+AWS (Athena, Redshift), Azure, Oracle, Snowflake, Adobe Analytics, ArcGIS, QGIS, Story Map, UltraEdit, Navicat 15, MS Excel
+Database: MySQL, SQL Server
+Management: Project Management, Agile, Scrum Framework, Google Workspace, Microsoft Project, Logistics Management, Operations
+Management, Supply Chain Management, Lean Six Sigma, MS Office
+Tools and Services: Google BigQuery, Looker, Informatica Power Center, RStudio, Teradata, MS Access, MS Excel, LiveRamp
+Other Skills: Data Cleaning, Data Wrangling, Critical Thinking, Communication Skills, Presentation Skills, Problem-Solving.
+EDUCATION
+Master's in Computers Science,
+University of North Texas, Denton, TX, USA.
+Bachelors in Computers Science,
+K L University, Guntur, Andhra Pradesh, India.

@@ -1,0 +1,103 @@
+Prasanna Gandla
+Security Operations Analyst | Threat Intelligence | Penetration Testing
+www.linkedin.com/in/prasanna-g-720395300 | gandla.prasanna.12@gmail.com | 9452674172
+
+PROFESSIONAL SUMMARY
+Security Operations Analyst with 5 years of experience in SOC monitoring, threat intelligence, phishing analysis,
+vulnerability assessment, and penetration testing across Hea lthcare, Banking, and E -commerce environments.
+Skilled in using Splunk, Microsoft Sentinel, QRadar, and CrowdStrike Falcon to triage alerts, validate IOCs
+(malicious IPs, domains, file hashes, URLs) via Virus Total, Abuse IPDB, and OSINT sources, and supp ort incident
+response investigations. Experienced in applying the MITRE ATT&CK framework, building KQL/SPL queries, and
+analyzing Windows event logs, VPN activity, and authentication records to detect abnormal access and
+credential misuse.  Proficient in phishing triage, Microsoft Sentinel detection tuning, and vulnerability
+assessment against the OWASP Top 10 using Burp Suite, Nmap, and Nessus.  Strong background in regulatory -
+aligned documentation under HIPAA, GDPR, and SOC 2, with hands -on exposure to A WS IAM access control,
+MFA enforcement, and cross -functional collaboration with IT and security teams to drive audit -ready incident
+reporting and continuous detection improvement.
+
+TECHNICAL SKILLS
+• SIEM & Log Analysis: Splunk, Microsoft Sentinel, QRadar, SPL, KQL, Windows Event Logs, Linux System Logs
+• EDR & Endpoint Security:  CrowdStrike Falcon, Microsoft Defender for Endpoint, Endpoint Alert Triage,
+Process Investigation, Malware Alert Review
+• Threat Intelligence & IOC Analysis:  MITRE ATT&CK, OSINT, VirusTotal, AbuseIPDB, URLVoid, WHOIS, IOC
+Enrichment
+• Phishing & Email Security : Email  Header Analysis, URL Analysis, Attachment Review, Sender/Domain
+Validation, Phishing Triage
+• Penetration Testing & Web Security:  Burp Suite, Nmap, Metasploit, Kali Linux, OWASP Top 10,
+Reconnaissance, Enumeration, Vulnerability Validation
+• Vulnerability Assessment: Nessus, CVE Review, Risk Rating, Remediation Validation, Retesting
+• Network Security: Wireshark, TCP/IP, DNS, HTTP/HTTPS, Firewall & VPN Log Review
+• Cloud & Identity Security : AWS IAM, Azure AD, MFA, Least Privilege, Access Control Review, Suspicious
+Login Investigation
+• Scripting & Automation: Python, PowerShell, Bash
+• Operating Systems: Windows, Linux, Active Directory
+• Compliance & Regulations: HIPAA, GDPR, SOC 2
+• Version Control & Collaboration: Git, Jira, Confluence
+
+PROFESSIONAL EXPERIENCE
+Ozarks Healthcare | St. Louis | Security Operations Analyst                                                            July 2025 – Present
+• Triage Splunk and Microsoft Sentinel alerts for failed logins, suspicious account activity, and endpoint
+detections, validating severity before escalation to senior analysts.
+• Investigate phishing emails by analyzing headers, sender reputation, URLs, and attachments to assess
+impact and initiate containment per HIPAA requirements.
+• Analyze CrowdStrike Falcon and Microsoft Defender for Endpoint alerts to trace suspicious process  chains
+and malware indicators across the healthcare network.
+• Validate IOCs (malicious IPs, domains, file hashes, URLs) using VirusTotal, AbuseIPDB, OSINT, and SIEM
+correlation prior to response actions.
+• Correlate Windows event logs, VPN sessions, and au thentication data via KQL in Microsoft Sentinel to
+identify abnormal access and credential misuse.
+• Build targeted SPL searches in Splunk to support threat hunting for suspicious PowerShell execution and
+lateral movement.
+
+• Tune recurring false positives in  Microsoft Sentinel by adjusting detection logic and suppression rules to
+improve SOC queue accuracy.
+• Review Nessus scan results against asset exposure and patch status, coordinating remediation with the IT
+infrastructure team.
+• Document incident timelines, IOC evidence, and escalation notes in Jira, maintaining audit-ready records for
+healthcare compliance.
+• Monitor AWS IAM privileged access and MFA enforcement gaps in line with internal healthcare data
+security policies.
+Environment: Splunk, Microsoft S entinel, CrowdStrike Falcon, Microsoft Defender for Endpoint, Nessus,
+VirusTotal, AbuseIPDB, KQL, SPL, PowerShell, AWS IAM, Windows, Linux, MITRE ATT&CK, OWASP Top 10, Jira,
+HIPAA, GDPR
+UMB Financial Corporation | Threat Intelligence Analyst                                                           May 2024 – June 2025
+• Reviewed threat intel feeds, advisories, and OSINT sources to identify active threats to banking applications
+and internet-facing infrastructure.
+• Validated malicious IPs, domains, URLs, and file hashes via VirusTotal, AbuseIPDB, and WHOIS to enrich
+security alert investigations.
+• Mapped attacker activity to MITRE ATT&CK techniques to improve detection accuracy across QRadar and
+Microsoft Sentinel SIEM platforms.
+• Assessed phishing campaigns targeting banking  customers by reviewing headers, redirection chains, and
+credential-theft indicators.
+• Correlated QRadar alerts with threat intel findings to detect recurring attack patterns and flag high -priority
+incidents.
+• Prioritized patching by tracking CVE disclosur es and exploitation trends affecting banking applications and
+remote access gateways.
+• Authored threat intelligence summaries with IOC details and risk ratings for distribution to SOC and incident
+response teams.
+• Built SIEM correlation searches and IOC wa tchlists using Azure AD authentication and network log sources
+to support threat hunting.
+Environment: QRadar, Microsoft Sentinel, VirusTotal, AbuseIPDB, URLVoid, WHOIS, MITRE ATT&CK, OSINT,
+Azure AD, KQL, SPL, Windows Event Logs, Linux, Nessus, GDPR, SOC 2
+Accenture | India | Penetration Tester                                                                                               Jan 2021 – Dec 2023
+• Performed vulnerability assessments on e -commerce web applications, network services, and API
+endpoints using Nmap, Burp Suite, and Nessus.
+• Assessed applications against the OWASP Top 10, validating authentication flaws, broken access controls,
+and insecure direct object references.
+• Conducted reconnaissance, enumeration, and controlled exploitation using Metasploit and Kali Linux within
+approved testing scopes.
+• Analyzed HTTP request flows and session token behavior in Burp Suite to identify misconfigurations and
+access control weaknesses in AWS-hosted services.
+• Verified remediation by retesting Nessus -reported vulnerabilities to confirm risk reduction and closur e of
+active CVEs.
+• Documented vulnerability evidence, business impact ratings, and remediation guidance in structured
+reports for compliance and developer handoff.
+Environment: Burp Suite, Nmap, Metasploit, Kali Linux, Nessus, OWASP Top 10, AWS IAM, AWS, Wireshark,
+Python, Bash, Windows, Linux.
+EDUCATION
+M.S. in Cybersecurity Operations | Trine University                                                                        Mar 2023 – Dec 2024
+Bachelor's in Civil Engineering | Guru Nanak Institute of Technology                                             Jul 2017 – Jun 2021
+
+CERTIFICATIONS
+• CompTIA CySA+
+• CompTIA Security+

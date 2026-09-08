@@ -282,15 +282,17 @@ function formatExternalAtsBlock(jd, keywords) {
     || 'the exact JD job title';
   const primary = dropCertTerms(keywords?.primary || keywords?.jdPrimary || []);
   const atsPhrases = filterExtractedSkills(keywords?.atsKeywords || []);
-  return `EXTERNAL ATS ALIGNMENT — optimize for ChatGPT, Claude, Grok, and enterprise parsers (Workday, Greenhouse, iCIMS):
-- Line 2 title MUST match the posting: ${role}
-- SUMMARY opens with that title + years of experience + primary stack. Do NOT put percentages, dollar amounts, or quantified metrics in SUMMARY — keep metrics in experience bullets only.
-- EVERY must-have JD skill must appear in SKILLS and in at least one EXPERIENCE bullet with real context (external tools penalize skills-only lists)
-- Use the JD's exact spelling for tools: ${primary.slice(0, 14).join(', ') || 'see locked set'}
-- Weave ATS phrases naturally (not comma dumps): ${atsPhrases.slice(0, 10).join(' · ') || 'n/a'}
-- At least 70% of bullets need a metric (% / $ / count / latency / throughput)
+  return `EXTERNAL ATS ALIGNMENT — write so ChatGPT / Claude / Grok give 90+ when asked "ATS score this resume vs JD 0-100":
+- Line 2 title MUST match the posting exactly: ${role}
+- SUMMARY opens with that title + years + primary stack in natural prose (8-9 JD tools woven in). No %/$ metrics in SUMMARY.
+- EVERY must-have JD skill appears in SKILLS AND in at least one EXPERIENCE bullet with action→tool→result (skills-only lists score ~70 on ChatGPT)
+- Use the JD's exact spelling: ${primary.slice(0, 14).join(', ') || 'see locked set'}
+- Weave ATS phrases naturally (never comma dumps): ${atsPhrases.slice(0, 10).join(' · ') || 'n/a'}
+- ≥70% of bullets need a real metric (% / $ / count / latency / throughput / volume)
+- EVERY bullet is achievement-shaped (Built/Designed/Reduced/Improved…), not "Responsible for…"
+- Top third proves role fit in ~6 seconds: title, years, stack, clearest win
 - ALL-CAPS headers: SUMMARY, SKILLS (or TECHNICAL SKILLS), PROFESSIONAL EXPERIENCE, EDUCATION
-- Human-readable prose wins on AI reviewers — they flag keyword stuffing and reward evidence-backed fit`;
+- ChatGPT docks hard for: keyword stuffing, tools with no work evidence, generic duties, missing JD title, thin metrics, rival-cloud mixes in one bullet`;
 }
 
 function buildExternalAtsPassPrompt(jd, resume, keywords, missingReport) {
@@ -300,15 +302,20 @@ function buildExternalAtsPassPrompt(jd, resume, keywords, missingReport) {
   const mustAdd = skillsToInject(report, master);
   const atsMissing = filterAtsPhrasesForCandidate(report.atsMissing || [], master, profile);
   const summaryKw = summaryKeywordList(keywords, master);
-  return `You are a senior ATS consultant. Final optimization pass: this resume must score 90%+ when pasted into ChatGPT, Claude, or Grok ATS checkers against the job description below.
+  const gaps = stripCertGaps((state.scorecard && state.scorecard.gaps) || []);
+  const suggestions = stripCertGaps((state.scorecard && state.scorecard.improvementSuggestions) || []);
+  return `You are rewriting this resume so a ChatGPT / Claude / Grok ATS check against the JD scores ${SCORE_TARGET}+ / 100.
+Users paste JD + resume and ask for an ATS match score — those tools typically give 70-80 when skills are listed but not proven in bullets, the title drifts from the JD, or metrics are sparse. Fix that.
 
 ${formatExternalAtsBlock(jd, keywords)}
 ${formatCandidateProfileBlock(profile)}
 
 CLOSE THESE GAPS (stack-aligned only):
-- Missing skills → SKILLS + experience bullets: ${mustAdd.join(', ') || 'none'}
+- Missing skills → SKILLS + experience bullets with real context: ${mustAdd.join(', ') || 'none'}
 - Missing ATS phrases → summary or bullets: ${atsMissing.join(' · ') || 'none'}
-- Summary should include 8-9 of: ${summaryKw.join(', ') || 'current stack'}
+- Summary should weave 8-9 of: ${summaryKw.join(', ') || 'current stack'}
+- External-scorer gaps: ${gaps.slice(0, 8).map(g => String(g)).join(' | ') || 'none listed'}
+- Fixes to apply: ${suggestions.slice(0, 6).map(s => String(s)).join(' | ') || 'prove every JD tool in experience; raise metric density'}
 
 RULES:
 - Do not change name, contact, companies, job titles, dates, or education
@@ -317,6 +324,7 @@ RULES:
 - Add realistic metrics to bullets that lack numbers (reuse the resume's scale)
 - Each role: 6-7 bullets. Keep extra sections already on the resume. If PROJECTS exists, keep those same projects once as a name plus hyphen bullets — no dates. Do not invent a second Projects section.
 - No H1B, visa, or work authorization language in SUMMARY
+- Prefer evidence and clarity over stuffing — ChatGPT rewards readable proof of fit
 
 JOB DESCRIPTION:
 ${jd.slice(0, 6500)}
@@ -2186,9 +2194,16 @@ Do NOT inflate scores. External AI ATS tools are harsh — match their calibrati
     : `Extract exactly 10 primary and 10 secondary ATS keywords using the JD's exact spelling (Apache Spark not just Spark when the JD says Apache Spark).
 Keywords must be technologies, tools, platforms, and role skills ONLY.`;
 
-  return `You are a strict ATS scoring engine calibrated to match external ATS checkers (ChatGPT, Claude, Grok, Workday, Taleo, Greenhouse, iCIMS). You must NOT inflate scores.
+  return `You are a strict ATS scoring engine. Simulate how ChatGPT / Claude / Grok score a resume when a user pastes the JD + resume and asks for an ATS match score out of 100. You must NOT inflate scores.
 
 Score this resume against the job description using the 20-rule US resume rubric. Return ONLY JSON.
+
+IMPORTANT — MATCH EXTERNAL AI ATS BEHAVIOR:
+- ChatGPT typically scores skills-listed-but-not-in-bullets resumes around 70-80.
+- A well-tailored resume with most JD tools proven in experience usually lands 82-90.
+- 90+ requires near-complete primary coverage IN EXPERIENCE, ≥70% quantified bullets, exact JD title, and achievement language.
+- 95+ is rare. If you would give 95+, force at least two sub-score deductions and re-check.
+- Prefer evidence over keyword presence. Do not reward comma-dump skills sections.
 
 RULES TO APPLY:
 1. 1-2 pages. 2. Tailor to JD — technologies must appear in EXPERIENCE, not only Skills. 3. Do not credit skills with no evidence. 4. Every bullet should answer "so what?" (action → technology → problem → result). 5. Quantify when numbers exist; do not invent. 6. Achievements over responsibilities. 7. Strongest info in top third. 8. No generic objective. 9-10. Use JD terminology when accurate. 11. No graphics/icons/tables/columns. 12. No sensitive personal data. 13. Concise education. 14. Only relevant projects. 15. Experience is the main section. 16. Short bullets, not paragraphs. 17. Technologies must be interview-defensible. 18. Do not reward exaggerated ownership language if the original was "contributed". 19. Show career progression. 20. This resume should look like a targeted version of a master resume.
@@ -2671,7 +2686,7 @@ function buildBoostPrompt(jd, resume, sc, keywords) {
   const summaryKw = summaryKeywordList(keywords, master);
   const rolePlan = planExperienceKeywords(resume, keywords);
   const profileBlock = formatCandidateProfileBlock(profile);
-  return `You are a precision ATS editor. The resume scored below ${SCORE_TARGET}/100. Push it to ${SCORE_TARGET}+ for external ATS tools (ChatGPT, Claude, Grok). Output the complete resume.
+  return `You are a precision ATS editor. External checkers (ChatGPT / Claude / Grok) scored this below ${SCORE_TARGET}/100. Rewrite so those same tools would give ${SCORE_TARGET}+. Output the complete resume.
 
 ${formatExternalAtsBlock(jd, keywords)}
 ${profileBlock}
@@ -2702,7 +2717,7 @@ MISSING IMPORTANT (PRIMARY) SKILLS: ${missingP.join(', ') || 'none'}
 MISSING EXTRA (SECONDARY) SKILLS: ${missingS.join(', ') || 'none'}
 MISSING JD ATS PHRASES (${atsMissing.length}/${ats.phrases.length}): ${atsMissing.join(' · ') || 'none'}
 CURRENT RULE SCORES: ${JSON.stringify(sc.ruleScores || {})}
-POINTS STILL NEEDED: ${Math.max(0, SCORE_TARGET - Number(sc.atsScore || 0))} — close toward ${SCORE_MAX} for external ATS checkers.
+POINTS STILL NEEDED: ${Math.max(0, SCORE_TARGET - Number(sc.atsScore || 0))} — close the gap ChatGPT-style scorers still see.
 Put every skill in MUST ADD into SKILLS and weave into experience bullets using exact spelling — inside the sentence, not tacked on at the end.
 Weave each tool into the sentence body — never append a trailing comma skill dump (bad: "...decisions, Tableau.").
 NEVER use the word "leveraging" or "leveraged" — use natural alternatives (using, with, via, through, employing). Vary verb patterns across bullets.
@@ -2870,7 +2885,16 @@ function normalizeGeminiScore(parsed, jd, resume) {
     };
   }
   const sum = Object.values(ruleScores).reduce((a, b) => a + Number(b || 0), 0);
-  const atsScore = Math.min(100, Math.round(Math.max(sum, Number(parsed.atsScore) || 0)));
+  // Prefer rubric sum; if model also returns atsScore, take the lower (anti-inflation vs ChatGPT).
+  const fromField = Number(parsed.atsScore);
+  const atsScore = Math.min(
+    100,
+    Math.round(
+      sum > 0 && Number.isFinite(fromField) && fromField > 0
+        ? Math.min(sum, fromField)
+        : (sum || fromField || 0),
+    ),
+  );
   const gaps = stripCertGaps(parsed.gaps || []);
   const improvementSuggestions = stripCertGaps(parsed.improvementSuggestions || []);
   return {
@@ -3490,27 +3514,54 @@ function polishResumeForAts(resume, keywords, masterResume) {
   return stripEligibilityFromSummary(joined);
 }
 
-function applyTailoredScoreBoost(unified) {
+function calibrateLocalScore(unified) {
   const merged = { ...(unified.ruleScores || {}) };
   const missP = unified.scorecard?.keywordsMissing || [];
-  const missS = unified.scorecard?.secondaryMissing || [];
   const sc = unified.scorecard || {};
+  const metricRatio = (Number(sc.bulletsWithMetrics || 0)) / Math.max(Number(sc.bulletsTotal || 1), 1);
   const sumRules = () => Math.min(
     SCORE_MAX,
     Object.values(merged).reduce((a, b) => a + Number(b || 0), 0),
   );
 
+  // Soft evidence bumps only — never invent a 90+/95 floor (that caused ChatGPT 70-80 gaps).
+  if (missP.length === 0) {
+    merged.keywordsInExperience = Math.max(Number(merged.keywordsInExperience || 0), 20);
+    merged.keywordCredibility = Math.max(Number(merged.keywordCredibility || 0), 7);
+  } else if (missP.length === 1) {
+    merged.keywordsInExperience = Math.max(Number(merged.keywordsInExperience || 0), 18);
+  }
+  if (sc.sectionCheck === 'PASS' || Number(merged.structure || 0) >= 4) {
+    merged.structure = Math.max(Number(merged.structure || 0), 5);
+  }
+  if (sc.formatCheck === 'PASS' || Number(merged.format || 0) >= 5) {
+    merged.format = Math.max(Number(merged.format || 0), 6);
+  }
+
   let atsScore = sumRules();
 
+  // ChatGPT-style caps: missing must-haves or thin metrics cannot look like 90+.
+  if (missP.length >= 4) atsScore = Math.min(atsScore, 70);
+  else if (missP.length === 3) atsScore = Math.min(atsScore, 76);
+  else if (missP.length === 2) atsScore = Math.min(atsScore, 82);
+  else if (missP.length === 1) atsScore = Math.min(atsScore, 87);
+  if (metricRatio < 0.4) atsScore = Math.min(atsScore, 74);
+  else if (metricRatio < 0.55) atsScore = Math.min(atsScore, 82);
+  else if (metricRatio < 0.7) atsScore = Math.min(atsScore, 88);
+
+  atsScore = Math.min(SCORE_MAX, Math.round(atsScore));
   return { merged, atsScore };
 }
 
-function stableScore(jd, resume, keywords, floor) {
+function applyTailoredScoreBoost(unified) {
+  return calibrateLocalScore(unified);
+}
+
+function stableScore(jd, resume, keywords) {
   const kw = keywords || state.keywords || {};
   ensureAliasMap(kw);
   const unified = ragToUnified(jd, resume, kw);
-  if (!floor) return unified;
-  const { merged, atsScore } = applyTailoredScoreBoost(unified);
+  const { merged, atsScore } = calibrateLocalScore(unified);
   return {
     ...unified,
     atsScore,
@@ -3521,15 +3572,77 @@ function stableScore(jd, resume, keywords, floor) {
 }
 
 function mergeWithLocalScore(jd, resume, geminiUnified, keywords) {
-  return stableScore(jd, resume, keywords, true);
+  return stableScore(jd, resume, keywords);
 }
 
-async function scoreTailoredResume(jd, resume) {
+function mergeExternalAndLocal(local, gemini) {
+  if (!gemini) return local;
+  const missP = uniqTerms([
+    ...(gemini.scorecard?.keywordsMissing || []),
+    ...(local.scorecard?.keywordsMissing || []),
+  ]);
+  const missS = uniqTerms([
+    ...(gemini.scorecard?.secondaryMissing || []),
+    ...(local.scorecard?.secondaryMissing || []),
+  ]);
+  const gaps = stripCertGaps(uniqTerms([
+    ...(gemini.scorecard?.gaps || []),
+    ...(local.scorecard?.gaps || []),
+  ]));
+  const suggestions = stripCertGaps(uniqTerms([
+    ...(gemini.scorecard?.improvementSuggestions || []),
+    ...(local.scorecard?.improvementSuggestions || []),
+  ]));
+  // Display ChatGPT-calibrated Gemini score; keep local for diagnostics.
+  const atsScore = Math.min(SCORE_MAX, Math.round(Number(gemini.atsScore || 0)));
+  const ruleScores = gemini.ruleScores && Object.keys(gemini.ruleScores).length
+    ? gemini.ruleScores
+    : local.ruleScores;
+  return {
+    ...gemini,
+    atsScore,
+    ruleScores,
+    primary: state.keywords?.primary || gemini.primary || local.primary,
+    secondary: state.keywords?.secondary || gemini.secondary || local.secondary,
+    aliasMap: state.keywords?.aliasMap || gemini.aliasMap || local.aliasMap,
+    scorecard: {
+      ...gemini.scorecard,
+      keywordsMissing: missP,
+      secondaryMissing: missS,
+      gaps,
+      improvementSuggestions: suggestions,
+      ruleScores,
+      atsScore,
+      localAtsScore: local.atsScore,
+    },
+    source: 'gemini-external',
+    localAtsScore: local.atsScore,
+    resumeUsed: gemini.resumeUsed || local.resumeUsed,
+  };
+}
+
+async function scoreTailoredResume(jd, resume, { verifyExternal = false } = {}) {
   const master = ($('resumeInput') && $('resumeInput').value) || '';
   const polished = polishResumeForAts(resume, state.keywords || {}, master);
-  const unified = stableScore(jd, polished, state.keywords || {}, true);
-  unified.resumeUsed = polished;
-  return { unified, resume: polished };
+  const local = stableScore(jd, polished, state.keywords || {});
+  local.resumeUsed = polished;
+  if (!verifyExternal) {
+    return { unified: local, resume: polished };
+  }
+  try {
+    updateAiProcessing('Running external ATS score…');
+    const gemini = await scoreWithGemini(jd, polished, { keepKeywords: true });
+    gemini.resumeUsed = polished;
+    const unified = mergeExternalAndLocal(local, gemini);
+    unified.resumeUsed = polished;
+    return { unified, resume: polished };
+  } catch (err) {
+    local.scorecard = {
+      ...local.scorecard,
+      confidenceReason: `External ATS score unavailable (${String(err.message || err).slice(0, 80)}) — showing calibrated local score.`,
+    };
+    return { unified: local, resume: polished };
+  }
 }
 
 async function scoreWithGemini(jd, resume, { keepKeywords = false } = {}) {
@@ -4184,7 +4297,7 @@ function renderPostRewriteScore(unified, before) {
           <div class="score-card">
             <div class="score-label">Match score</div>
             <div class="score-value" style="color:${hue}">${score}</div>
-            <div class="score-sub">target ${SCORE_TARGET}+ · external ATS ready</div>
+            <div class="score-sub">ChatGPT-calibrated · target ${SCORE_TARGET}+</div>
           </div>
           <div class="score-card">
             <div class="score-label">Must-have skills</div>
@@ -4223,9 +4336,10 @@ function renderResults(unified, resumeText) {
   if ($('afterDonut')) $('afterDonut').innerHTML = svgDonut(score);
   if ($('afterCompareHint')) {
     const prev = before ? Number(before.atsScore || 0) : null;
+    const calib = unified.source === 'gemini-external' ? ' ChatGPT-calibrated external estimate.' : '';
     $('afterCompareHint').textContent = prev == null
-      ? 'How the page moved toward the posting.'
-      : `Match score moved ${prev} → ${score}. Charts below show what changed.`;
+      ? `How the page moved toward the posting.${calib}`
+      : `Match score moved ${prev} → ${score}.${calib}`;
   }
   if ($('compareChart')) {
     $('compareChart').innerHTML = renderCompareChart(
@@ -4316,7 +4430,7 @@ async function runAtsCheck() {
     if (!kw.geminiUsed && kw.geminiError) {
       showToast('Gemini unavailable — using local RAG for skills', '#d97706');
     }
-    const unified = stableScore(jd, resume, kw, false);
+    const unified = stableScore(jd, resume, kw);
     renderAtsPanel(unified);
     const role = (kw.role && kw.role.label) || 'this role';
     showToast(`Match ${unified.atsScore}/100 · ${role}`);
@@ -4355,7 +4469,7 @@ async function runAnalysis() {
     if (!state.keywords.geminiUsed && state.keywords.geminiError) {
       showToast('Gemini unavailable — using local RAG for skills', '#d97706');
     }
-    state.preTailor = snapshotScore(stableScore(jd, resume, state.keywords, false));
+    state.preTailor = snapshotScore(stableScore(jd, resume, state.keywords));
     const missingReport = missingSkillReport(state.keywords, resume);
     state.lastMissingReport = missingReport;
     updateAiProcessing('Researching market skills on job boards…');
@@ -4369,12 +4483,12 @@ async function runAnalysis() {
 
     setStep(4);
     updateAiProcessing('Polishing the language…');
-    let { unified, resume: polished } = await scoreTailoredResume(jd, state.tailoredResume);
+    let { unified, resume: polished } = await scoreTailoredResume(jd, state.tailoredResume, { verifyExternal: false });
     state.tailoredResume = polished;
     $('outputArea').textContent = polished;
 
     let pass = 0;
-    while (unified.atsScore < SCORE_TARGET && pass < MAX_BOOST_PASSES) {
+    while (unified.atsScore < SCORE_THRESHOLD && pass < MAX_BOOST_PASSES) {
       pass += 1;
       updateAiProcessing(`Tightening the draft — pass ${pass} of ${MAX_BOOST_PASSES}…`);
       const boosted = cleanupResume(await callGemini(
@@ -4382,22 +4496,55 @@ async function runAnalysis() {
         { maxTokens: 7000 }
       ));
       const nextText = boosted && boosted.length > 200 ? boosted : state.tailoredResume;
-      const scored = await scoreTailoredResume(jd, nextText);
+      const scored = await scoreTailoredResume(jd, nextText, { verifyExternal: false });
       state.tailoredResume = scored.resume;
       unified = scored.unified;
+      state.scorecard = unified.scorecard;
       $('outputArea').textContent = scored.resume;
     }
 
-    updateAiProcessing('Optimizing for external ATS checkers (ChatGPT, Claude, Grok)…');
+    updateAiProcessing('Optimizing for external ATS checks…');
     const externalPass = cleanupResume(await callGemini(
       buildExternalAtsPassPrompt(jd, state.tailoredResume, state.keywords, missingReport),
       { maxTokens: 7000 },
     ));
     if (externalPass && externalPass.length > 200) {
-      const extScored = await scoreTailoredResume(jd, externalPass);
-      state.tailoredResume = extScored.resume;
-      unified = extScored.unified;
-      $('outputArea').textContent = extScored.resume;
+      state.tailoredResume = externalPass;
+      $('outputArea').textContent = externalPass;
+    }
+
+    let { unified: extUnified, resume: extResume } = await scoreTailoredResume(jd, state.tailoredResume, { verifyExternal: true });
+    state.tailoredResume = extResume;
+    unified = extUnified;
+    state.scorecard = unified.scorecard;
+    $('outputArea').textContent = extResume;
+
+    let extPass = 0;
+    const maxExtPasses = 3;
+    while (unified.atsScore < SCORE_THRESHOLD && extPass < maxExtPasses) {
+      extPass += 1;
+      updateAiProcessing(`External ATS polish — pass ${extPass} of ${maxExtPasses}…`);
+      const boosted = cleanupResume(await callGemini(
+        buildBoostPrompt(jd, state.tailoredResume, { ...unified.scorecard, atsScore: unified.atsScore, ruleScores: unified.ruleScores }, state.keywords || {}),
+        { maxTokens: 7000 },
+      ));
+      if (boosted && boosted.length > 200) {
+        state.tailoredResume = boosted;
+        $('outputArea').textContent = boosted;
+      }
+      const again = cleanupResume(await callGemini(
+        buildExternalAtsPassPrompt(jd, state.tailoredResume, state.keywords, state.lastMissingReport),
+        { maxTokens: 7000 },
+      ));
+      if (again && again.length > 200) {
+        state.tailoredResume = again;
+        $('outputArea').textContent = again;
+      }
+      const rescored = await scoreTailoredResume(jd, state.tailoredResume, { verifyExternal: true });
+      state.tailoredResume = rescored.resume;
+      unified = rescored.unified;
+      state.scorecard = unified.scorecard;
+      $('outputArea').textContent = rescored.resume;
     }
 
     state.scorecard = unified.scorecard;
@@ -4407,10 +4554,10 @@ async function runAnalysis() {
     persistCurrentJdSession();
     saveWorkspace();
     showToast(unified.atsScore >= SCORE_TARGET
-      ? `Draft scored ${unified.atsScore}/${SCORE_MAX} — tuned for external ATS`
+      ? `External ATS ~${unified.atsScore}/${SCORE_MAX} (ChatGPT-calibrated)`
       : unified.atsScore >= SCORE_THRESHOLD
-        ? `Score ${unified.atsScore}/${SCORE_MAX} — use Push the score to reach ${SCORE_TARGET}+`
-        : `Score ${unified.atsScore}/${SCORE_MAX} — use Push the score to close gaps`);
+        ? `External ATS ~${unified.atsScore}/${SCORE_MAX} — Push to reach ${SCORE_TARGET}+`
+        : `External ATS ~${unified.atsScore}/${SCORE_MAX} — Push to close gaps`);
   } catch (err) {
     showToast('Rewrite failed: ' + String(err.message || err).slice(0, 90), '#e11d48');
     stopAiProcessing();
@@ -4428,38 +4575,58 @@ async function boostScore() {
   btn.disabled = true;
   btn.textContent = 'Pushing…';
   showAiProcessing(
-    'AI is polishing your CV…',
-    'Closing remaining gaps in the draft…'
+    'Polishing your CV…',
+    'Closing gaps external ATS checkers still flag…'
   );
   try {
-    const boosted = cleanupResume(await callGemini(
-      buildBoostPrompt(inputs.jd, state.tailoredResume, { ...state.scorecard, atsScore: state.scorecard?.atsScore }, state.keywords || {}),
-      { maxTokens: 7000 }
-    ));
-    const nextText = boosted && boosted.length > 200 ? boosted : state.tailoredResume;
-    updateAiProcessing('Scoring the tightened draft…');
-    const scored = await scoreTailoredResume(inputs.jd, nextText);
-    state.tailoredResume = scored.resume;
-    let unified = scored.unified;
-    if (unified.atsScore < SCORE_TARGET) {
-      updateAiProcessing('External ATS polish (ChatGPT, Claude, Grok)…');
+    let unified = {
+      scorecard: state.scorecard || {},
+      atsScore: Number(state.scorecard?.atsScore || 0),
+      ruleScores: state.scorecard?.ruleScores || {},
+    };
+    let pass = 0;
+    const maxPushPasses = 3;
+    while (unified.atsScore < SCORE_TARGET && pass < maxPushPasses) {
+      pass += 1;
+      updateAiProcessing(`Push pass ${pass} of ${maxPushPasses} — closing gaps…`);
+      const missingReport = state.lastMissingReport || missingSkillReport(state.keywords || {}, state.tailoredResume);
+      const boosted = cleanupResume(await callGemini(
+        buildBoostPrompt(
+          inputs.jd,
+          state.tailoredResume,
+          { ...unified.scorecard, atsScore: unified.atsScore, ruleScores: unified.ruleScores || unified.scorecard?.ruleScores },
+          state.keywords || {},
+        ),
+        { maxTokens: 7000 },
+      ));
+      if (boosted && boosted.length > 200) {
+        state.tailoredResume = boosted;
+        $('outputArea').textContent = boosted;
+      }
+      updateAiProcessing(`External ATS polish — pass ${pass}…`);
       const externalPass = cleanupResume(await callGemini(
-        buildExternalAtsPassPrompt(inputs.jd, state.tailoredResume, state.keywords, state.lastMissingReport),
+        buildExternalAtsPassPrompt(inputs.jd, state.tailoredResume, state.keywords, missingReport),
         { maxTokens: 7000 },
       ));
       if (externalPass && externalPass.length > 200) {
-        const extScored = await scoreTailoredResume(inputs.jd, externalPass);
-        state.tailoredResume = extScored.resume;
-        unified = extScored.unified;
+        state.tailoredResume = externalPass;
+        $('outputArea').textContent = externalPass;
       }
+      const scored = await scoreTailoredResume(inputs.jd, state.tailoredResume, { verifyExternal: true });
+      state.tailoredResume = scored.resume;
+      unified = scored.unified;
+      state.scorecard = unified.scorecard;
+      $('outputArea').textContent = scored.resume;
+      if (unified.atsScore >= SCORE_TARGET) break;
     }
-    state.scorecard = unified.scorecard;
     updateAiProcessing('Finalizing emphasis…');
-    await finalizeBolding(inputs.jd, scored.resume);
-    renderResults(unified, scored.resume);
+    await finalizeBolding(inputs.jd, state.tailoredResume);
+    renderResults(unified, state.tailoredResume);
+    persistCurrentJdSession();
+    saveWorkspace();
     showToast(unified.atsScore >= SCORE_TARGET
-      ? `Pushed to ${unified.atsScore}/${SCORE_MAX} — external ATS ready`
-      : `Pushed to ${unified.atsScore}/${SCORE_MAX}`);
+      ? `External ATS ~${unified.atsScore}/${SCORE_MAX} — ChatGPT-calibrated`
+      : `External ATS ~${unified.atsScore}/${SCORE_MAX} — still below ${SCORE_TARGET}`);
   } catch (err) {
     showToast('Push failed: ' + String(err.message || err).slice(0, 80), '#e11d48');
     stopAiProcessing();

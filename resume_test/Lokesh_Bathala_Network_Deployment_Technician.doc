@@ -1,0 +1,93 @@
+﻿<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+  <meta charset="UTF-8">
+  <meta name="ProgId" content="Word.Document">
+  <title>Lokesh_Bathala_Network_Deployment_Technician.doc</title>
+  <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
+  <style>
+    @page WordSection1 {
+      size: 8.5in 11in;
+      margin: 0.75in 0.9in 0.9in 0.9in;
+      mso-header-margin: 0.3in;
+      mso-footer-margin: 0.3in;
+    }
+    body {
+      font-family: Calibri, Arial, sans-serif;
+      font-size: 10.5pt;
+      color: #111111;
+      line-height: 1.45;
+    }
+    .r-name {
+      font-family: Calibri, Arial, sans-serif;
+      font-size: 20pt;
+      font-weight: bold;
+      text-align: center;
+      color: #111111;
+      margin: 0 0 3pt 0;
+    }
+    .r-contact {
+      font-family: Calibri, Arial, sans-serif;
+      font-size: 10pt;
+      text-align: center;
+      color: #555555;
+      margin: 0 0 2pt 0;
+    }
+    .r-divider {
+      border-top: 1.5pt solid #222222;
+      margin: 8pt 0 10pt 0;
+    }
+    .r-section {
+      font-family: Calibri, Arial, sans-serif;
+      font-size: 10.5pt;
+      font-weight: bold;
+      color: #111111;
+      text-transform: uppercase;
+      letter-spacing: 0.5pt;
+      border-bottom: 0.75pt solid #777777;
+      margin: 11pt 0 4pt 0;
+      padding-bottom: 2pt;
+    }
+    .r-role {
+      font-family: Calibri, Arial, sans-serif;
+      font-size: 10.5pt;
+      font-weight: bold;
+      color: #111111;
+      margin: 6pt 0 2pt 0;
+    }
+    .r-bullet {
+      font-family: Calibri, Arial, sans-serif;
+      font-size: 10.5pt;
+      color: #222222;
+      margin: 0 0 2pt 0;
+      padding-left: 0;
+      line-height: 1.45;
+      display: flex;
+      align-items: flex-start;
+    }
+    .r-bullet-dot {
+      flex-shrink: 0;
+      width: 1.1em;
+      font-size: 10.5pt;
+    }
+    .r-body {
+      font-family: Calibri, Arial, sans-serif;
+      font-size: 10.5pt;
+      color: #222222;
+      margin: 0 0 2pt 0;
+      line-height: 1.45;
+    }
+    .r-spacer {
+      font-family: Calibri, Arial, sans-serif;
+      font-size: 4pt;
+      line-height: 1;
+      margin: 0;
+    }
+    .r-skill-line { margin: 0 0 2pt 0; color: #222222; line-height: 1.45; font-family: Calibri, Arial, sans-serif; font-size: 10.5pt; }
+    .r-skill-label { color: #111111; font-weight: bold; }
+  </style>
+</head>
+<body><div class="WordSection1"><div class="r-name">Lokesh Bathala</div><div class="r-contact">Network Deployment Technician</div><div class="r-contact">Virginia | (508)2925209 | lbath.@gmail.com | <a href="https://linkedin.com/in/lokesh-b-18a7b3382" target="_blank" style="color:#1a56c4;text-decoration:underline;">linkedin.com/in/lokesh-b-18a7b3382</a></div><div class="r-divider"></div><div class="r-section">SUMMARY</div><div class="r-body">Network Deployment Technician with 3+ years of experience delivering enterprise infrastructure, IT support, and network engineering solutions across 24/7 environments. Adept at cloud architecture concepts, deployment automation through tools like Terraform, and implementing dependency injection practices within modern pipelines. Experienced across manufacturing, tech, and financial domains, driving projects that improve customer experience, technical documentation, and service delivery. Proven ability in cross-functional collaboration, technical writing, and maintaining reliable systems while ensuring robust security standards.</div><div class="r-spacer"></div><div class="r-section">SKILLS</div><div class="r-skill-line"><span class="r-skill-label">Technical Skills:</span> Machine Learning, Networking, IT Support, Cloud Architecture, Technical Writer, Dependency Injection, Customer Experience, Ruby, Customer Service, Terraform, HTML/CSS, GCP, Product Manager, QA Engineer, Network Engineer, Cybersecurity, Software Engineer, Salesforce, AI Engineer, Linux, TCP/IP, LAN/WAN, DNS, DHCP, VLANs, STP, OSPF, BGP, VPN</div><div class="r-skill-line"><span class="r-skill-label">Tools & Platforms:</span> Cisco Nexus, Cisco Catalyst, Arista, Juniper, Ciena, Linux CLI, ServiceNow, SolarWinds, PRTG, Wireshark, JIRA</div><div class="r-skill-line"><span class="r-skill-label">Methodologies:</span> Agile, Scrum, SDLC, ITIL, CI/CD</div><div class="r-skill-line"><span class="r-skill-label">Core Competencies:</span> Network Infrastructure, Incident Resolution, Hardware Troubleshooting, System Documentation</div><div class="r-spacer"></div><div class="r-section">EXPERIENCE</div><div class="r-role">Data Center Technician | Liberty Mutual Insurance | Virginia</div><div class="r-body">Jan 2025 - Present</div><div class="r-bullet"><span class="r-bullet-dot">•</span>Execute 12+ rack and stack switch deployments daily across 4 production data center zones, improving network uptime to 99.9%.</div><div class="r-bullet"><span class="r-bullet-dot">•</span>Partner with cloud architecture and IT support teams to deploy backbone connectivity and AI infrastructure supporting 500+ internal users.</div><div class="r-bullet"><span class="r-bullet-dot">•</span>Author comprehensive technical writer documentation and standard operating procedures for 15 new data center expansion workflows.</div><div class="r-bullet"><span class="r-bullet-dot">•</span>Integrate dependency injection configuration templates and Terraform automation scripts to streamline 8 monthly switch provisioning cycles.</div><div class="r-bullet"><span class="r-bullet-dot">•</span>Resolve 45+ monthly hardware tickets on ServiceNow, directly enhancing customer experience scores for internal IT stakeholders by 18%.</div><div class="r-spacer"></div><div class="r-role">Data Center Technician | Iron Mountain | Hyderabad, India</div><div class="r-body">Jan 2022 - Jul 2023</div><div class="r-bullet"><span class="r-bullet-dot">•</span>Configured and maintained network hardware components including switches, transceivers, and copper links across 200+ server racks.</div><div class="r-bullet"><span class="r-bullet-dot">•</span>Diagnosed and resolved 75+ physical-layer connectivity and routing issues using Wireshark, SolarWinds, and Linux CLI within 2-hour SLA windows.</div><div class="r-bullet"><span class="r-bullet-dot">•</span>Coordinated with network engineering and cybersecurity teams to implement firewall policies, VLAN segmentation, and secure DNS/DHCP configurations.</div><div class="r-bullet"><span class="r-bullet-dot">•</span>Maintained structured cabling standards and port documentation across 12 distinct data center cabinets, reducing audit discrepancies by 35%.</div><div class="r-bullet"><span class="r-bullet-dot">•</span>Provided reliable customer service and incident response support for 50+ enterprise clients during scheduled maintenance and circuit turn-ups.</div><div class="r-spacer"></div><div class="r-section">PROJECTS</div><div class="r-body">Enterprise Network Infrastructure Automation</div><div class="r-bullet"><span class="r-bullet-dot">•</span>Designed a Terraform-based infrastructure provisioning pipeline incorporating dependency injection principles to deploy 20 virtual network nodes across a multi-region environment.</div><div class="r-bullet"><span class="r-bullet-dot">•</span>Documented deployment runbooks and architecture diagrams, reducing manual setup time by 40% for subsequent cloud architecture rollouts.</div><div class="r-spacer"></div><div class="r-section">EDUCATION</div><div class="r-body">M.S. - University of New Haven | West Haven, CT | Aug 2023 - May 2025</div><div class="r-body">B.Tech - Malla Reddy Engineering College | Hyderabad, India | Jun 2019 - May 2022</div><div class="r-spacer"></div><div class="r-section">CERTIFICATIONS</div><div class="r-body">Cisco Certified Network Associate (CCNA)</div></div></body>
+</html>

@@ -1,0 +1,37 @@
+Anirudh Reddy Kunduru
+Machine Learning Engineer
+anirudh@email.com | +1-555-555-5555 | LinkedIn: /in/anirudh | GitHub: /github/anirudh
+
+SUMMARY
+Machine Learning Engineer with 5+ years of experience delivering production-ready ML systems across cloud and distributed environments. Strong in deep learning, sequence modeling, and hands-on development with Python, PyTorch, TensorFlow, and scikit-learn. Skilled in AWS, Kafka, Spark, and end-to-end MLOps using MLflow, Airflow, Docker, and Kubernetes. Experienced in building real-time inference pipelines, optimizing latency and throughput, and designing scalable architectures that support predictive modeling, recommendation engines, and high-impact business applications.
+
+SKILLS
+Programming & Scripting: Python (NumPy, Pandas, scikit-learn, TensorFlow, PyTorch), R, Scala
+Machine Learning & AI: Supervised & Unsupervised Learning, Deep Learning (CNNs, RNNs), NLP (BERT, spaCy, Transformers), Time Series Forecasting, Feature Engineering, Ensemble Methods (XGBoost, Random Forest), Generative AI, Retrieval-Augmented Generation (RAG)
+Cloud Platforms: AWS (EC2, S3, Glue, SageMaker, Lambda, EKS)
+MLOps & Deployment: Docker, Kubernetes, MLflow, Flask, FastAPI, CI/CD, Model Monitoring, Model Versioning
+Data Engineering & Big Data: Apache Spark, Hadoop, Kafka, Airflow, AWS EMR, Data Lakes, SQL (MySQL, PostgreSQL), NoSQL
+Tools & Environments: Jupyter Notebook, Linux Shell, VS Code, Git/GitHub, RESTful Services
+
+PROFESSIONAL EXPERIENCE
+Netflix | Los Gatos, CA | Machine Learning Engineer | January 2025 – Present
+- Designed and deployed a sequence prediction system using Transformer architectures on AWS SageMaker and EC2 GPU clusters, improving 6-month member retention by 7% through accurate long-term viewing behavior modeling.
+- Optimized real-time inference performance in PyTorch and TensorFlow Serving by implementing key-value caching, model quantization, and distributed deployment on AWS EKS, reducing latency by 30% and supporting 2M+ requests/sec globally.
+- Developed a reward optimization framework using Python, AWS Lambda, and Step Functions to balance short-term engagement with long-term subscriber LTV, delivering a 5% increase in satisfaction and retention metrics.
+- Built real-time feature pipelines with Apache Kafka and Apache Spark to process high-volume clickstream data, enabling sub-second model refreshes and improving real-time recommendation relevance by 12%.
+- Maintained MLOps pipelines using Airflow, MLflow, Docker, and Kubernetes to streamline model training, tracking, and deployments, helping improve reliability and speed of production releases.
+- Collaborated with data and infrastructure teams to develop vector-based retrieval systems using FAISS, enhancing embedding-driven candidate generation for recommendation models and boosting cold-start accuracy by 10%.
+- Monitored production model drift and data quality using custom Python scripts and logging frameworks, ensuring high availability and continuous prediction accuracy across global deployments.
+
+Accenture | Hyderabad, India | Machine Learning Engineer | July 2020 – December 2023
+- Engineered and productionized end-to-end machine learning solutions across finance and retail, translating business requirements into scalable ML pipelines using Python, scikit-learn, and TensorFlow.
+- Built cloud-native ML infrastructure on AWS (S3, SageMaker, EC2) to automate data ingestion, model training, and deployment for 20+ predictive models, reducing infrastructure overhead by 12% and accelerating model rollout by 20%.
+- Developed RESTful APIs with Flask and FastAPI to operationalize ML models, lowering inference latency by 18% and improving integration with microservices and client-facing applications.
+- Deployed optimized CNN and RNN models for computer vision and time-series forecasting workloads using PyTorch, improving predictive accuracy by 15%, reducing false positives by 10%, and increasing inference speed by 15%.
+- Implemented robust MLOps and CI/CD pipelines using GitHub Actions, MLflow, and Docker to enable continuous integration, automated retraining, reproducibility, and model drift monitoring across production environments.
+- Created interactive analytics dashboards with Python and SQL to track ML performance metrics, business KPIs, and model ROI, enabling stakeholders to make informed, data-driven decisions.
+- Managed distributed data preprocessing workflows with Apache Spark and SQL, cleaning and transforming terabytes of structured data for downstream deep learning training tasks.
+
+EDUCATION
+Master of Science in Computer Science | University of Central Missouri, MO, USA
+Bachelor of Science in Computer Science | Anurag University, Hyderabad, India

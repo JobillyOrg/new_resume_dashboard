@@ -1,0 +1,41 @@
+Harsha Vardhan Vinjamuri
+Data Engineer
+Remote, USA | harsha@email.com | 555-019-2834 | linkedin.com/in/harshavardhan | github.com/harshavardhan
+
+SUMMARY
+Results-driven Data Engineer with 5+ years of experience designing enterprise-scale data pipelines, real-time streaming architectures, and AWS cloud integration solutions across financial services, healthcare, aerospace, and manufacturing domains. Proficient in Python, SQL, Apache Spark, PySpark, and Kafka, delivering high-performance ETL/ELT workflows and feature engineering pipelines processing billions of records daily. Experienced integrating complex enterprise ecosystems with strong knowledge of data governance and security compliance. Skilled in DevOps automation using Docker and Terraform, consistently delivering scalable, reliable data solutions in Agile environments.
+
+SKILLS
+Programming & Scripting: Python, SQL, PySpark, Scala, Shell Scripting
+Big Data & Distributed Computing: Apache Spark, PySpark, Spark SQL, Apache Kafka, Amazon EMR
+Data Engineering & ETL Tools: dbt, Apache Airflow, AWS Glue, SQL Server Integration Services (SSIS)
+Cloud Platforms & Services: AWS (EC2, S3, Glue, Redshift, RDS, DynamoDB, Lambda, Kinesis, Athena)
+Databases & Data Warehousing: Snowflake, SQL Server, PostgreSQL, MySQL, Oracle, MongoDB
+Streaming & Real-Time Data: Apache Kafka, RabbitMQ, Amazon Kinesis, Spark Streaming
+Machine Learning & AI: PySpark ML, Scikit-learn, Pandas, NumPy, Feature Engineering, Model Deployment
+DevOps & Infrastructure as Code: Git, GitLab CI/CD, Jenkins, Docker, Terraform
+Data Visualization & BI: Power BI, Tableau, Excel
+Methodologies: Agile, Scrum, Software Development Life Cycle (SDLC)
+
+PROFESSIONAL EXPERIENCE
+
+Palantir | NY | Data Engineer | May 2024 – Present
+- Designed and implemented enterprise data integration pipelines using Apache Spark, PySpark, SQL, and Python ingesting real-time trading feeds, transactional records, and market data streams to support fraud detection and risk analytics processing $2B+ in daily transaction volume.
+- Built ML feature engineering and feature store pipelines using PySpark and Spark SQL transforming raw transactional and behavioral datasets into model-ready feature sets, improving fraud model precision by 23% and reducing false positives by 31%.
+- Optimized Spark-based ETL/ELT transformation jobs and workflow processes through incremental processing, partition pruning, caching, and cluster tuning, reducing data latency from daily to 15-minute refresh cycles and lowering compute costs by 34%.
+- Supported healthcare data integration initiatives, ingesting 40M+ de-identified EHR and clinical datasets from HL7/FHIR sources, REST APIs, and AWS S3 into data warehouse models for patient outcome analytics while ensuring full HIPAA compliance.
+- Automated deployment of transformation pipelines using Apache Airflow, GitLab CI/CD, Docker, and infrastructure-as-code practices, standardizing build, test, and release workflows across client workstreams and reducing deployment errors by 25%.
+- Implemented enterprise data governance, lineage, metadata management, and role-based access control (RBAC) within cloud data environments, ensuring compliance with SOC 2 Type II, HIPAA, and FedRAMP standards.
+- Mentored junior engineers on development best practices, query tuning, and PySpark performance optimization to maintain high code quality across distributed teams.
+
+Cyient | India | Data Engineer | January 2020 – May 2023
+- Designed and implemented enterprise data integration pipelines using Python and SQL, enabling real-time data exchange between SAP S/4HANA, Solumina MES, and 2,500+ IoT devices across 8 manufacturing sites using AWS storage solutions.
+- Built large-scale event-driven data pipelines using Apache Kafka and Amazon Kinesis, processing 450M+ streaming telemetry events daily with 99.96% reliability and sub-3-second latency to support real-time analytics and operational data synchronization.
+- Engineered data transformation pipelines and protocol integration layers using Python to connect legacy industrial systems with modern cloud data platforms, ensuring 99%+ data accuracy and consistency.
+- Implemented CI/CD pipelines, Docker containers, and cloud deployments using Jenkins and Terraform, improving release efficiency and maintaining 99.9% uptime for production data services.
+- Applied data security, API security, and governance controls using OAuth 2.0 and encryption protocols, ensuring compliance with ITAR, AS9100, and SOC 2 standards in regulated environments.
+- Partnered with analytics and ML teams using Python and SQL to deliver trusted datasets, validated data quality, and built automated monitoring dashboards.
+- Automated pipeline monitoring and alerting workflows with Airflow and AWS CloudWatch, reducing incident response time by 40% and improving overall data reliability.
+
+EDUCATION
+Master of Information Systems, Cleveland State University, Cleveland, Ohio

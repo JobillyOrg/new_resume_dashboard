@@ -1,0 +1,47 @@
+SucharithaBode
+AI Operations Analyst | Technical Business Analyst | Business Operations | Generative AI Sunnyvale, CA | sucharithab25@gmail.com | +1 704-420-4474 | LinkedIn
+SUMMARY
+AI Operations and Technical Business Analyst with 6+ years of experience driving workflow automation, business process optimization, operational analytics, KPI reporting, and AI-enabled solutions. Experienced in translating business requirements into scalable solutions, collaborating with engineering and product teams, and supporting enterprise AI initiatives. Strong hands-on experience with SQL, Python, Power BI, Excel, REST APIs, Agile SDLC, Jira, CI/CD, ChatGPT, Microsoft Copilot, and Generative AI.
+TECHNICALSKILLS
+Languages: SQL, Python
+Analytics: Power BI, Tableau, Excel, KPI Dashboards, Data Analysis AI: ChatGPT, Microsoft Copilot, Generative AI, Prompt Engineering
+Business: Business Analysis, Technical Business Analysis, Process Mapping, Documentation Development: REST APIs, Node.js, MongoDB, Git/GitHub, CI/CD
+Methodologies: Agile, Scrum, SDLC, Jira
+PROFESSIONAL EXPERIENCE
+Marriott International|UnitedStates|AI Operations AnalystJune2024-Present
+Supported AI-powered business applications used by cross-functional teams, improving workflow efficiency and reducing manual operational effort.
+Monitored AI systems, chatbot performance, and automation workflows to ensure accuracy, reliability, and optimal user experience.
+Collaborated with business stakeholders, product managers, and engineering teams to gather requirements and implement AI-driven solutions.
+Analyzed operational data using SQL, Excel, and Python to identify trends, measure KPIs, and generate actionable insights.
+Developed Power BI dashboards that enabled leadership to monitor KPIs and improve operational decision-making.
+Assisted in developing, testing, and deploying AI-enabled applications using Generative AI tools such as ChatGPT and Microsoft Copilot.
+Created and optimized prompts to improve the quality and consistency of AI-generated responses.
+Performed User Acceptance Testing (UAT), validated AI outputs, and documented issues for engineering teams.
+Tracked AI model performance, user feedback, and operational metrics to recommend continuous improvements.
+Automated repetitive business processes using Power Automate and workflow automation tools, reducing manual effort.
+Worked with REST APIs to integrate AI services with enterprise applications and business workflows.
+Documented business requirements, process flows, SOPs, and technical specifications.
+Coordinated Agile sprint activities, participated in daily stand-ups, sprint planning, backlog refinement, and retrospectives.
+Used Jira, Git, and CI/CD tools to track work items, support releases, and coordinate deployments.
+ADP|India|Business Operations AI AnalystJuly2018-January 2023
+Analyzed business operations and identified opportunities to improve efficiency, productivity, and service quality.
+Collected, analyzed, and interpreted operational data to support business decisions and strategic initiatives.
+Developed and maintained KPI dashboards, reports, and executive scorecards using Excel, SQL, and Power BI.
+Monitored operational performance and prepared weekly and monthly business reports for leadership.
+Worked with cross-functional teams to streamline workflows and optimize business processes.
+Gathered, documented, and validated business requirements from stakeholders.
+Identified process bottlenecks and recommended automation solutions to reduce manual work.
+Supported workflow automation using Power Automate and other business process tools.
+Assisted in project planning, implementation, testing, and post-deployment support.
+Conducted root cause analysis and resolved operational issues to improve business performance.
+Coordinated with product, engineering, finance, operations, and customer support teams to ensure smooth business operations.
+Maintained operational documentation, SOPs, process maps, and business policies.
+Performed User Acceptance Testing (UAT) and validated system enhancements before production deployment.
+Tracked project progress, risks, and action items using Jira and Agile methodologies.
+EDUCATION
+Master of Science in Business Analysis &Project Management,St.Francis College,Brooklyn,NewYork, USA.
+Bachelor of Science in ComputerScience,India.
+ACADEMIC PROJECTS
+Business Analytics &Reporting Project
+Performed data analysis using Python,SQL,and Exceltoidentifybusiness trends and generate action able insights.
+Created dashboards and KPI reports to support operational monitoring and business decision-making.

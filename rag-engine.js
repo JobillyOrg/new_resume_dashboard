@@ -898,8 +898,9 @@
     const primaryMissing = primary.filter(k => !kwOrAliasInText(k, resumeText, aliasMap));
     const inExperience = primary.filter(k => kwOrAliasInText(k, experienceText, aliasMap));
     const inSkillsOnly = primaryFound.filter(k => !kwOrAliasInText(k, experienceText, aliasMap));
+    // ChatGPT-style: only credit keywords proven in experience bullets (skills-only ≈ weak score).
     const keywordsInExperience = Math.round((inExperience.length / Math.max(primary.length, 1)) * 25);
-    const keywordCredibility = Math.round(Math.max(0, 10 - inSkillsOnly.length * 2));
+    const keywordCredibility = Math.round(Math.max(0, 10 - inSkillsOnly.length * 2.5 - primaryMissing.length));
 
     const secFound = secondary.filter(k => kwOrAliasInText(k, resumeText, aliasMap));
     const secMissing = secondary.filter(k => !kwOrAliasInText(k, resumeText, aliasMap));
@@ -913,7 +914,11 @@
       return false;
     });
     const bulletsWithNum = bulletLines.filter(l => /\d/.test(l));
-    const quantified = bulletLines.length ? Math.round((bulletsWithNum.length / bulletLines.length) * 15) : 0;
+    const metricRatio = bulletLines.length ? bulletsWithNum.length / bulletLines.length : 0;
+    // Stricter quantification curve — ChatGPT docks sparse metrics.
+    const quantified = bulletLines.length
+      ? Math.round(Math.min(15, metricRatio * 15 * (metricRatio >= 0.7 ? 1 : 0.85)))
+      : 0;
 
     const weakStarts = /^(responsible for|worked on|assisted with|helped|involved in|participated in)\b/i;
     const strongBullets = bulletLines.filter(l => !weakStarts.test(l.replace(/^[-•\s]+/, '')));

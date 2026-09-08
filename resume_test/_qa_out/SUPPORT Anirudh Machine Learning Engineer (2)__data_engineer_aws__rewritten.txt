@@ -1,0 +1,36 @@
+Anirudh Reddy Kunduru
+Data Engineer
+Remote, USA | contact@email.com | (555) 555-5555 | linkedin.com/in/anirudhreddy | github.com/anirudhreddy
+
+SUMMARY
+Data Engineer with 5+ years of experience building and operating scalable data pipelines and cloud data infrastructure. Strong in Python, SQL, Apache Spark, and modern orchestration tools. Skilled in AWS data services including S3, Glue, Redshift, Athena, Lambda, and EMR, alongside streaming technologies like Kafka and Kinesis. Experienced in partnering with analytics and ML teams to deliver trusted datasets, improve data quality, and implement CI/CD for robust production workflows.
+
+SKILLS
+Programming & Scripting: Python (NumPy, Pandas), SQL (MySQL, PostgreSQL), Scala, R, Linux Shell
+Cloud Platforms & Warehousing: AWS (S3, Glue, Redshift, Athena, Lambda, EMR, EC2, SageMaker)
+Data Engineering & Big Data: Apache Spark, PySpark, Apache Kafka, Apache Flink, Kinesis, Airflow, dbt, Data Lakes, Data Warehousing, Hadoop
+DevOps & MLOps: Docker, Kubernetes, Terraform, Jenkins, CI/CD, MLflow, Git/GitHub
+Data Analysis & Visualization: Tableau, Power BI, EDA, Statistical Analysis
+
+PROFESSIONAL EXPERIENCE
+Netflix | Los Gatos, CA | Data Engineer January 2025 – Present
+- Designed and maintained scalable ETL and ELT pipelines using Python, SQL, and Apache Spark on AWS EMR to process large-scale streaming datasets and improve overall data reliability.
+- Built enterprise data lake and data warehouse solutions using Amazon S3, AWS Glue, and Amazon Redshift, ensuring optimal query performance and structured data availability for downstream consumers.
+- Implemented real-time streaming pipelines with Apache Kafka and Amazon Kinesis to capture high-throughput event data, reducing pipeline ingestion latency and powering near-real-time analytics.
+- Partnered with analytics and machine learning teams to design, model, and deliver trusted datasets and feature stores that accelerate predictive modeling and business reporting initiatives.
+- Improved data quality, automated monitoring, and enforced CI/CD best practices across all data workflows using Docker, Terraform, and Apache Airflow.
+- Optimized large-scale data transformations and partition strategies across S3 and Redshift, decreasing query execution times by 35% and reducing cloud infrastructure storage costs.
+- Collaborated with infrastructure engineering to establish automated testing frameworks for data pipelines, catching schema drift and data anomalies prior to production deployment.
+
+Accenture | Hyderabad, India | Data Engineer July 2020 – December 2023
+- Developed and operationalized automated ETL pipelines using Python, SQL, and PySpark to ingest and transform multi-source operational data into centralized data stores.
+- Constructed cloud-native data storage solutions on AWS utilizing S3, Glue, and Athena to support exploratory data analysis and ad-hoc querying for business stakeholders.
+- Built event-driven data ingestion services using Python and AWS Lambda to process unstructured incoming files and trigger downstream data validation jobs.
+- Implemented data orchestration workflows using Apache Airflow to manage complex dependency graphs, dependency retries, and scheduled batch jobs.
+- Established rigorous data quality validation checks and monitoring alerts using Python scripts, ensuring high fidelity and completeness across reporting datasets.
+- Contributed to infrastructure-as-code deployments using Terraform to provision AWS data resources and maintain consistent environments across development and production.
+- Created reporting datasets and automated data flows to support interactive dashboards in Tableau and Power BI, enabling executives to track key performance indicators.
+
+EDUCATION
+Master of Science in Computer Science | University of Central Missouri, MO, USA
+Bachelor of Science in Computer Science | Anurag University, Hyderabad, India

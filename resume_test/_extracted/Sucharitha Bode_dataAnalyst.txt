@@ -1,0 +1,33 @@
+Sucharitha Bode
+Data Analyst
+sucharithab25@gmail.com | +1 704-420-4474 | LinkedIn
+PROFESSIONAL SUMMARY
+AI Analyst with 5+ years of experience leveraging Artificial Intelligence, Machine Learning, Python, SQL, and cloud technologies to transform complex datasets into actionable business insights. Experienced in developing predictive models, automating analytics workflows, building scalable ETL pipelines, and creating interactive dashboards that support data-driven decision-making. Skilled in data preprocessing, statistical analysis, NLP, predictive analytics, and AI-driven business intelligence using Python, R, SQL, Power BI, Tableau, AWS, and Azure. Strong expertise in data visualization, business analytics, cloud-based data platforms, and cross-functional collaboration to deliver scalable AI and analytics solutions that improve operational efficiency and business performance.
+PROFESSIONAL EXPERIENCE
+Marriott International | TX | AI AnalystJune 2024 – Present
+Designed AI-driven analytics solutions using Python, SQL, Pandas, and machine learning techniques to analyze millions of business records, improving predictive accuracy by 35%.
+Developed scalable ETL pipelines using Azure Data Factory and Azure Synapse Analytics, reducing data processing latency by 30% while improving data availability.
+Built predictive analytics models and statistical algorithms to forecast operational trends, enabling business stakeholders to make proactive, data-driven decisions.
+Automated enterprise reporting through Power BI and Excel dashboards, reducing manual reporting efforts by 50% while delivering real-time KPI monitoring.
+Implemented Apache Spark-based data cleansing and transformation pipelines, significantly improving data quality, processing performance, and reporting accuracy.
+Applied AI, statistical analysis, and machine learning techniques to identify hidden business patterns that optimized operational efficiency and reduced costs by 20%.
+ADP | India | Data AnalystJuly 2018 – January 2023
+Built scalable cloud-based analytics pipelines using AWS S3, Glue, and Amazon Redshift, reducing reporting latency by 40% while improving enterprise data accessibility.
+Developed machine learning models using Python, Pandas, TensorFlow, and Keras to support predictive analytics, business forecasting, and intelligent decision-making.
+Performed Natural Language Processing (NLP) and statistical analysis using Python and R to extract insights from structured and unstructured datasets.
+Designed advanced Power BI dashboards with DAX calculations, integrating multiple enterprise data sources to improve operational visibility by 25%.
+Implemented SQL-based data cleansing, transformation, and validation processes to ensure high-quality datasets for AI and business intelligence applications.
+Built forecasting models using R and ggplot2, increasing demand prediction accuracy by 30% and improving operational planning.
+TECHNICAL SKILLS
+Languages/Packages: Python, R, SQL, PL-SQL, Restful API, Spark, NLP, NumPy, A/B Testing and Experimentation, SSIS, SAS, SPSS, Pandas, Matplotlib, SciPy, ggplot2, TensorFlow, Keras.
+Artificial Intelligence & Machine Learning: Artificial Intelligence, Machine Learning, Predictive Analytics, Natural Language Processing (NLP), Statistical Modeling, Classification, Regression, Time Series Forecasting, Data Mining, Model Evaluation, Feature Engineering, A/B Testing, AI-powered Analytics
+Visualization Tools/Database: Tableau, Power BI, ETL, JIRA, Google Analytics, Alteryx, Seaborn, Salesforce, Looker, QlikView, Pardot, Marketo, AWS (Athena, Redshift), Azure, Oracle, Snowflake, Adobe Analytics, ArcGIS, QGIS, Story Map, UltraEdit, Navicat 15, MS Excel
+Database: MySQL, SQL Server, Oracle, Teradata, MS Access
+Management: Project Management, Agile, Scrum Framework, Google Workspace, Microsoft Project, Logistics Management, Operations Management, Supply Chain Management, Lean Six Sigma, MS Office
+Tools and Services: Google BigQuery, Looker, Informatica Power Center, RStudio, Teradata, MS Access, MS Excel, LiveRamp
+Other Skills: Data Cleaning, Data Wrangling, Critical Thinking, Communication Skills, Presentation Skills, Problem-Solving.
+EDUCATION
+Master's in Computers Science,
+University of North Texas, Denton, TX, USA.
+Bachelors in Computers Science,
+K L University, Guntur, Andhra Pradesh, India.

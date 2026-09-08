@@ -1,0 +1,46 @@
+﻿
+
+   Lokesh_Bathala_Network_Deployment_Technician.doc
+      Print  100
+
+   Lokesh Bathala
+ Network Deployment Technician
+ Virginia | (508)2925209 | lbath.@gmail.com |  linkedin.com/in/lokesh-b-18a7b3382
+
+ SUMMARY
+ Network Deployment Technician with 3+ years of experience delivering enterprise infrastructure, IT support, and network engineering solutions across 24/7 environments. Adept at cloud architecture concepts, deployment automation through tools like Terraform, and implementing dependency injection practices within modern pipelines. Experienced across manufacturing, tech, and financial domains, driving projects that improve customer experience, technical documentation, and service delivery. Proven ability in cross-functional collaboration, technical writing, and maintaining reliable systems while ensuring robust security standards.
+
+ SKILLS
+  Technical Skills:  Machine Learning, Networking, IT Support, Cloud Architecture, Technical Writer, Dependency Injection, Customer Experience, Ruby, Customer Service, Terraform, HTML/CSS, GCP, Product Manager, QA Engineer, Network Engineer, Cybersecurity, Software Engineer, Salesforce, AI Engineer, Linux, TCP/IP, LAN/WAN, DNS, DHCP, VLANs, STP, OSPF, BGP, VPN
+  Tools & Platforms:  Cisco Nexus, Cisco Catalyst, Arista, Juniper, Ciena, Linux CLI, ServiceNow, SolarWinds, PRTG, Wireshark, JIRA
+  Methodologies:  Agile, Scrum, SDLC, ITIL, CI/CD
+  Core Competencies:  Network Infrastructure, Incident Resolution, Hardware Troubleshooting, System Documentation
+
+ EXPERIENCE
+ Data Center Technician | Liberty Mutual Insurance | Virginia
+ Jan 2025 - Present
+  • Execute 12+ rack and stack switch deployments daily across 4 production data center zones, improving network uptime to 99.9%.
+  • Partner with cloud architecture and IT support teams to deploy backbone connectivity and AI infrastructure supporting 500+ internal users.
+  • Author comprehensive technical writer documentation and standard operating procedures for 15 new data center expansion workflows.
+  • Integrate dependency injection configuration templates and Terraform automation scripts to streamline 8 monthly switch provisioning cycles.
+  • Resolve 45+ monthly hardware tickets on ServiceNow, directly enhancing customer experience scores for internal IT stakeholders by 18%.
+
+ Data Center Technician | Iron Mountain | Hyderabad, India
+ Jan 2022 - Jul 2023
+  • Configured and maintained network hardware components including switches, transceivers, and copper links across 200+ server racks.
+  • Diagnosed and resolved 75+ physical-layer connectivity and routing issues using Wireshark, SolarWinds, and Linux CLI within 2-hour SLA windows.
+  • Coordinated with network engineering and cybersecurity teams to implement firewall policies, VLAN segmentation, and secure DNS/DHCP configurations.
+  • Maintained structured cabling standards and port documentation across 12 distinct data center cabinets, reducing audit discrepancies by 35%.
+  • Provided reliable customer service and incident response support for 50+ enterprise clients during scheduled maintenance and circuit turn-ups.
+
+ PROJECTS
+ Enterprise Network Infrastructure Automation
+  • Designed a Terraform-based infrastructure provisioning pipeline incorporating dependency injection principles to deploy 20 virtual network nodes across a multi-region environment.
+  • Documented deployment runbooks and architecture diagrams, reducing manual setup time by 40% for subsequent cloud architecture rollouts.
+
+ EDUCATION
+ M.S. - University of New Haven | West Haven, CT | Aug 2023 - May 2025
+ B.Tech - Malla Reddy Engineering College | Hyderabad, India | Jun 2019 - May 2022
+
+ CERTIFICATIONS
+ Cisco Certified Network Associate (CCNA)

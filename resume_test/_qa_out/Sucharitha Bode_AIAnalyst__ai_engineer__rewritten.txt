@@ -1,0 +1,35 @@
+Sucharitha Bode
+AI Engineer
+sucharithab25@gmail.com | +1 704-420-4474 | LinkedIn
+
+SUMMARY
+AI Engineer with 5+ years of experience building generative AI models, RAG pipelines, and production machine learning systems using Python, SQL, and AWS. Experienced in deploying scalable AI infrastructure with SageMaker and Lambda, implementing real-time data pipelines with Kafka and Spark, and optimizing model performance for business applications. Skilled in cloud data architecture, predictive analytics, and cross-functional collaboration to deliver robust AI solutions that improve operational efficiency and decision-making.
+
+SKILLS
+Programming & Libraries: Python, SQL, PyTorch, TensorFlow, Pandas, NumPy, Scikit-Learn
+Artificial Intelligence & Machine Learning: Large Language Models (LLMs), RAG Pipelines, Prompt Engineering, Natural Language Processing (NLP), Predictive Modeling, Time Series Forecasting
+Cloud & DevOps: AWS (SageMaker, Lambda, S3, Redshift, Athena), Docker, Kubernetes, CI/CD, Git
+Data & Streaming: Apache Spark, Apache Kafka, ETL Pipelines, Data Warehousing, SQL Server, MySQL
+
+PROFESSIONAL EXPERIENCE
+Marriott International | TX | AI Engineer June 2024 – Present
+- Designed LLM-based applications and RAG pipelines using Python, LangChain, and OpenAI APIs, improving generative response accuracy by 35%.
+- Deployed machine learning models on AWS using SageMaker and Lambda, reducing inference latency by 30% through optimized containerization with Docker.
+- Implemented real-time feature stores and personalization systems using Apache Kafka and Apache Spark, accelerating streaming data ingestion.
+- Built predictive analytics models and statistical algorithms using Python and Scikit-Learn to forecast operational trends and support proactive business decisions.
+- Automated enterprise AI model monitoring and reporting workflows, reducing manual evaluation efforts by 50% while delivering real-time performance tracking.
+- Applied advanced machine learning techniques to identify business patterns, optimizing operational efficiency and reducing infrastructure costs by 20%.
+- Ensured high reliability, latency compliance, and cost efficiency for production AI services through rigorous system profiling and optimization.
+
+ADP | India | Data Analyst July 2018 – January 2023
+- Built scalable cloud-based data pipelines using AWS S3, Glue, and Amazon Redshift, reducing reporting latency by 40% while improving enterprise data accessibility.
+- Developed machine learning models using Python, TensorFlow, and Keras to support predictive analytics, business forecasting, and intelligent decision-making.
+- Performed Natural Language Processing (NLP) and statistical analysis using Python to extract insights from unstructured enterprise datasets.
+- Designed advanced analytics dashboards, integrating multiple enterprise data sources to improve operational visibility by 25%.
+- Implemented SQL-based data cleansing, transformation, and validation processes to ensure high-quality datasets for AI and machine learning applications.
+- Built forecasting models using Python and statistical packages, increasing demand prediction accuracy by 30% and improving operational planning.
+- Managed end-to-end data processing lifecycles using Agile methodologies to deliver reliable analytics solutions on schedule.
+
+EDUCATION
+Master's in Computer Science, University of North Texas, Denton, TX, USA
+Bachelor's in Computer Science, K L University, Guntur, Andhra Pradesh, India

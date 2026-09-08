@@ -1,0 +1,51 @@
+VALLAPU MAHESHWARI
+AI Engineermahimaheshwari9652@gmail.com | 203-690-4452 | NJ, USA | https://www.linkedin.com/in/vallapu-maheshwari-067363412/
+SUMMARY
+AI Engineer with 4+ years of experience designing, deploying, and scaling generative AI and machine learning systems in high-traffic production environments. Proven expertise building LLM-powered applications (GPT-4, Llama 2), retrieval-augmented generation (RAG), prompt engineering, and embedding-based evaluation pipelines, alongside real-time recommendation and personalization systems for large-scale consumer platforms. Skilled in distributed feature stores, AWS cloud AI infrastructure (SageMaker, Lambda, Glue), and containerized model deployment (Docker, Kubernetes, Jenkins). Strong foundation in deep learning (CNNs, Transformers), ensemble modeling (XGBoost, Random Forest), and big data pipelines (PySpark, Apache Flink, Kafka), consistently delivering measurable gains in accuracy, latency, and operational efficiency for enterprise-scale users.
+PROFESSIONAL EXPERIENCE
+Netflix | CA | AI EngineerJuly 2025 – Present
+Architected a distributed feature store using Cassandra (high-write scalability) and DynamoDB (low-latency reads), serving 100K+ features/sec to AI-driven personalization and recommendation models with 99.99% availability, reducing training-serving skew by 30%.
+Designed and deployed a Retrieval-Augmented Generation (RAG) content discovery system leveraging LlamaIndex and OpenAI embeddings, indexing 1M+
+titles to reduce search latency by 50% and increase member engagement.
+Fine-tuned and evaluated large language models (Llama 2, GPT-4) for content understanding and tag generation, applying prompt engineering and embedding-based evaluation metrics to improve recommendation accuracy by 18% through enhanced semantic matching.
+Engineered a real-time feature pipeline using Apache Flink and Apache Kafka, processing user interaction events (clicks, watch time, skips) with sub-500ms
+latency to power instant AI-driven personalization for global members.
+Developed multilingual NLP pipelines (BERT, spaCy) for content theme and entity extraction from subtitles and synopses, expanding AI-powered recommendations for non-English titles by 30%.
+Orchestrated AWS serverless AI/ML workflows (Lambda, Step Functions, Python), processing 10M+ daily events with 99.95% reliability while reducing
+compute costs by 40%.
+Implemented containerized model-serving infrastructure using Docker, Kubernetes, and Jenkins CI/CD, enabling zero-downtime deployment of AI models across global regions.
+Partnered cross-functionally with engineering and data science teams to architect end-to-end AI applications, APIs, and web interfaces (Flask, Django),
+reducing manual processes by 60% while maintaining a 99.5% uptime SLA.
+HCL | India | Machine Learning EngineerJanuary 2021 – January 2024
+Built and executed A/B testing frameworks (Python, StatsModels) for production ML models, analyzing 50+ experiments that increased client conversion rates by 22% and reduced false positives by 15%.
+Designed and optimized AWS ML infrastructure (SageMaker, Lambda, Glue) for enterprise clients, automating model training, deployment, and monitoring
+pipelines, reducing inference costs by 35%.
+Applied ensemble machine learning methods (Random Forest, Gradient Boosting) and clustering algorithms (DBSCAN, Gaussian Mixture Models) to customer segmentation and churn prediction, boosting retention campaigns by 28% for telecom clients.
+Developed and deployed deep learning architectures (CNNs, Transformers) for computer vision and NLP use cases, improving operational efficiency by 35%
+and reducing model error rates by 20%.
+Optimized complex SQL queries (window functions, CTEs) and designed data warehouse models (Snowflake, SQL Server), accelerating analytics reporting by 40% and cutting query costs by 25%.
+Performed model optimization, hyperparameter tuning, and cross-validation using scikit-learn, XGBoost, TensorFlow, improving prediction accuracy by 15%
+across multiple client projects.
+TECHNICAL SKILLS
+Generative AI & LLMs: LLM Fine-tuning (GPT-4, Llama 2), Prompt Engineering, Retrieval-Augmented Generation (RAG, LlamaIndex), Embeddings, Model Evaluation, NLP (BERT, spaCy, GPT models)
+Programming & Scripting: Python (NumPy, Pandas, SciPy, TensorFlow, PyTorch, Keras, scikit-learn, NLTK, Matplotlib, Plotly, PyMC3), R, Scala, SQL (MySQL, PostgreSQL, Oracle, T-SQL, PL/SQL), NoSQL (MongoDB, Cassandra, DynamoDB)
+Machine Learning & AI: Supervised & Unsupervised Learning, Deep Learning (CNNs, RNNs, Transformers), Time Series Forecasting, Reinforcement Learning, Anomaly Detection, Generative Models, Feature Engineering, Model Evaluation (Cross-validation, Hyperparameter Tuning, Ensemble Methods)
+Big Data & Data Engineering: Apache Spark, Hadoop, Hive, Kafka, Apache Flink, Airflow, MapReduce, AWS EMR, Sqoop, HBase, SSIS, Kinesis, Prefect, Data Warehousing (Snowflake, Redshift)
+Cloud Platforms & MLOps: AWS (EC2, S3, Glue, Redshift, SageMaker, Lambda, Athena, RDS), CI/CD Pipelines, Model Deployment & Monitoring, Experiment Tracking (MLflow, TensorBoard)
+DevOps & Infrastructure: Docker, Kubernetes, Jenkins, GitHub Actions, Git, Terraform, Ansible, Serverless Architecture, API Development (Flask, FastAPI, Django)
+Visualization & Analytics: Tableau, Power BI, Advanced Excel, EDA, A/B Testing, Statistical Modeling, Predictive Analytics, Data Storytelling
+Tools & Frameworks: Jupyter Notebook, RStudio, Apache NiFi, TensorRT, Ray Tune, REST APIs, Microservices Architecture
+EDUCATION
+Master of Science — University of Bridgeport, CT, USA
+Bachelor of Technology — GNITS, Hyderabad, India
+CERTIFICATIONS
+AWS Certified Solutions Architect – Associate
+Databricks – Generative AI Fundamentals
+Databricks – AI Agent Fundamentals
+Claude with anthropic AI
+Oracle AI Vector Search Certified Professional (Oracle Testing ID: OC7503694)
+Oracle Cloud Infrastructure 2025 Certified AI Foundations Associate (Oracle Testing ID:OC7503694)
+Oracle Cloud Infrastructure Certified Generative AI Professional (Oracle Testing ID:OC7503694)
+NVIDIA- AI for All: From Basics to GenAI Practice.
+Google Prompting Essentials Certification.
+Google AI Essentials Certification

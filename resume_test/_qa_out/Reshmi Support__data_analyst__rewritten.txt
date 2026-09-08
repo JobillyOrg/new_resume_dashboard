@@ -1,0 +1,45 @@
+Reshmi Divi
+Data Analyst
+Dallas, TX | contact@reshmidivi.com | linkedin.com/in/reshmidivi
+
+PROFESSIONAL SUMMARY
+Data Analyst with 5+ years of experience transforming complex datasets into actionable insights using SQL, Python, R, Tableau, Power BI, and Excel. Expertise in data wrangling, visualization, and statistical analysis, with a strong foundation in ETL, A/B testing, and cloud data platforms. Skilled in partnering with cross-functional product and operations teams to optimize business performance and drive data-backed decision-making.
+
+SKILLS
+Programming & Analysis: Python, R, SQL, PL/SQL, Spark, Pandas, NumPy, Matplotlib, Seaborn, SciPy, A/B Testing, Statistical Analysis
+Cloud & Databases: AWS (S3, Redshift, Glue, Lambda), MySQL, SQL Server, Snowflake, Oracle, ETL
+Visualization & Tools: Tableau, Power BI, MS Excel, Alteryx, JIRA, Confluence, Git
+Methodologies: Agile, Scrum, Project Management, Data Cleansing, Data Wrangling
+
+PROFESSIONAL EXPERIENCE
+Microsoft | TX | Data Analyst | December 2023 – Present
+- Built a data analytics pipeline processing millions of records daily, using Python, Pandas, and Matplotlib to uncover trends, boosting predictive accuracy by 35% and driving data-informed decisions.
+- Designed ETL processes using AWS data services to streamline data integration and reduce data pipeline latency by 30%.
+- Collaborated cross-functional with stakeholders in a startup environment, ensuring compliance and validating APIs and deployment flows using strong communication and problem-solving skills.
+- Executed a data cleansing pipeline using SQL and Apache Spark, streamlining data processing times and improving the accuracy of analytics.
+- Designed interactive dashboards and automated reports using Power BI and MS Excel, enabling real-time insights and reducing manual reporting efforts by 50%.
+- Implemented data mining models to uncover hidden patterns that enhanced predictive accuracy by 35% and optimized business decisions.
+
+PayPal | TX | Data Analyst | September 2022 – November 2023
+- Created and optimized ETL workflows using SQL and Python, automating data transformations and improving reporting efficiency by 40% for large-scale analytics.
+- Optimized MySQL storage and retrieval, automating data processing with Python, improving efficiency, and cutting query time by 30%.
+- Established AI-driven analytics models using Python and Seaborn, visualizing complex trends and increasing predictive accuracy by 35% for data-driven decision-making.
+- Streamlined data processes to generate actionable insights, using Tableau for sophisticated data analysis and visualization to find important trends and solutions that enhanced business operations.
+- Engineered a scalable data pipeline on AWS, utilizing S3, Lambda, and Redshift to process terabytes of data daily, enhancing efficiency and cutting ETL processing time by 40%.
+- Analyzed market trends and consumer behavior using SQL and Python, optimizing business processes and delivering actionable insights through Business Intelligence.
+- Utilized MS Excel for advanced data analysis, automation, and streamlined reporting with formulas and pivot tables.
+
+Zensar Technologies | India | Data Analyst | August 2018 – July 2021
+- Modeled and deployed a scalable data pipeline on AWS using S3, Glue, and Redshift, automating data ingestion and transformation for real-time analytics, reducing query latency by 40%, and enhancing data availability.
+- Engineered machine learning models using Python and Pandas, optimizing data pipelines for predictive analytics, automation, scalability, and actionable insights.
+- Constructed statistical models in R and visualized key insights using ggplot2, enabling trend analysis and forecasting that improved demand predictions by 30%.
+- Implemented data cleaning and wrangling using SQL, transforming raw datasets into structured, high-quality data for analytics, reporting, and decision-making.
+- Generated dynamic Power BI dashboards with DAX calculations and MS Excel integration, combining real-time KPIs from multiple sources to enhance operational efficiency by 25%.
+- Collaborated on writing detailed specifications, acceptance criteria, and documentation for API integration and UAT processes, ensuring smooth backlog management and seamless integration with REST APIs.
+
+EDUCATION
+Master of Science in Computer Science
+University of North Texas, Denton, TX
+
+Bachelor of Technology in Computer Science
+K L University, Guntur, Andhra Pradesh, India
