@@ -1,0 +1,160 @@
+{
+  "personal_information": {
+    "name": "Karthik Budige",
+    "location": "Sunnyvale, California",
+    "phone": "(908)-395-2041",
+    "email": "budigekarthik25@gmail.com",
+    "linkedin": "LinkedIn"
+  },
+  "professional_summary": "Automation Engineer with over 5 years of experience building scalable data pipelines, automated workflows, and API integrations. Skilled in Python, SQL, ETL development, and orchestration tools like Apache Airflow across multi-cloud enterprise environments. Experienced in data quality frameworks, reconciliation scripts, and system migrations to maintain high-integrity data platforms. Delivered robust data processing solutions and automated operational processes that improved data consistency and reduced incident response time.",
+  "education": [
+    {
+      "degree": "Master of Science in Business Analytics",
+      "start_date": "March 2022",
+      "end_date": "June 2023",
+      "institution": "Sacred Heart University",
+      "location": "Fairfield, CT, USA"
+    },
+    {
+      "degree": "Bachelor of Technology in Electrical and Electronics Engineering",
+      "start_date": "July 2016",
+      "end_date": "April 2020",
+      "institution": "Malla Reddy Engineering College",
+      "location": "Hyderabad, TG, India"
+    }
+  ],
+  "skills": {
+    "languages": [
+      "Python",
+      "SQL",
+      "Scala",
+      "JavaScript",
+      "Shell Scripting",
+      "PHP",
+      "Hack",
+      "Bash",
+      "GraphQL",
+      "REST"
+    ],
+    "frameworks_and_tools": [
+      "Apache Spark",
+      "DBT",
+      "Airflow",
+      "Dagster",
+      "Airbyte",
+      "Hadoop",
+      "Kafka",
+      "Hive",
+      "Hudi",
+      "Delta Live Tables",
+      "Metabase",
+      "Thrift",
+      "Hive/Presto",
+      "Master Data Management",
+      "Cron"
+    ],
+    "databases": [
+      "BigQuery",
+      "Snowflake",
+      "Redshift",
+      "MySQL",
+      "PostgreSQL",
+      "MongoDB",
+      "Netezza",
+      "Cassandra",
+      "Graph Databases"
+    ],
+    "cloud_platforms": [
+      "GCP",
+      "AWS",
+      "Azure"
+    ],
+    "visualization": [
+      "Tableau",
+      "Power BI",
+      "Streamlit",
+      "Metabase"
+    ],
+    "ai_ml": [
+      "Scikit-learn",
+      "TensorFlow",
+      "LangChain",
+      "RAG",
+      "Transformers",
+      "Predictive Analytics",
+      "Model Deployment"
+    ],
+    "version_control_and_devops": [
+      "Git",
+      "Docker",
+      "CI/CD",
+      "Jenkins",
+      "Cloud Composer",
+      "Step Functions"
+    ],
+    "certifications": [
+      "GCP Professional Data Engineer",
+      "AWS Certified Data Analytics – Specialty",
+      "DBT Fundamentals"
+    ]
+  },
+  "professional_experience": [
+    {
+      "company": "Walmart",
+      "role": "GCP Data Engineer",
+      "start_date": "February 2025",
+      "end_date": "Present",
+      "responsibilities": [
+        "Built Spark (Scala) pipelines on Dataproc to process data from Hive, Cassandra, and Hudi into BigQuery.",
+        "Implemented incremental data loads using Hudi to cut down on full refresh compute costs.",
+        "Designed and optimized BigQuery data models for large-scale datasets, improving query performance.",
+        "Implemented partitioning and clustering strategies in BigQuery for cost-efficient storage and performance tuning.",
+        "Integrated real-time Kafka streams into BigQuery and Druid for low-latency analytics.",
+        "Designed and maintained dbt + BigQuery data models to integrate marketplace, inventory, and financial datasets.",
+        "Automated COGS, margin, and sales trend tracking dashboards in Looker Studio to enhance executive decision-making."
+      ]
+    },
+    {
+      "company": "MasterCard",
+      "role": "Big Data Engineer",
+      "start_date": "August 2024",
+      "end_date": "January 2025",
+      "responsibilities": [
+        "Built PySpark-based ETL pipelines for efficient large-scale data processing in Databricks.",
+        "Integrated Hadoop-based data sources with Databricks to improve data ingestion and processing capabilities.",
+        "Designed distributed data processing workflows using Apache Spark, reducing execution time for batch jobs.",
+        "Developed and maintained data architectures, including MSSQL databases and real-time data processing systems.",
+        "Automated complex ETL workflows using Databricks Jobs and Delta Live Tables.",
+        "Conducted code quality evaluations using Pytest and Pylint, improving reliability and performance.",
+        "Developed serverless data ingestion using Cloud Functions to automate event-driven file loads from external APIs."
+      ]
+    },
+    {
+      "company": "AT&T",
+      "role": "AWS Data Engineer",
+      "start_date": "January 2023",
+      "end_date": "August 2024",
+      "responsibilities": [
+        "Designed dimensional models in Snowflake and Redshift to support analytical and reporting requirements.",
+        "Integrated AWS Lake Formation for data governance, ensuring access control and security policies.",
+        "Implemented Snowpipe to load the data into Snowflake external layer.",
+        "Monitored pipeline performance using AWS CloudWatch, enabling proactive troubleshooting.",
+        "Integrated Kafka for real-time data streaming, improving data freshness and downstream analytics accuracy.",
+        "Implemented Snowflake schema and loaded the data into Fact and Dimension tables.",
+        "Designed Snowflake data marts for financial KPIs and ad performance analytics supporting business growth initiatives."
+      ]
+    },
+    {
+      "company": "Neudesic",
+      "role": "Data Engineer",
+      "start_date": "November 2019",
+      "end_date": "January 2022",
+      "responsibilities": [
+        "Designed data architectures in Azure Synapse and Data Lake Storage to support large-scale analytics.",
+        "Automated ingestion and transformation workflows using Python scripts, API integrations, and Azure Functions.",
+        "Created optimized SQL queries and stored procedures for data reconciliation and quality validation.",
+        "Improved data refresh cycles by implementing incremental load strategies, metadata-based scheduling, and orchestration tooling."
+      ]
+    }
+  ]
+}

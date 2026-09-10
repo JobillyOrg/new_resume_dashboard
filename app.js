@@ -246,6 +246,220 @@ function filterAtsPhrasesForCandidate(phrases, resumeText, profile) {
   return filterTermsForCandidateProfile(phrases, resumeText, prof);
 }
 
+function scorePairKey(jd, resume) {
+  return `${jdHash(String(jd || '').trim())}::${jdHash(String(resume || '').trim())}`;
+}
+
+function hasFreshManualScore(jd, resume) {
+  return !!(
+    state.manualScoreKey
+    && state.manualScoreKey === scorePairKey(jd, resume)
+    && state.manualScoreUnified
+    && Number.isFinite(Number(state.manualScoreUnified.atsScore))
+  );
+}
+
+function clearManualScoreGate() {
+  state.manualScoreKey = '';
+  state.manualScoreUnified = null;
+}
+
+function targetJdTitle(jd, keywords) {
+  const jj = (keywords && keywords.jdJson) || state.lastJdJson || {};
+  return cleanJobTitle(
+    jj.job_information?.title
+    || currentHeadline()
+    || (keywords?.role && (keywords.role.title || keywords.role.label))
+    || (window.RAGEngine && RAGEngine.extractJdTitle(jd || $('jdInput')?.value || ''))
+    || 'the exact JD job title'
+  );
+}
+
+/** Infer dominant career label from master experience titles (for role-pivot guidance). */
+function inferMasterCareerLabel(resumeText, resumeJson) {
+  const rj = resumeJson || state.lastResumeJson;
+  const jsonRoles = (rj?.professional_experience || []).map(j => j.role).filter(Boolean);
+  const roles = jsonRoles.length ? jsonRoles : extractRolesFromResume(resumeText || '');
+  const blob = roles.join(' ').toLowerCase();
+  const checks = [
+    [/ai engineer|machine learning|ml engineer|llm|genai|generative ai|deep learning/, 'AI / ML Engineer'],
+    [/automation engineer|test automation|\bsdet\b|qa automation|rpa engineer|process automation/, 'Automation Engineer'],
+    [/qa engineer|quality assurance|test engineer/, 'QA Engineer'],
+    [/data engineer|etl engineer|spark engineer|data platform/, 'Data Engineer'],
+    [/data scientist|data science/, 'Data Scientist'],
+    [/data analyst|bi analyst|business intelligence/, 'Data Analyst'],
+    [/software engineer|full.?stack|backend|frontend/, 'Software Engineer'],
+    [/devops|sre|platform engineer|site reliability/, 'DevOps / Platform'],
+    [/cloud engineer|solutions architect/, 'Cloud Engineer'],
+    [/network engineer|network admin/, 'Network Engineer'],
+    [/security engineer|security analyst|soc analyst|cybersecurity/, 'Security'],
+    [/help desk|desktop support|it support|service desk|sysadmin|systems administrator/, 'IT Support'],
+    [/business analyst|product owner/, 'Business Analyst'],
+    [/product manager|program manager|project manager/, 'Product / Program'],
+  ];
+  for (const [re, label] of checks) {
+    if (re.test(blob)) return label;
+  }
+  if (roles.length) {
+    const first = String(roles[0] || '');
+    const titleBit = first.split('|').map(s => s.trim()).find(s =>
+      /engineer|analyst|scientist|developer|architect|specialist|manager|technician|administrator|consultant/i.test(s)
+    );
+    if (titleBit) return titleBit.replace(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\b.*$/i, '').trim();
+  }
+  return 'the master career profile';
+}
+
+function familiesAligned(a, b) {
+  const x = String(a || '');
+  const y = String(b || '');
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const pairs = [
+    ['data-engineer', 'analyst'],
+    ['data-engineer', 'data-scientist'],
+    ['automation', 'qa'],
+    ['devops', 'cloud'],
+    ['swe', 'devops'],
+    ['infra', 'network'],
+    ['support', 'infra'],
+  ];
+  return pairs.some(([p, q]) => (x === p && y === q) || (x === q && y === p));
+}
+
+/** JD skills already evidenced on the master + prior bullets worth reusing. */
+function jdBuildPlanFromMaster(jd, resume, keywords) {
+  const jj = (keywords && keywords.jdJson) || state.lastJdJson || {};
+  const rj = state.lastResumeJson;
+  const aliasMap = (keywords && keywords.aliasMap) || {};
+  const jdSkills = uniqTerms([
+    ...(jj.must_have_skills || []),
+    ...(keywords?.jdPrimary || keywords?.primary || []),
+  ]).slice(0, 16);
+  const corpus = rj ? corpusFromResumeJson(rj) : String(resume || '');
+  const bullets = rj
+    ? bulletsFromResumeJson(rj)
+    : String(resume || '').split('\n').map(l => l.trim()).filter(l => /^[-•*]/.test(l));
+  const overlapping = jdSkills.filter(s => keywordPresent(s, corpus, aliasMap));
+  const missingOnMaster = jdSkills.filter(s => !keywordPresent(s, corpus, aliasMap));
+  const reusable = bullets.filter(b =>
+    overlapping.some(s => keywordPresent(s, b, aliasMap))
+  ).slice(0, 10);
+  return {
+    overlapping,
+    missingOnMaster,
+    reusable,
+    duties: listOrEmpty(jj.responsibilities).slice(0, 10),
+    jdSkills,
+  };
+}
+
+function formatJdProfileContract(jd, resume, keywords) {
+  const target = targetJdTitle(jd, keywords);
+  const masterLabel = inferMasterCareerLabel(resume);
+  const matched = familiesAligned(roleFamilyFromTitle(masterLabel), roleFamilyFromTitle(target))
+    || roleFamilyFromTitle(masterLabel) === roleFamilyFromTitle(target);
+  const plan = jdBuildPlanFromMaster(jd, resume, keywords);
+  return `JD ROLE CONTRACT — works for ANY posting. The page is always the JD role.
+THIS PAGE IS: ${target}
+MASTER READS AS: ${masterLabel}  (${matched ? 'MATCH — reuse previous-role work that already proves this JD' : 'DIFFERENT — convert the page to the JD role; reuse only overlapping prior work'})
+
+HOW TO BUILD (same rules whether roles match or not):
+1. SKILLS = this JD's must-haves first. Add a master tool only if it supports this JD.
+2. EXPERIENCE = rewrite bullets to prove the JD responsibilities below. Keep companies, PAST titles, and dates.
+3. PREVIOUS ROLE IF MATCHED: keep and polish master bullets that already show JD skills/duties (listed below).
+4. PREVIOUS ROLE IF NOT MATCHED: still write as ${target}. Reuse only overlapping skills/bullets. Do not keep a full ${masterLabel} stack dominating SUMMARY or experience.
+5. Never invent tools, tests, employers, titles, or metrics.
+
+JD MUST-HAVE SKILLS (lead SKILLS + SUMMARY + experience): ${plan.jdSkills.join(', ') || 'see locked set'}
+ALREADY ON MASTER — reuse these (previous-role overlap): ${plan.overlapping.join(', ') || 'none yet — only add if honest'}
+NOT ON MASTER — do not invent: ${plan.missingOnMaster.join(', ') || 'none'}
+JD RESPONSIBILITIES (each needs an honest experience bullet):
+${plan.duties.length ? plan.duties.map(d => `  - ${d}`).join('\n') : '  - (use the posting duties)'}
+REUSE THESE MASTER BULLETS (they already overlap this JD — rewrite in ${target} language, keep the facts):
+${plan.reusable.length ? plan.reusable.map(b => `  - ${String(b).slice(0, 180)}`).join('\n') : '  - (no strong overlap yet — reframe transferable master work only if true)'}`;
+}
+
+function formatRolePivotBlock(jd, resume, keywords) {
+  const target = targetJdTitle(jd, keywords);
+  const masterLabel = inferMasterCareerLabel(resume);
+  const rj = state.lastResumeJson;
+  const jsonRoles = (rj?.professional_experience || []).map(j => j.role).filter(Boolean).slice(0, 4);
+  const masterRoles = jsonRoles.length ? jsonRoles : extractRolesFromResume(resume || []).slice(0, 4);
+  const matched = familiesAligned(roleFamilyFromTitle(masterLabel), roleFamilyFromTitle(target))
+    || roleFamilyFromTitle(masterLabel) === roleFamilyFromTitle(target);
+  return `TARGET ROLE — any JD: write a ${target} resume (not a hybrid of the master career).
+- TARGET: ${target}
+- MASTER: ${masterLabel} (${matched ? 'matched family — reuse previous-role proof' : 'different family — convert page to JD role'})
+- Keep these past titles exactly: ${masterRoles.join(' · ') || 'see master'}
+- Line 2 + SUMMARY opener = ${target}. Never "${masterLabel} / ${target}".
+- Keep every real company, past job title, and date. Do NOT rename past jobs to "${target}".
+${matched
+    ? `- Previous role matches this family. Rebuild SKILLS and bullets around THIS posting's must-haves and duties. Keep prior bullets that already prove those duties; drop off-JD side stacks from the top third.`
+    : `- Previous role does not match. Convert SUMMARY, SKILLS order, and bullet framing to ${target}. Reuse only master work that overlaps JD skills/duties. Demote ${masterLabel}-only tools. Invent nothing.`}
+- Close EVERY score-rule gap below that is stack-aligned and truthful — incomplete gap fill = failed rewrite.`;
+}
+
+function formatMandatoryCloseList(unified, mustAdd, atsMustAdd) {
+  const sc = (unified && unified.scorecard) || {};
+  const missing = dropEligibilityTerms(dropCertTerms(listOrEmpty(sc.keywordsMissing))).slice(0, 12);
+  const skillsOnly = dropEligibilityTerms(dropCertTerms(listOrEmpty(sc.jdSkillsOnly))).slice(0, 10);
+  const add = dropEligibilityTerms(dropCertTerms(mustAdd || [])).slice(0, 14);
+  const phrases = filterExtractedSkills(atsMustAdd || []).slice(0, 8);
+  const weak = [];
+  const scores = (unified && unified.ruleScores) || sc.ruleScores || {};
+  for (const meta of RULE_META) {
+    const pts = Number(scores[meta.key] || 0);
+    if (pts / Math.max(meta.max, 1) < 0.85) {
+      weak.push(`${meta.letter} ${meta.label} (${pts}/${meta.max})`);
+    }
+  }
+  const lines = [
+    'MANDATORY CLOSE LIST — every item MUST appear in the rewritten resume. Check off silently before you finish:',
+    `1. Add to SKILLS + prove in ≥1 EXPERIENCE bullet (exact spelling): ${uniqTerms([...add, ...missing]).join(', ') || 'none — already covered'}`,
+    `2. Skills-only today — move into EXPERIENCE bullets (not Skills dump): ${skillsOnly.join(', ') || 'none'}`,
+    `3. Weave these JD ATS phrases naturally: ${phrases.join(' · ') || 'none'}`,
+    `4. Raise these weak score-rule categories with the 20 writing rules: ${weak.join('; ') || 'none weak'}`,
+    '5. SUMMARY opens with the TARGET JD title + years + 8–9 JD must-have tools. The whole paragraph is that JD role.',
+    '6. SKILLS are built from JD must-haves; keep previous-role tools only when they overlap this JD.',
+    '7. EXPERIENCE is built from JD responsibilities. Reuse previous-role bullets that already match; reframe or shrink the rest.',
+    '8. FORMAT MUST match the Anirudh template exactly (Name / Title / Contact | sections ALL-CAPS / role lines / "- " bullets) — wrong format = failed rewrite.',
+    'If any item above is still missing at the end, ADD it before outputting. Do not leave score-rule gaps or format breaks open.',
+  ];
+  return lines.join('\n');
+}
+
+/** Non-negotiable page layout — same weight as gap-close and role pivot. */
+function formatMandatoryTemplateBlock(headline, resumeText) {
+  const skillsHeader = /\bTECHNICAL\s+SKILLS\b/i.test(String(resumeText || ''))
+    ? 'TECHNICAL SKILLS'
+    : (/\bSKILLS\b/i.test(String(resumeText || '')) ? 'SKILLS' : 'TECHNICAL SKILLS');
+  const title = headline
+    ? String(headline).split('|')[0].trim()
+    : 'exact JD title';
+  return `FORMAT IS MANDATORY (Anirudh Word template) — non-negotiable; wrong layout = failed rewrite:
+Line 1: Full Name in Title Case (never ALL CAPS)
+Line 2: Target job title only — ${title}
+Line 3: Phone | Email | LinkedIn | City, ST  (separator " | "; phone starts with +1; LinkedIn = linkedin.com/in/username)
+Line 4: blank
+Then ONLY these ALL-CAPS headers (exact spelling):
+  SUMMARY
+  ${skillsHeader}
+  PROFESSIONAL EXPERIENCE
+  EDUCATION
+  (+ any extra master sections already present, same ALL-CAPS headers, same order)
+SUMMARY = one prose paragraph (no bullets, no metrics).
+${skillsHeader} = keep master category labels. Put JD must-have skills first on each line; demote off-role master tools.
+PROFESSIONAL EXPERIENCE role lines — exactly one plain-text line per role:
+  Company | Location | Job Title Month YYYY – Month YYYY
+  Example: Netflix | CA | Machine Learning Engineer January 2025 – Present
+  Never put dates on a second line. Never Company | Title | Location | Dates.
+Bullets: start with hyphen-space "- " only (not • * ·). 6–7 bullets per role. Each ends with a period.
+EDUCATION: Qualification / degree on its own line (bold). College, City, ST on the next line (not bold).
+No tables/columns/icons/photos/skill bars in the text output. No markdown. No **bold**.
+Do not invent section names. Do not drop required core sections.`;
+}
+
 function formatCandidateProfileBlock(profile) {
   if (!profile?.hasStrongPrimary) {
     return `CANDIDATE STACK: read the master resume — only add tools the candidate has actually used. Do not invent a second cloud. If two clouds are already on the master, keep both but NEVER in the same bullet.`;
@@ -275,24 +489,96 @@ NEVER put two clouds in the same bullet.
 Write like a human: prose summary, real bullets — never comma-dump tools or tack skills onto sentence ends.`;
 }
 
+function formatTwentyRulesRewriteBlock() {
+  return `20 US FULL-TIME RESUME RULES (use these to WRITE the resume):
+1. 1-2 pages. 2. Tailor to the JD — technologies must appear in EXPERIENCE, not only Skills. 3. Do not list skills with no evidence. 4. Every bullet answers "so what?" (action → technology → problem → result). 5. Quantify when numbers exist; do not invent. 6. Achievements over responsibilities. 7. Strongest info in the top third. 8. No generic objective. 9-10. Use JD terminology when accurate. 11. No graphics/icons/tables/columns. 12. No sensitive personal data. 13. Concise education. 14. Only relevant projects. 15. Experience is the main section. 16. Short bullets, not paragraphs. 17. Technologies must be interview-defensible. 18. Do not exaggerate ownership if the master said "contributed". 19. Show career progression. 20. The page should look like a targeted JD-role resume — not the master career with extra keywords.`;
+}
+
+function formatAiRubricRewriteTargets() {
+  return `SCORING TARGET — this rewrite will be scored ONLY with the ${SCORE_RULE_NAME} (sum 100). This is JD alignment, not a predicted ATS/Workday %. Write so each category clears:
+A. Required qualifications / hard gates (20) — years vs JD, education, work auth if stated. If the JD explicitly requires industry experience (healthcare, mortgage, retail, financial-services, etc.), evidence it. Do not force industry wording when the JD does not require it.
+B. Skills and keywords (20) — important JD skills appear naturally. Skills-section mentions help; experience bullets that connect the tool to real work are much stronger. Do not stuff the same keyword repeatedly.
+C. Experience and responsibility match (20) — bullets show the type of work THIS JD is hiring for. Build experience from JD duties. Reuse previous-role bullets when they already match those duties; if the master was a different career, reframe only overlapping work — do not leave the old career’s leftover bullets dominating.
+D. Skill evidence and context (10) — prove important tools with action + context. Listing "Spark" is weak; "Developed Spark pipelines using Scala" is better; scale/result is strongest. Never invent numbers.
+E. Experience level and seniority (10) — show ownership, production systems, technical decisions, troubleshooting/optimization, and collaboration appropriate to the JD level. Do not rename past job titles.
+F. Achievements and business impact (8) — bullets should show results (automated, reduced time, reliability, users supported) when true. Never manufacture metrics.
+G. ATS parseability and formatting (5) — simple single-column layout, ALL-CAPS headers, company/title/dates easy to parse, hyphen bullets, selectable text.
+H. Job title / role alignment (2) — Line 2 and SUMMARY = JD title. Keep legitimate past titles. Do not rewrite history to copy the JD title onto old jobs.
+I. Recruiter readability (5) — in ~10 seconds a recruiter should see your role, years, strongest tech, where you worked, and that recent work matches this opening.
+SUCCESS: ${SCORE_RULE_NAME} alignment ${SCORE_THRESHOLD}+ (Push aims for ${SCORE_TARGET}+). Skills-only dumps cannot clear ${SCORE_THRESHOLD}.`;
+}
+
+/** Build a plain-text gap report from the last score-rule result (failures + weak categories + glance fails). */
+function formatScoreRuleGapReport(unified) {
+  if (!unified) return 'No prior score-rule report yet.';
+  const sc = unified.scorecard || {};
+  const scores = unified.ruleScores || sc.ruleScores || {};
+  const cov = sc.coverage || {};
+  const lines = [];
+  lines.push(`CURRENT ${SCORE_RULE_NAME.toUpperCase()} SCORE: ${Number(unified.atsScore || sc.atsScore || 0)}/${SCORE_MAX} (need ${SCORE_THRESHOLD}+)`);
+  lines.push(SCORE_INTERPRETATION);
+  const failedKnockouts = (sc.hardKnockouts || []).filter(k => k && typeof k === 'object' && k.ok === false);
+  if (failedKnockouts.length || sc.screenOutRisk) {
+    lines.push('HARD-GATE SCREEN-OUT RISK (can eliminate you even if the overall score is high):');
+    failedKnockouts.forEach(k => {
+      lines.push(`    · ${k.label}${k.detail ? ` — ${k.detail}` : ''}`);
+    });
+  }
+  lines.push('WEAK / FAILED CATEGORIES (fix these with the 20 writing rules):');
+  for (const meta of RULE_META) {
+    const pts = Number(scores[meta.key] || 0);
+    const max = meta.max;
+    const ratio = pts / Math.max(max, 1);
+    if (ratio >= 0.85) continue;
+    const failed = listOrEmpty(cov[meta.key]?.failed);
+    const status = ratio >= 0.55 ? 'partial' : 'needs work';
+    lines.push(`- ${meta.letter}. ${meta.label}: ${pts}/${max} (${status})`);
+    failed.slice(0, 8).forEach(f => lines.push(`    · ${f}`));
+    if (!failed.length && ratio < 0.85) {
+      const miss = listOrEmpty(sc.keywordsMissing).slice(0, 6);
+      const skillsOnly = listOrEmpty(sc.jdSkillsOnly).slice(0, 6);
+      if (meta.key === 'skillsKeywords' && miss.length) {
+        miss.forEach(m => lines.push(`    · Failed: must-have missing — ${m}`));
+      } else if (meta.key === 'skillsEvidenceContext' && (miss.length || skillsOnly.length)) {
+        miss.forEach(m => lines.push(`    · Failed: not on resume — ${m}`));
+        skillsOnly.forEach(m => lines.push(`    · Failed: Skills only — ${m}`));
+      } else if (meta.key === 'semanticResponsibilityMatch') {
+        lines.push('    · Build experience from JD duties. Reuse previous-role bullets that already match; reframe only overlapping work if the master career differs.');
+      } else if (meta.key === 'jobTitleAlignment') {
+        lines.push('    · Keep legitimate past titles; SUMMARY + Line 2 + recent work must read as the JD role');
+      } else {
+        lines.push(`    · Raise ${meta.letter} by matching more of this category’s checks`);
+      }
+    }
+  }
+  const glanceFails = TEN_QUESTIONS.filter(q => !(sc.tenSecondTest || {})[q.key]).map(q => q.label);
+  if (glanceFails.length) {
+    lines.push('RECRUITER GLANCE STILL FAILING:');
+    glanceFails.forEach(g => lines.push(`    · ${g}`));
+  }
+  const gaps = stripCertGaps(listOrEmpty(sc.gaps)).slice(0, 8);
+  if (gaps.length) {
+    lines.push('OTHER GAPS:');
+    gaps.forEach(g => lines.push(`    · ${g}`));
+  }
+  return lines.join('\n');
+}
+
 function formatExternalAtsBlock(jd, keywords) {
-  const role = (keywords?.role && keywords.role.label)
-    || (keywords?.title)
-    || (window.RAGEngine && RAGEngine.extractJdTitle(jd))
-    || 'the exact JD job title';
+  const role = targetJdTitle(jd, keywords);
   const primary = dropCertTerms(keywords?.primary || keywords?.jdPrimary || []);
   const atsPhrases = filterExtractedSkills(keywords?.atsKeywords || []);
-  return `EXTERNAL ATS ALIGNMENT — write so ChatGPT / Claude / Grok give 90+ when asked "ATS score this resume vs JD 0-100":
-- Line 2 title MUST match the posting exactly: ${role}
-- SUMMARY opens with that title + years + primary stack in natural prose (8-9 JD tools woven in). No %/$ metrics in SUMMARY.
-- EVERY must-have JD skill appears in SKILLS AND in at least one EXPERIENCE bullet with action→tool→result (skills-only lists score ~70 on ChatGPT)
-- Use the JD's exact spelling: ${primary.slice(0, 14).join(', ') || 'see locked set'}
-- Weave ATS phrases naturally (never comma dumps): ${atsPhrases.slice(0, 10).join(' · ') || 'n/a'}
-- ≥70% of bullets need a real metric (% / $ / count / latency / throughput / volume)
-- EVERY bullet is achievement-shaped (Built/Designed/Reduced/Improved…), not "Responsible for…"
-- Top third proves role fit in ~6 seconds: title, years, stack, clearest win
+  return `LAYOUT + KEYWORD ALIGNMENT (supports A–I JD-alignment scoring):
+- Line 2 is the TARGET role for this posting: ${role}. Do NOT rename past job titles to copy the JD.
+- SUMMARY is a ${role} profile: years + 8-9 JD must-have tools in natural prose. No %/$ metrics in SUMMARY. Not a hybrid of a different master career.
+- JD must-have skills lead SKILLS; prove them in EXPERIENCE bullets connected to real work (JD duties first)
+- Use the JD's exact spelling when it is true: ${primary.slice(0, 14).join(', ') || 'see locked set'}
+- Weave ATS phrases naturally (never comma dumps or repeating one keyword ten times): ${atsPhrases.slice(0, 10).join(' · ') || 'n/a'}
+- Add metrics only when they are real on the master — never invent records, %, or dollars
+- Prefer achievement-shaped bullets (Built/Designed/Reduced/Improved/Automated…) over "Responsible for…"
+- Top third proves ${role} fit in ~10 seconds: role, years, strongest JD tech, where you worked
 - ALL-CAPS headers: SUMMARY, SKILLS (or TECHNICAL SKILLS), PROFESSIONAL EXPERIENCE, EDUCATION
-- ChatGPT docks hard for: keyword stuffing, tools with no work evidence, generic duties, missing JD title, thin metrics, rival-cloud mixes in one bullet`;
+- Avoid: keyword stuffing, tools with no work evidence, leftover bullets from a different career family, rival-cloud mixes in one bullet`;
 }
 
 function buildExternalAtsPassPrompt(jd, resume, keywords, missingReport) {
@@ -304,27 +590,43 @@ function buildExternalAtsPassPrompt(jd, resume, keywords, missingReport) {
   const summaryKw = summaryKeywordList(keywords, master);
   const gaps = stripCertGaps((state.scorecard && state.scorecard.gaps) || []);
   const suggestions = stripCertGaps((state.scorecard && state.scorecard.improvementSuggestions) || []);
-  return `You are rewriting this resume so a ChatGPT / Claude / Grok ATS check against the JD scores ${SCORE_TARGET}+ / 100.
-Users paste JD + resume and ask for an ATS match score — those tools typically give 70-80 when skills are listed but not proven in bullets, the title drifts from the JD, or metrics are sparse. Fix that.
+  return `You are a precision resume editor. Raise this draft so it scores ${SCORE_TARGET}+ on ${SCORE_RULE_NAME}. Apply the 20 US resume writing rules while closing score-rule gaps completely. Format is mandatory.
+
+${formatMandatoryTemplateBlock(currentHeadline(), resume)}
+
+${formatJdProfileContract(jd, resume, keywords)}
+
+${formatRolePivotBlock(jd, resume, keywords)}
+
+${formatMandatoryCloseList(state.lastAtsUnified || { scorecard: state.scorecard, ruleScores: state.scorecard?.ruleScores, atsScore: state.scorecard?.atsScore }, mustAdd, atsMissing)}
+
+${formatTwentyRulesRewriteBlock()}
+
+${formatAiRubricRewriteTargets()}
+
+SCORE-RULE REPORT (what failed / what we got):
+${formatScoreRuleGapReport(state.lastAtsUnified || { scorecard: state.scorecard, ruleScores: state.scorecard?.ruleScores, atsScore: state.scorecard?.atsScore })}
 
 ${formatExternalAtsBlock(jd, keywords)}
 ${formatCandidateProfileBlock(profile)}
 
-CLOSE THESE GAPS (stack-aligned only):
+CLOSE THESE GAPS (stack-aligned only — leave none open):
 - Missing skills → SKILLS + experience bullets with real context: ${mustAdd.join(', ') || 'none'}
 - Missing ATS phrases → summary or bullets: ${atsMissing.join(' · ') || 'none'}
 - Summary should weave 8-9 of: ${summaryKw.join(', ') || 'current stack'}
-- External-scorer gaps: ${gaps.slice(0, 8).map(g => String(g)).join(' | ') || 'none listed'}
-- Fixes to apply: ${suggestions.slice(0, 6).map(s => String(s)).join(' | ') || 'prove every JD tool in experience; raise metric density'}
+- Score-rule gaps: ${gaps.slice(0, 8).map(g => String(g)).join(' | ') || 'none listed'}
+- Fixes to apply: ${suggestions.slice(0, 6).map(s => String(s)).join(' | ') || 'prove every JD tool in experience; raise metric density; mirror JD responsibilities'}
 
 RULES:
-- Do not change name, contact, companies, job titles, dates, or education
+- Do not change name, contact, companies, PAST job titles, dates, or education (Line 2 = TARGET JD title)
 - Keep the master's skill category layout; add tools into existing lines
 - Weave each missing skill inside a bullet sentence — never tack ", Skill." at the end
 - Add realistic metrics to bullets that lack numbers (reuse the resume's scale)
 - Each role: 6-7 bullets. Keep extra sections already on the resume. If PROJECTS exists, keep those same projects once as a name plus hyphen bullets — no dates. Do not invent a second Projects section.
 - No H1B, visa, or work authorization language in SUMMARY
-- Prefer evidence and clarity over stuffing — ChatGPT rewards readable proof of fit
+- Prefer evidence and clarity over stuffing
+- Pivot the whole page to the JD role (summary, skills order, experience). Do not keep the master career as the profile.
+- Keep Anirudh format exactly (ALL-CAPS headers, role lines, "- " bullets)
 
 JOB DESCRIPTION:
 ${jd.slice(0, 6500)}
@@ -380,6 +682,65 @@ function stackDetectHtml(profile) {
   </div>`;
 }
 
+function roleCompareForScore(unified, resumeText) {
+  const jj = unified?.jdJson || state.lastJdJson || state.keywords?.jdJson || {};
+  const rj = unified?.resumeJson || state.lastResumeJson || {};
+  const jd = cleanJobTitle(
+    jj.job_information?.title
+    || unified?.title
+    || (state.keywords?.role && (state.keywords.role.title || state.keywords.role.label))
+    || (window.RAGEngine && RAGEngine.extractJdTitle(
+      unified?.jdUsed || ($('jdInput') && $('jdInput').value) || '',
+    ))
+    || 'This job',
+  );
+  const masterRaw = inferMasterCareerLabel(resumeText, rj);
+  const master = (!masterRaw || masterRaw === 'the master career profile')
+    ? ((rj.professional_experience || []).map(j => j.role).filter(Boolean)[0] || 'Not clear yet')
+    : masterRaw;
+  const matched = familiesAligned(roleFamilyFromTitle(master), roleFamilyFromTitle(jd));
+  const recent = (rj.professional_experience || [])
+    .map(j => j.role)
+    .filter(Boolean)
+    .slice(0, 2);
+  return { master, jd, matched, recent };
+}
+
+function renderRoleCompareHtml(cmp) {
+  if (!cmp) return '';
+  const tone = cmp.matched ? 'ok' : 'diff';
+  const note = cmp.matched
+    ? 'Same type of role. If the score is still low, the gap is skills, duties, or proof — not the title.'
+    : 'Different roles. A lower score is expected. Rewrite will write the page for this job using overlapping work from your resume.';
+  const recent = (cmp.recent || []).length
+    ? `<span class="role-compare-recent">Recent titles: ${escapeHtml(cmp.recent.join(' · '))}</span>`
+    : '';
+  return `<div class="role-compare ${tone}" role="status">
+    <div class="role-compare-col">
+      <small>Your resume</small>
+      <strong>${escapeHtml(cmp.master)}</strong>
+      ${recent}
+    </div>
+    <div class="role-compare-arrow" aria-hidden="true">→</div>
+    <div class="role-compare-col">
+      <small>This job</small>
+      <strong>${escapeHtml(cmp.jd)}</strong>
+    </div>
+    <p class="role-compare-note">${note}</p>
+  </div>`;
+}
+
+function paintRoleCompare(unified, resumeText) {
+  const el = $('roleCompare');
+  if (!el) return;
+  const packed = {
+    ...(unified || {}),
+    resumeJson: unified?.resumeJson || state.lastResumeJson,
+    jdJson: unified?.jdJson || state.lastJdJson,
+    title: unified?.title || state.lastJdJson?.job_information?.title,
+  };
+  el.innerHTML = renderRoleCompareHtml(roleCompareForScore(packed, resumeText));
+}
 function renderStackDetectLine(profile) {
   const el = $('stackDetectLine');
   if (!el) return;
@@ -416,6 +777,50 @@ function filterExtractedSkills(list) {
     if (/^(the|what|how|we|you|our|this|that)\b/i.test(s)) return false;
     return true;
   });
+}
+
+/** Duty lines and job titles are not B-score skills (Python/PyTorch are; "production-grade ML systems deployment" is not). */
+function isDutyPhraseNotSkill(term) {
+  const s = String(term || '').replace(/\s+/g, ' ').trim();
+  if (!s) return true;
+  if (/^(feature engineering|model monitoring|model serving|prompt engineering|machine learning|deep learning|real-?time inference|mlops|ml ops)$/i.test(s)) {
+    return false;
+  }
+  const words = s.split(' ').filter(Boolean);
+  if (words.length >= 5) return true;
+  if (words.length >= 4 && /\b(deployment|management|environments|infrastructure|systems|lifecycle|design)\b/i.test(s)) return true;
+  if (words.length >= 3 && /\b(lifecycle management|systems deployment|pipeline design)\b/i.test(s)) return true;
+  if (/^(machine learning|ml|data|software|backend|frontend|platform|cloud|devops|sre)\s+engineer(ing)?$/i.test(s)) return true;
+  if (/\b(production-grade|end-to-end|environments and)\b/i.test(s)) return true;
+  return false;
+}
+
+function scoredSkillTerms(list) {
+  return filterExtractedSkills(list).filter(t => !isDutyPhraseNotSkill(t));
+}
+
+function atsPhrasesFromJdJson(j) {
+  const jd = j || {};
+  const tools = new Set(scoredSkillTerms([
+    ...(jd.must_have_skills || []),
+    ...(jd.nice_to_have_skills || []),
+  ]).map(s => String(s).toLowerCase()));
+  const explicit = filterExtractedSkills(jd.ats_phrases || jd.atsPhrases || []);
+  const fromSkillDump = uniqTerms([
+    ...(jd.must_have_skills || []),
+    ...(jd.nice_to_have_skills || []),
+  ]).filter(isDutyPhraseNotSkill);
+  return uniqTerms([...explicit, ...fromSkillDump])
+    .filter(p => !tools.has(String(p).toLowerCase()))
+    .slice(0, 16);
+}
+
+function skillStatusOnResume(term, sc) {
+  const lc = String(term || '').toLowerCase();
+  if (!lc) return 'missing';
+  if (listOrEmpty(sc?.jdSkillsOnly).some(s => String(s).toLowerCase() === lc)) return 'skills-only';
+  if (listOrEmpty(sc?.keywordsFound).some(s => String(s).toLowerCase() === lc)) return 'work';
+  return 'missing';
 }
 
 function termInJdText(jd, term) {
@@ -475,16 +880,100 @@ const TEN_QUESTIONS = [
 ];
 
 const RULE_META = [
-  { key: 'keywordsInExperience', label: 'Skills in work history', max: 25 },
-  { key: 'keywordCredibility', label: 'Skills you can defend', max: 10 },
-  { key: 'secondaryKeywords', label: 'Extra role skills', max: 8 },
-  { key: 'quantified', label: 'Measured bullets', max: 15 },
-  { key: 'achievementsNotDuties', label: 'Results, not chores', max: 8 },
-  { key: 'tenSecond', label: 'Top-third punch', max: 12 },
-  { key: 'format', label: 'Parser-safe page', max: 8 },
-  { key: 'structure', label: 'Section order', max: 6 },
-  { key: 'bulletQuality', label: 'Bullet strength', max: 8 },
+  { key: 'hardQualifications', label: 'A. Required qualifications / hard gates', max: 20, letter: 'A' },
+  { key: 'skillsKeywords', label: 'B. Skills and keywords', max: 20, letter: 'B' },
+  { key: 'semanticResponsibilityMatch', label: 'C. Experience and responsibility match', max: 20, letter: 'C' },
+  { key: 'skillsEvidenceContext', label: 'D. Skill evidence and context', max: 10, letter: 'D' },
+  { key: 'experienceSeniorityMatch', label: 'E. Experience level and seniority', max: 10, letter: 'E' },
+  { key: 'achievementsImpact', label: 'F. Achievements and business impact', max: 8, letter: 'F' },
+  { key: 'resumeParsingStructure', label: 'G. ATS parseability and formatting', max: 5, letter: 'G' },
+  { key: 'jobTitleAlignment', label: 'H. Job title / role alignment', max: 2, letter: 'H' },
+  { key: 'recruiterReadability', label: 'I. Recruiter readability', max: 5, letter: 'I' },
 ];
+
+/** Display name for the A–I weighted JD-alignment rubric (not an ATS vendor prediction). */
+const SCORE_RULE_NAME = 'score rule';
+const SCORE_INTERPRETATION = 'This number is JD alignment (skills, qualifications, experience, evidence, seniority, impact, and readability). It is not a predicted Workday/Greenhouse/ATS percentage.';
+const SCORE_UI_BLURB = 'How well this resume matches the job — not a guess of ATS software.';
+
+function clipWords(text, max = 72) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const sp = cut.lastIndexOf(' ');
+  return `${(sp > 36 ? cut.slice(0, sp) : cut).trim()}…`;
+}
+
+function formatYearsNeed(min, max) {
+  const lo = Number(min);
+  const hi = Number(max);
+  if (Number.isFinite(lo) && lo > 0 && Number.isFinite(hi) && hi > 0) return `${lo}–${hi} years`;
+  if (Number.isFinite(lo) && lo > 0) return `${lo}+ years`;
+  if (Number.isFinite(hi) && hi > 0) return `up to ${hi} years`;
+  return '';
+}
+
+function shortYearsNeed(note, min, max) {
+  const parsed = parseYearsRequirement(note);
+  const lo = parsed?.min ?? min;
+  const hi = parsed?.max ?? max;
+  const labeled = formatYearsNeed(lo, hi);
+  if (labeled) return labeled;
+  const n = String(note || '');
+  const m = n.match(/(\d+(?:\.\d+)?)\s*\+?\s*years?/i);
+  if (m) return `${m[1]}+ years`;
+  return '';
+}
+
+function shortDegreeNeed(edu) {
+  const t = String(edu || '');
+  if (!t) return '';
+  if (/phd|doctorate/i.test(t)) return 'PhD';
+  if (/master|m\.?s\.?|mba/i.test(t) && /bachelor/i.test(t)) return "Bachelor's or Master's";
+  if (/master|m\.?s\.?|mba/i.test(t)) return "Master's degree";
+  if (/bachelor|b\.?s\.?|b\.?tech/i.test(t)) return "Bachelor's degree";
+  return clipWords(t, 48);
+}
+
+function shortPlace(loc) {
+  const t = String(loc || '').replace(/\s+/g, ' ').trim();
+  const m = t.match(/([A-Za-z][A-Za-z .]+),\s*([A-Z]{2})(?:\s+\d{5})?/);
+  if (m) return `${m[1].trim()}, ${m[2]}`;
+  return clipWords(t.replace(/United States( of America)?/gi, '').replace(/,\s*,/g, ',').trim(), 40);
+}
+
+function humanizeScoreLine(raw) {
+  let s = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!s) return '';
+  if (/^Coverage:/i.test(s)) return '';
+  if (/Industry is scored here/i.test(s)) return '';
+  if (/matched\s*÷|ATS\/Workday|JSON:/i.test(s)) return '';
+  s = s.replace(/^(Failed:|Pass:|Partial:|Weak:|Knockout:|Review:)\s*/i, '');
+  s = s.replace(/^duty not mirrored\s*[—\-]\s*/i, '');
+  s = s.replace(/^Duty mirrored:\s*/i, '');
+  s = s.replace(/^must-have missing\s*[—\-]\s*/i, 'Missing: ');
+  s = s.replace(/^(Partial:\s*)?Skills only[^.]*[—\-]\s*/i, 'In Skills only: ');
+  s = s.replace(/^not on resume\s*[—\-]\s*/i, 'Missing: ');
+  s = s.replace(/^listed only\s*[—\-]\s*/i, 'Listed only: ');
+  s = s.replace(/^mentioned without action\/scale\s*[—\-]\s*/i, 'Needs a real work example: ');
+  s = s.replace(/^used in work but thin context\s*[—\-]\s*/i, 'Needs a stronger example: ');
+  s = s.replace(/^in experience\s*[—\-]\s*/i, '');
+  s = s.replace(/^strong evidence\s*[—\-]\s*/i, '');
+  s = s.replace(/^JD requires\s+/i, 'Needs ');
+  s = s.replace(/\s*\(Option \d+:[^)]*\)/gi, '');
+  s = s.replace(/United States of America/gi, 'US');
+  return clipWords(s, 88);
+}
+
+function humanLines(arr) {
+  return uniqTerms((arr || []).map(humanizeScoreLine).filter(Boolean));
+}
+
+const INDUSTRY_GATE_RE = /\b(healthcare|health[- ]care|hipaa|mortgage|retail|financial[- ]services|fintech|banking|insurance|pharma(?:ceutical)?|biotech|life sciences?|telecom(?:munications)?|manufacturing|e-?commerce|federal|government|defense)\b/i;
+const IMPACT_VERB_RE = /\b(reduc(?:ed|ing|tion)?|improv(?:ed|ing|ement)?|increas(?:ed|ing|e)?|decreas(?:ed|ing)|automat(?:ed|ing|ion)|eliminat(?:ed|ing|ion)|sav(?:ed|ing)|cut\b|accelerat(?:ed|ing)|enabled|streamlin(?:ed|ing)|boost(?:ed|ing)?|lowered|raised|cut cost|more reliable|reliability)\b/i;
+const OWNERSHIP_RE = /\b(own(?:ed|ing|ership)|led\b|lead(?:ing)?|architect(?:ed|ing|ure)|design(?:ed|ing)|drove|accountable|decision|trade-?offs?|mentor(?:ed|ing)?|stakeholder|production|on-call|incident|troubleshoot(?:ing)?|optimiz(?:ed|ing|ation)|roadmap|end-to-end)\b/i;
+const SCALE_EVIDENCE_RE = /\b(\d[\d,.]*\s*%|\d[\d,]*\+?|\d+\s*(?:hours?|minutes|days|weeks|tb|gb|pb|records?|tables?|pipelines?|users?|clusters?)|millions?|billions?|hundreds of millions|petabytes?|terabytes?|latency|throughput|sla)\b/i;
+const LICENSE_GATE_RE = /\b(license|licensure|\bcpa\b|series 7|series 63|\bcdl\b|professional engineer|\bpe license|bar admission|registered nurse|\brn\b)\b/i;
 
 let state = {
   mode: 'integrity',
@@ -500,10 +989,21 @@ let state = {
   boldTerms: [],
   boldFinalized: false,
   preTailor: null,
+  selectedRewriteCategory: null,
   detailAnalysisOpen: false,
   baseResume: { text: '', fileName: '', fileType: '', updatedAt: 0 },
   jdSessions: [],
   activeJdId: '',
+  lastUnderstanding: null,
+  lastResumeJson: null,
+  lastJdJson: null,
+  lastMissingReport: null,
+  lastAtsUnified: null,
+  /** Set only after a successful manual "Score (score rule)" for this JD+resume pair. */
+  manualScoreKey: '',
+  /** Frozen score-rule report from that manual Score (used as rewrite gap source). */
+  manualScoreUnified: null,
+  selectedAiCategory: null,
 };
 
 const WORKSPACE_KEY = 'jobilly_workspace_v1';
@@ -639,6 +1139,7 @@ function syncUiFromActiveSession() {
   else if ($('resumePaper')) $('resumePaper').innerHTML = '';
   state.keywords = null;
   state.kwHash = '';
+  clearManualScoreGate();
   renderJdTabs();
   updateCounts();
 }
@@ -722,11 +1223,13 @@ function scheduleSaveWorkspace() {
 
 function onResumeInput() {
   updateCounts();
+  clearManualScoreGate();
   scheduleSaveWorkspace();
 }
 
 function onJdInput() {
   updateCounts();
+  clearManualScoreGate();
   const session = getActiveJdSession();
   if (session && $('jdInput')) {
     session.jd = $('jdInput').value;
@@ -806,6 +1309,7 @@ function setBaseResume(text, fileName) {
   updateCounts();
   state.keywords = null;
   state.kwHash = '';
+  clearManualScoreGate();
   saveWorkspace();
 }
 
@@ -953,6 +1457,7 @@ function setMode(mode) {
   if (state.mode !== mode) {
     state.keywords = null;
     state.kwHash = '';
+    clearManualScoreGate();
   }
   state.mode = mode;
   $('modeIntegrity').classList.toggle('active', mode === 'integrity');
@@ -1385,7 +1890,7 @@ YOUR JOB — extract from THIS posting only (not internet/market skills):
 
 1. roleTitle: exact hiring title (e.g. "ML/LLM Engineer", not a section header like "The Opportunity").
 2. roleLabel: short readable label for the role.
-3. roleFamily: one of data|ml|swe|support|network|devops|cloud|security|qa|datacenter|ba|healthcare
+3. roleFamily: one of data|ml|swe|support|network|devops|cloud|security|qa|automation|datacenter|ba|healthcare
 4. jdPrimary: 10-16 MUST-HAVE technical skills/tools/frameworks explicitly stated or clearly required in THIS JD.
    Include stacks like Python, PyTorch, LangChain, LlamaIndex, RAG, embeddings, vector search, fine-tuning, LLM evaluation, MLOps, etc. when the JD mentions them.
 5. jdSecondary: 4-10 secondary items FROM THE JD ONLY — domain (healthcare, biopharma), practices (responsible AI, observability, production ML), or nice-to-have tools mentioned in the posting.
@@ -1443,6 +1948,282 @@ Return ONLY JSON:
     "otherRequirements": ["Must pass background check"]
   }
 }`;
+}
+
+/** Human-readable JD schema (see resume_test/jsonjd.txt). Built FIRST before skill locking / scoring. */
+function buildJdJsonPrompt(jd) {
+  return `You are a job-description analyst. Convert this posting into clear structured JSON that a recruiter can read.
+Use ONLY facts in the JD. Do not invent skills, years, companies, or requirements.
+
+JOB DESCRIPTION:
+${String(jd || '').slice(0, 12000)}
+
+Return JSON with exactly this shape:
+{
+  "job_information": {
+    "title": "",
+    "company": "",
+    "location": "",
+    "employment_type": "",
+    "seniority_level": "junior|mid|senior|lead|staff|manager|unknown",
+    "work_mode": "remote|hybrid|onsite|unknown"
+  },
+  "overview": "",
+  "years_of_experience": {
+    "minimum": null,
+    "maximum": null,
+    "note": ""
+  },
+  "must_have_skills": [],
+  "nice_to_have_skills": [],
+  "ats_phrases": [],
+  "responsibilities": [],
+  "requirements": {
+    "education": "",
+    "experience": "",
+    "hard_gates": [],
+    "work_authorization": "",
+    "other": []
+  },
+  "domain_industry": [],
+  "eligibility": {
+    "us_citizen_required": false,
+    "sponsorship_available": null,
+    "clearance_required": false,
+    "notes": []
+  }
+}
+
+Rules:
+- years_of_experience: copy the JD wording into note. If the JD gives a range such as "1-6 years", "1–6 years", or "1 to 6 years", minimum is the LOW number and maximum is the HIGH number. Never treat the high end as the minimum. "5+ years" / "at least 5 years" means minimum 5 and maximum null.
+- must_have_skills = named tools/frameworks/platforms clearly required (Python, PyTorch, AWS, FastAPI). 8-14 items. Do NOT put duty phrases ("production-grade ML systems deployment", "model lifecycle management") or job titles ("Machine Learning Engineering") here — those belong in responsibilities.
+- nice_to_have_skills = preferred / secondary tools from THIS JD only (not internet/market extras).
+- ats_phrases = 8-14 short recruiter/ATS search phrases copied from THIS JD (e.g. "model lifecycle management", "real-time inference", "production ML deployment"). Not a duplicate of must_have_skills tools. Not full duty sentences.
+- responsibilities = clean duty lines (one idea each).
+- hard_gates = qualifications that can screen a candidate out: years, degree, work authorization, clearance, license, onsite/location, or explicit industry experience. Do NOT put preferred tools here.
+- domain_industry = industries mentioned. Put an industry in hard_gates ONLY if the JD explicitly requires that industry experience (e.g. "healthcare experience required"). If the company happens to be in healthcare/finance but the role is a generic Data Engineer posting, leave domain as informational and do NOT treat it as a gate.
+- No benefits fluff in skill lists. No invented tools.
+- Empty string / [] / null when unknown.`;
+}
+
+function coerceJdYears(years) {
+  const y = {
+    minimum: Number.isFinite(Number(years?.minimum)) && Number(years.minimum) > 0 ? Number(years.minimum) : null,
+    maximum: Number.isFinite(Number(years?.maximum)) && Number(years.maximum) > 0 ? Number(years.maximum) : null,
+    note: String(years?.note || '').trim(),
+  };
+  const parsed = parseYearsRequirement(y.note)
+    || parseYearsRequirement(formatYearsNeed(y.minimum, y.maximum));
+  if (parsed) {
+    if (parsed.min != null) y.minimum = parsed.min;
+    y.maximum = parsed.max != null ? parsed.max : (parsed.min != null && y.maximum === parsed.min ? null : y.maximum);
+    if (parsed.max == null && y.maximum != null && y.minimum != null && y.maximum < y.minimum) y.maximum = null;
+    if (!y.note && parsed.raw) y.note = parsed.raw;
+  }
+  if (y.minimum != null && y.maximum != null && y.minimum > y.maximum) {
+    const swap = y.minimum;
+    y.minimum = y.maximum;
+    y.maximum = swap;
+  }
+  return y;
+}
+
+function emptyJdJson() {
+  return {
+    job_information: {
+      title: '',
+      company: '',
+      location: '',
+      employment_type: '',
+      seniority_level: 'unknown',
+      work_mode: 'unknown',
+    },
+    overview: '',
+    years_of_experience: { minimum: null, maximum: null, note: '' },
+    must_have_skills: [],
+    nice_to_have_skills: [],
+    ats_phrases: [],
+    responsibilities: [],
+    requirements: {
+      education: '',
+      experience: '',
+      hard_gates: [],
+      work_authorization: '',
+      other: [],
+    },
+    domain_industry: [],
+    eligibility: {
+      us_citizen_required: false,
+      sponsorship_available: null,
+      clearance_required: false,
+      notes: [],
+    },
+  };
+}
+
+function normalizeJdJson(parsed) {
+  const base = emptyJdJson();
+  if (!parsed || typeof parsed !== 'object') return base;
+  const ji = parsed.job_information || {};
+  base.job_information = {
+    title: String(ji.title || '').trim(),
+    company: String(ji.company || '').trim(),
+    location: String(ji.location || '').trim(),
+    employment_type: String(ji.employment_type || '').trim(),
+    seniority_level: String(ji.seniority_level || 'unknown').trim().toLowerCase() || 'unknown',
+    work_mode: String(ji.work_mode || 'unknown').trim().toLowerCase() || 'unknown',
+  };
+  base.overview = String(parsed.overview || '').trim();
+  const y = parsed.years_of_experience || {};
+  base.years_of_experience = coerceJdYears({
+    minimum: y.minimum == null || y.minimum === '' ? null : Number(y.minimum),
+    maximum: y.maximum == null || y.maximum === '' ? null : Number(y.maximum),
+    note: String(y.note || parsed.requirements?.experience || '').trim(),
+  });
+  const rawMust = dropEligibilityTerms(dropCertTerms(uniqTerms(parsed.must_have_skills || [])));
+  const rawNice = dropEligibilityTerms(dropCertTerms(uniqTerms(parsed.nice_to_have_skills || [])));
+  base.must_have_skills = scoredSkillTerms(rawMust);
+  base.nice_to_have_skills = scoredSkillTerms(rawNice)
+    .filter(s => !base.must_have_skills.some(m => m.toLowerCase() === String(s).toLowerCase()));
+  base.ats_phrases = atsPhrasesFromJdJson({
+    ...parsed,
+    must_have_skills: rawMust,
+    nice_to_have_skills: rawNice,
+    ats_phrases: parsed.ats_phrases || parsed.atsPhrases || [],
+  });
+  base.responsibilities = (Array.isArray(parsed.responsibilities) ? parsed.responsibilities : [])
+    .map(r => String(r || '').trim()).filter(Boolean).slice(0, 16);
+  const req = parsed.requirements || {};
+  base.requirements = {
+    education: String(req.education || '').trim(),
+    experience: String(req.experience || '').trim(),
+    hard_gates: (Array.isArray(req.hard_gates) ? req.hard_gates : []).map(x => String(x || '').trim()).filter(Boolean),
+    work_authorization: String(req.work_authorization || '').trim(),
+    other: (Array.isArray(req.other) ? req.other : []).map(x => String(x || '').trim()).filter(Boolean),
+  };
+  base.domain_industry = uniqTerms(parsed.domain_industry || []).map(s => String(s).trim()).filter(Boolean);
+  const el = parsed.eligibility || {};
+  base.eligibility = {
+    us_citizen_required: !!el.us_citizen_required,
+    sponsorship_available: el.sponsorship_available == null ? null : !!el.sponsorship_available,
+    clearance_required: !!el.clearance_required,
+    notes: (Array.isArray(el.notes) ? el.notes : []).map(n => String(n || '').trim()).filter(Boolean),
+  };
+  return base;
+}
+
+/** Heuristic JD → JSON when Gemini is unavailable. */
+function parseJdToJsonLocal(jd) {
+  const text = String(jd || '');
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const out = emptyJdJson();
+  const titleLine = lines.find(l => /^(job\s*title|title|role)\s*[:\-]/i.test(l))
+    || lines.find(l => /\b(engineer|analyst|developer|architect|scientist|manager)\b/i.test(l));
+  if (titleLine) {
+    out.job_information.title = titleLine.replace(/^(job\s*title|title|role)\s*[:\-]\s*/i, '').trim();
+  }
+  const loc = lines.find(l => /^location\s*[:\-]/i.test(l));
+  if (loc) out.job_information.location = loc.replace(/^location\s*[:\-]\s*/i, '').trim();
+  if (/\bremote\b/i.test(text)) out.job_information.work_mode = 'remote';
+  else if (/\bhybrid\b/i.test(text)) out.job_information.work_mode = 'hybrid';
+  else if (/\bonsite|on-site\b/i.test(text)) out.job_information.work_mode = 'onsite';
+  if (/\b(senior|sr\.?)\b/i.test(text)) out.job_information.seniority_level = 'senior';
+  else if (/\b(lead|staff|principal)\b/i.test(text)) out.job_information.seniority_level = 'lead';
+  else if (/\b(junior|jr\.?|entry)\b/i.test(text)) out.job_information.seniority_level = 'junior';
+  else out.job_information.seniority_level = 'mid';
+
+  const parsedYears = parseYearsRequirement(text);
+  if (parsedYears) {
+    out.years_of_experience = coerceJdYears({
+      minimum: parsedYears.min,
+      maximum: parsedYears.max,
+      note: parsedYears.raw || '',
+    });
+    out.requirements.experience = out.years_of_experience.note || parsedYears.raw || '';
+  }
+
+  const bulletLines = lines.filter(l => /^[-•*]/.test(l) || /^\d+[.)]\s/.test(l))
+    .map(l => l.replace(/^[-•*\d.)\s]+/, '').trim())
+    .filter(Boolean);
+  out.responsibilities = bulletLines.slice(0, 10);
+
+  // Pull known tech tokens from JD text via RAG if available
+  try {
+    if (window.RAGEngine && typeof RAGEngine.buildJdOnlySkillSet === 'function') {
+      const rag = RAGEngine.buildJdOnlySkillSet(text);
+      out.must_have_skills = dropCertTerms(rag.jdPrimary || rag.primary || []).slice(0, 14);
+      out.nice_to_have_skills = dropCertTerms(rag.jdSecondary || rag.secondary || []).slice(0, 10);
+      if (rag.role?.title) out.job_information.title = out.job_information.title || rag.role.title;
+    }
+  } catch { /* ignore */ }
+
+  const about = lines.findIndex(l => /about the role|overview|summary|description/i.test(l));
+  if (about >= 0 && lines[about + 1]) {
+    out.overview = lines.slice(about + 1, about + 3).join(' ').slice(0, 400);
+  }
+  return normalizeJdJson(out);
+}
+
+async function parseJdToJson(jd) {
+  const text = String(jd || '');
+  try {
+    const raw = await callGemini(buildJdJsonPrompt(text), { json: true, maxTokens: 3500 });
+    const parsed = normalizeJdJson(parseJsonLoose(raw));
+    const hasSignal = parsed.job_information.title
+      || parsed.must_have_skills.length
+      || parsed.responsibilities.length;
+    if (hasSignal) return parsed;
+  } catch (err) {
+    console.warn('JD JSON parse (Gemini) failed:', err);
+  }
+  return parseJdToJsonLocal(text);
+}
+
+/** Map readable JD JSON → internal analysis fields used by skill locking. */
+function jdJsonToAnalysis(jdJson, ragHints) {
+  const j = jdJson || emptyJdJson();
+  const title = j.job_information?.title || ragHints?.role?.title || '';
+  const family = ragHints?.role?.family || 'data';
+  const minY = j.years_of_experience?.minimum;
+  return {
+    roleTitle: title,
+    roleLabel: title,
+    roleFamily: family,
+    jdPrimary: filterExtractedSkills(j.must_have_skills || []),
+    jdSecondary: filterExtractedSkills([
+      ...(j.nice_to_have_skills || []),
+    ]),
+    atsKeywords: atsPhrasesFromJdJson(j),
+    eligibility: {
+      minYears: minY,
+      maxYears: j.years_of_experience?.maximum ?? null,
+      yearsNote: j.years_of_experience?.note || j.requirements?.experience || null,
+      usCitizenshipText: j.eligibility?.us_citizen_required ? 'US citizenship required' : null,
+      workAuthorizationText: j.requirements?.work_authorization || null,
+      education: j.requirements?.education || null,
+      workAuthorization: {
+        usCitizenRequired: !!j.eligibility?.us_citizen_required,
+        usCitizenPreferred: false,
+        authorizedToWorkRequired: !!j.requirements?.work_authorization,
+        noSponsorship: j.eligibility?.sponsorship_available === false,
+        sponsorshipAvailable: j.eligibility?.sponsorship_available === true,
+        clearanceRequired: !!j.eligibility?.clearance_required,
+        clearanceLevel: '',
+        notes: j.eligibility?.notes || [],
+      },
+      location: {
+        onsiteRequired: j.job_information?.work_mode === 'onsite',
+        hybrid: j.job_information?.work_mode === 'hybrid',
+        remoteOk: j.job_information?.work_mode === 'remote' || j.job_information?.work_mode === 'hybrid',
+        locationNote: j.job_information?.location || '',
+      },
+      otherRequirements: [
+        ...(j.requirements?.hard_gates || []),
+        ...(j.requirements?.other || []),
+      ],
+    },
+    _jdJson: j,
+  };
 }
 
 function buildInternetSkillsPrompt(jd, jdAi) {
@@ -1551,16 +2332,9 @@ function extractJdLineSnippet(jd, patterns, maxLen = 180) {
 
 function extractLocalEligibilityFromJd(jd) {
   const t = String(jd || '');
-  const lower = t.toLowerCase();
-  let minYears = null;
-  let maxYears = null;
-  const parsedYears = parseRequiredYearsFromText(t);
-  if (parsedYears) minYears = parsedYears;
-  const rangeMatch = t.match(/(\d+(?:\.\d+)?)\s*to\s*(\d+(?:\.\d+)?)\s*years?/i);
-  if (rangeMatch) {
-    minYears = parseYearNumber(rangeMatch[1]);
-    maxYears = parseYearNumber(rangeMatch[2]);
-  }
+  const parsedYears = parseYearsRequirement(t);
+  let minYears = parsedYears?.min ?? null;
+  let maxYears = parsedYears?.max ?? null;
   const wa = {
     usCitizenRequired: /\b(us citizen only|us citizen|u\.s\. citizen|united states citizen|must be a (?:u\.s\. )?citizen|citizenship required)\b/i.test(t)
       && !/\b(citizenship|citizen).{0,30}(not required|no requirement)/i.test(t),
@@ -1599,12 +2373,14 @@ function extractLocalEligibilityFromJd(jd) {
 
   const yearsNote = minYears
     ? extractJdLineSnippet(t, [
+      /\d+(?:\.\d+)?\s*(?:[-–—]|to)\s*\d+(?:\.\d+)?\s*\+?\s*years?.{0,80}experience/i,
       /\d+(?:\.\d+)?\s*\+?\s*years?.{0,80}experience/i,
       /minimum\s+(?:of\s+)?\d+(?:\.\d+)?\s*year/i,
       /at least\s+\d+(?:\.\d+)?\s*year/i,
       /\d+(?:\.\d+)?\s*year\(?s?\)?\s*of\s*experience/i,
     ]) || `${minYears}${maxYears ? `–${maxYears}` : '+'} years of experience`
     : extractJdLineSnippet(t, [
+      /\d+(?:\.\d+)?\s*(?:[-–—]|to)\s*\d+(?:\.\d+)?\s*\+?\s*years?.{0,80}experience/i,
       /\d+(?:\.\d+)?\s*\+?\s*years?.{0,80}experience/i,
       /minimum\s+(?:of\s+)?\d+(?:\.\d+)?\s*year/i,
       /\d+(?:\.\d+)?\s*year\(?s?\)?\s*of\s*experience/i,
@@ -1656,10 +2432,20 @@ function mergeEligibility(aiElig, localElig) {
   const local = localElig || {};
   const wa = { ...(local.workAuthorization || {}), ...(ai.workAuthorization || {}) };
   const loc = { ...(local.location || {}), ...(ai.location || {}) };
+  const yearTexts = [
+    ai.yearsNote,
+    local.yearsNote,
+    formatYearsNeed(ai.minYears, ai.maxYears),
+    formatYearsNeed(local.minYears, local.maxYears),
+  ].filter(Boolean);
+  const parsedList = yearTexts.map(parseYearsRequirement).filter(Boolean);
+  const parsedYears = parsedList.find(p => p.max != null) || parsedList[0] || null;
+  const yearsNote = [ai.yearsNote, local.yearsNote].find(n => parseYearsRequirement(n)?.max != null)
+    || ai.yearsNote || local.yearsNote || '';
   return {
-    minYears: ai.minYears ?? local.minYears ?? null,
-    maxYears: ai.maxYears ?? local.maxYears ?? null,
-    yearsNote: ai.yearsNote || local.yearsNote || '',
+    minYears: parsedYears?.min ?? ai.minYears ?? local.minYears ?? null,
+    maxYears: parsedYears?.max ?? ai.maxYears ?? local.maxYears ?? null,
+    yearsNote,
     usCitizenshipText: ai.usCitizenshipText || local.usCitizenshipText || '',
     workAuthorizationText: ai.workAuthorizationText || local.workAuthorizationText || '',
     education: ai.education || local.education || '',
@@ -1729,44 +2515,83 @@ function parseYearNumber(s) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-function parseRequiredYearsFromText(text) {
-  const t = String(text || '').trim();
+/** Parse JD years as { min, max }. "1–6 years" → min 1 max 6. "5+ years" → min 5 max null. */
+function parseYearsRequirement(text) {
+  const t = String(text || '').replace(/[–—]/g, '-').trim();
   if (!t) return null;
   const n = '(\\d+(?:\\.\\d+)?)';
-  const patterns = [
-    new RegExp(`minimum\\s+(?:of\\s+)?${n}\\s*year`, 'i'),
-    new RegExp(`at least\\s+${n}\\s*year`, 'i'),
-    new RegExp(`${n}\\s*\\+\\s*years?`, 'i'),
-    new RegExp(`${n}\\s*to\\s*${n}\\s*years?`, 'i'),
-    new RegExp(`${n}\\s*years?(?:\\s+of)?(?:\\s+(?:relevant|professional|related))?\\s*(?:of\\s+)?experience`, 'i'),
-    new RegExp(`${n}\\s*year\\(?s?\\)?\\s*(?:of\\s+)?experience`, 'i'),
-    new RegExp(`${n}\\s*years?\\s*(?:is\\s+)?required`, 'i'),
-  ];
-  for (const re of patterns) {
-    const m = t.match(re);
-    if (m) {
-      const val = parseYearNumber(m[1]);
-      if (val) return val;
-    }
+  const range = t.match(new RegExp(`${n}\\s*(?:-|to)\\s*${n}\\s*\\+?\\s*years?`, 'i'));
+  if (range) {
+    let min = parseYearNumber(range[1]);
+    let max = parseYearNumber(range[2]);
+    if (min != null && max != null && min > max) [min, max] = [max, min];
+    return { min, max, raw: range[0] };
   }
+  const minOf = t.match(new RegExp(`(?:minimum\\s+(?:of\\s+)?|at\\s+least\\s+)${n}\\s*year`, 'i'));
+  if (minOf) return { min: parseYearNumber(minOf[1]), max: null, raw: minOf[0] };
+  const plus = t.match(new RegExp(`${n}\\s*\\+\\s*years?`, 'i'));
+  if (plus) return { min: parseYearNumber(plus[1]), max: null, raw: plus[0] };
+  const simple = t.match(new RegExp(`${n}\\s*years?(?:\\s+of)?(?:\\s+(?:relevant|professional|related))?\\s*(?:of\\s+)?experience`, 'i'));
+  if (simple) return { min: parseYearNumber(simple[1]), max: null, raw: simple[0] };
+  const yearExp = t.match(new RegExp(`${n}\\s*year\\(?s?\\)?\\s*(?:of\\s+)?experience`, 'i'));
+  if (yearExp) return { min: parseYearNumber(yearExp[1]), max: null, raw: yearExp[0] };
+  const required = t.match(new RegExp(`${n}\\s*years?\\s*(?:is\\s+)?required`, 'i'));
+  if (required) return { min: parseYearNumber(required[1]), max: null, raw: required[0] };
   return null;
 }
 
+function parseRequiredYearsFromText(text) {
+  return parseYearsRequirement(text)?.min ?? null;
+}
+
+function getJdYearsRequirement(eligibility, yearsJdText) {
+  const note = eligibility?.yearsNote || yearsJdText || '';
+  const parsed = parseYearsRequirement(note);
+  const minRaw = Number(eligibility?.minYears);
+  const maxRaw = Number(eligibility?.maxYears);
+  const min = parsed?.min ?? (Number.isFinite(minRaw) && minRaw > 0 ? minRaw : null);
+  const max = parsed?.max ?? (Number.isFinite(maxRaw) && maxRaw > 0 ? maxRaw : null);
+  if (min == null && max == null) return null;
+  return { min, max };
+}
+
 function getJdRequiredYears(eligibility, yearsJdText) {
-  const min = Number(eligibility?.minYears);
-  if (Number.isFinite(min) && min > 0) return min;
-  const fromNote = parseRequiredYearsFromText(eligibility?.yearsNote);
-  if (fromNote) return fromNote;
-  if (yearsJdText) return parseRequiredYearsFromText(yearsJdText);
-  return null;
+  return getJdYearsRequirement(eligibility, yearsJdText)?.min ?? null;
+}
+
+function yearsRequirementSatisfied(req, candidateYears) {
+  if (!req || (req.min == null && req.max == null)) return true;
+  if (candidateYears == null || !Number.isFinite(Number(candidateYears))) return false;
+  const years = Number(candidateYears);
+  if (req.min != null && years < Number(req.min) - 1) return false;
+  if (req.max != null && years > Number(req.max) + 0.51) return false;
+  return true;
+}
+
+function resumeYearsForAlignment(rj, resumeText) {
+  const summary = String(rj?.professional_summary || '');
+  const corpus = rj ? corpusFromResumeJson(rj) : String(resumeText || '');
+  const m = summary.match(/(\d+(?:\.\d+)?)\+?\s*years?/) || String(corpus).match(/(\d+(?:\.\d+)?)\+?\s*years?/);
+  if (m) {
+    const n = Number(m[1]);
+    if (Number.isFinite(n) && n > 0 && n < 60) return n;
+  }
+  const est = estimateResumeExperienceYears(resumeText || (rj ? resumeJsonToScoreText(rj) : '') || '');
+  return est.years;
 }
 
 function getExperienceGap(requiredYears, candidateYears) {
   return Math.round((candidateYears - requiredYears) * 100) / 100;
 }
 
-function buildExperienceEligibility(requiredYears, candidateYears) {
-  if (requiredYears == null) {
+function buildExperienceEligibility(required, candidateYears) {
+  const req = required && typeof required === 'object'
+    ? required
+    : (required != null ? { min: required, max: null } : null);
+  const min = req?.min ?? null;
+  const max = req?.max ?? null;
+  const need = formatYearsNeed(min, max);
+  if (min == null && max == null) {
     return {
       status: 'neutral',
       tag: '',
@@ -1777,35 +2602,37 @@ function buildExperienceEligibility(requiredYears, candidateYears) {
     return {
       status: 'neutral',
       tag: '',
-      sub: `JD requires ${requiredYears}+ years · could not parse dates on your resume`,
+      sub: `JD asks for ${need || 'experience'} · could not parse dates on your resume`,
     };
   }
-  const gap = getExperienceGap(requiredYears, candidateYears);
-  if (gap < 0) {
+  if (yearsRequirementSatisfied(req, candidateYears)) {
+    const underMin = min != null && candidateYears < min;
+    return {
+      status: 'pass',
+      tag: underMin ? 'Within 1 year' : 'Eligible',
+      sub: max != null
+        ? `Your resume ~${candidateYears} years is inside the JD range (${need})`
+        : `Your resume ~${candidateYears} years meets ${need}`,
+    };
+  }
+  if (min != null && candidateYears < min) {
     return {
       status: 'fail',
       tag: 'Not eligible',
-      sub: `Your resume ~${candidateYears} years · JD requires ${requiredYears}+ years`,
+      sub: `Your resume ~${candidateYears} years · JD requires ${need}`,
     };
   }
-  if (gap > 1) {
+  if (max != null && candidateYears > max) {
     return {
       status: 'fail',
-      tag: 'More than buffer',
-      sub: `Your resume ~${candidateYears} years · more than 1 year above JD ${requiredYears}+ (outside buffer zone)`,
-    };
-  }
-  if (gap >= 1) {
-    return {
-      status: 'pass',
-      tag: 'Can apply',
-      sub: `1 year buffer zone · ~${candidateYears} years on resume vs ${requiredYears} required`,
+      tag: 'Above the range',
+      sub: `Your resume ~${candidateYears} years · JD range is ${need}`,
     };
   }
   return {
-    status: 'pass',
-    tag: 'Eligible',
-    sub: `Your resume ~${candidateYears} years meets ${requiredYears}+ required`,
+    status: 'fail',
+    tag: 'Not eligible',
+    sub: `Your resume ~${candidateYears} years · JD requires ${need}`,
   };
 }
 
@@ -1913,13 +2740,14 @@ function buildEligibilityReport(eligibility, resumeText) {
   const exp = estimateResumeExperienceYears(resumeText);
 
   let yearsJd = (eligibility?.yearsNote || '').trim();
-  let requiredYears = getJdRequiredYears(eligibility);
-  if (!yearsJd && requiredYears) {
-    yearsJd = `${requiredYears}${eligibility?.maxYears ? `–${eligibility.maxYears}` : '+'} years of experience`;
+  let yearsReq = getJdYearsRequirement(eligibility);
+  if (!yearsJd && yearsReq) {
+    const need = formatYearsNeed(yearsReq.min, yearsReq.max);
+    yearsJd = need ? `${need} of experience` : NOT_FOUND;
   }
   if (!yearsJd) yearsJd = NOT_FOUND;
-  if (requiredYears == null && yearsJd !== NOT_FOUND) {
-    requiredYears = parseRequiredYearsFromText(yearsJd);
+  if (!yearsReq && yearsJd !== NOT_FOUND) {
+    yearsReq = getJdYearsRequirement({ yearsNote: yearsJd });
   }
 
   let citizenshipJd = (eligibility?.usCitizenshipText || '').trim();
@@ -1943,7 +2771,7 @@ function buildEligibilityReport(eligibility, resumeText) {
     workAuthJd = parts.length ? parts.join(' · ') : NOT_FOUND;
   }
 
-  const expElig = buildExperienceEligibility(requiredYears, exp.years);
+  const expElig = buildExperienceEligibility(yearsReq, exp.years);
   const workAuthElig = buildWorkAuthEligibility(workAuthJd, wa);
   const citElig = buildCitizenshipEligibility(citizenshipJd, wa);
 
@@ -1973,7 +2801,7 @@ function buildEligibilityReport(eligibility, resumeText) {
     },
   ];
 
-  return { items, experience: exp, requiredYears };
+  return { items, experience: exp, requiredYears: yearsReq?.min ?? null, yearsReq };
 }
 
 function renderEligibilityPanel(report) {
@@ -2061,6 +2889,34 @@ function buildMarketSkillList(ai, ragJd, jdSkills) {
     .slice(0, 14);
 }
 
+/** JD-only keywords for ATS scoring — never internet/market stretch skills. */
+function keywordsForScoring(kw) {
+  const base = kw || {};
+  const primary = scoredSkillTerms(
+    base.jdPrimary?.length ? base.jdPrimary : (base.jdSkills?.length ? base.jdSkills : base.primary || []),
+  ).slice(0, 14);
+  const secondary = scoredSkillTerms(base.jdSecondary || []).filter(s =>
+    !primary.some(p => p.toLowerCase() === String(s).toLowerCase()),
+  ).slice(0, 14);
+  const atsKeywords = filterExtractedSkills(
+    base.atsKeywords?.length ? base.atsKeywords : atsPhrasesFromJdJson(base.jdJson || {}),
+  );
+  return {
+    ...base,
+    primary,
+    secondary,
+    jdPrimary: primary,
+    jdSecondary: secondary,
+    jdSkills: primary,
+    atsKeywords,
+    // Keep market fields for rewrite UI, but scoring paths must ignore them.
+    internetSkills: base.internetSkills || base.marketSkills || [],
+    internetKeywords: base.internetKeywords || [],
+    marketSkills: base.marketSkills || base.internetSkills || [],
+    aliasMap: buildAliasMap(primary, secondary, atsKeywords, []),
+  };
+}
+
 function assembleLockedSkills(jd, ragJd, ai, mode) {
   const aiPrimary = filterExtractedSkills(ai?.jdPrimary || []);
   const aiSecondary = filterExtractedSkills(ai?.jdSecondary || []);
@@ -2084,29 +2940,7 @@ function assembleLockedSkills(jd, ragJd, ai, mode) {
       .filter(s => !jdSkills.some(j => j.toLowerCase() === String(s).toLowerCase()))
       .slice(0, 8);
 
-  if (mode === 'aggressive') {
-    return {
-      role,
-      title: role.title || role.label,
-      primary: jdSkills,
-      secondary: marketSkills,
-      jdPrimary: aiPrimary.length ? aiPrimary : jdSkills.slice(0, 12),
-      jdSecondary: jdSecondaryOnly,
-      atsKeywords,
-      internetSkills,
-      internetKeywords,
-      jdSkills,
-      marketSkills,
-      roleSkills: marketSkills,
-      aliasMap: buildAliasMap(jdSkills, marketSkills, atsKeywords, internetKeywords),
-      source: ai ? 'gemini' : 'rag',
-      analysisSource: ai?.internetUsed ? 'gemini-jd+internet' : (ai ? 'gemini-jd' : 'rag'),
-      geminiUsed: !!ai,
-      internetUsed: !!ai?.internetUsed,
-      _mode: mode,
-    };
-  }
-
+  // primary/secondary are always JD-only (used for scoring). Market skills stay in internetSkills for Stretch rewrite only.
   return {
     role,
     title: role.title || role.label,
@@ -2120,7 +2954,7 @@ function assembleLockedSkills(jd, ragJd, ai, mode) {
     jdSkills,
     marketSkills,
     roleSkills: marketSkills,
-    aliasMap: buildAliasMap(jdSkills, jdSecondaryOnly, atsKeywords, internetKeywords),
+    aliasMap: buildAliasMap(jdSkills, jdSecondaryOnly, atsKeywords, []),
     source: ai ? 'gemini' : 'rag',
     analysisSource: ai?.internetUsed ? 'gemini-jd+internet' : (ai ? 'gemini-jd' : 'rag'),
     geminiUsed: !!ai,
@@ -2138,10 +2972,38 @@ async function analyzeJdWithAiRag(jd) {
   let ai = null;
   let geminiError = null;
   let internetError = null;
+  let jdJson = null;
   try {
-    if (typeof setProgress === 'function') setProgress(10, 'AI is analysing the job description…', 'Extracting skills from the posting…');
-    const jdRaw = await callGemini(buildJdAnalysisPrompt(jd, ragJd), { json: true, maxTokens: 2800 });
-    const jdAi = parseJdAnalysis(parseJsonLoose(jdRaw));
+    if (typeof setProgress === 'function') setProgress(8, 'AI is analysing the job description…', 'Extracting skills from the posting…');
+    jdJson = await parseJdToJson(jd);
+    state.lastJdJson = jdJson;
+
+    let jdAi = jdJsonToAnalysis(jdJson, ragJd);
+    // Only run legacy extract if structured JSON is thin.
+    if ((jdAi.jdPrimary || []).length < 6) {
+      try {
+        if (typeof setProgress === 'function') setProgress(12, 'AI is analysing the job description…', 'Enriching skills from the posting…');
+        const jdRaw = await callGemini(buildJdAnalysisPrompt(jd, ragJd), { json: true, maxTokens: 2800 });
+        const legacy = parseJdAnalysis(parseJsonLoose(jdRaw));
+        if (legacy?.jdPrimary?.length) {
+          jdAi = {
+            ...jdAi,
+            roleTitle: jdAi.roleTitle || legacy.roleTitle,
+            roleLabel: jdAi.roleLabel || legacy.roleLabel,
+            roleFamily: legacy.roleFamily || jdAi.roleFamily,
+            jdPrimary: uniqTerms([...(jdAi.jdPrimary || []), ...(legacy.jdPrimary || [])]).slice(0, 16),
+            jdSecondary: uniqTerms([...(jdAi.jdSecondary || []), ...(legacy.jdSecondary || [])])
+              .filter(s => !(jdAi.jdPrimary || []).concat(legacy.jdPrimary || []).some(p => String(p).toLowerCase() === String(s).toLowerCase()))
+              .slice(0, 12),
+            atsKeywords: uniqTerms([...(jdAi.atsKeywords || []), ...(legacy.atsKeywords || [])]).slice(0, 20),
+            eligibility: mergeEligibility(jdAi.eligibility, legacy.eligibility),
+            _jdJson: jdJson,
+          };
+        }
+      } catch (legacyErr) {
+        console.warn('Legacy JD skill extract failed; using structured JD JSON only:', legacyErr);
+      }
+    }
     if (!jdAi?.jdPrimary?.length) throw new Error('Gemini returned no JD skills');
 
     let internetAi = null;
@@ -2156,6 +3018,7 @@ async function analyzeJdWithAiRag(jd) {
     ai = mergeAiExtractions(jdAi, internetAi);
     if (ai) {
       ai.eligibility = mergeEligibility(ai.eligibility, extractLocalEligibilityFromJd(jd));
+      ai._jdJson = jdJson;
     }
     if (!ai.internetUsed && internetError) {
       ai.internetError = String(internetError.message || internetError).slice(0, 100);
@@ -2163,68 +3026,453 @@ async function analyzeJdWithAiRag(jd) {
   } catch (err) {
     geminiError = err;
     ai = null;
+    if (!jdJson) {
+      try {
+        jdJson = parseJdToJsonLocal(jd);
+        state.lastJdJson = jdJson;
+      } catch { /* ignore */ }
+    }
   }
-  const built = assembleLockedSkills(jd, ragJd, ai, state.mode);
-  built.eligibility = ai?.eligibility || mergeEligibility(null, extractLocalEligibilityFromJd(jd));
+  const built = assembleLockedSkills(jd, ragJd, ai || (jdJson ? jdJsonToAnalysis(jdJson, ragJd) : null), state.mode);
+  built.eligibility = ai?.eligibility || mergeEligibility(
+    jdJson ? jdJsonToAnalysis(jdJson, ragJd).eligibility : null,
+    extractLocalEligibilityFromJd(jd),
+  );
+  built.jdJson = jdJson || state.lastJdJson || null;
   built.geminiError = geminiError ? String(geminiError.message || geminiError).slice(0, 120) : null;
   built.internetError = ai?.internetError || (internetError && !ai ? String(internetError.message || internetError).slice(0, 100) : null);
   return built;
 }
 
-function buildScorePrompt(jd, resume, locked) {
+function buildUnderstandingPrompt(jd, resume) {
+  return `You are a resume and job-description analyst. Do NOT assign a numeric score yet.
+Read both documents carefully and map facts into the A–I JD-alignment categories for a later scorer.
+This is alignment analysis, not a predicted ATS/Workday percentage.
+
+JOB DESCRIPTION:
+${String(jd || '').slice(0, 7000)}
+
+RESUME:
+${String(resume || '').slice(0, 11000)}
+
+Return JSON only:
+{
+  "roleTitle": "exact JD job title",
+  "jdYearsRequired": null,
+  "resumeYears": null,
+  "hardQualifications": {
+    "jdRequires": ["years, degree, work auth, clearance, license, location — only if the JD actually gates on them"],
+    "resumeHas": [],
+    "gaps": [],
+    "knockouts": ["absolute screen-outs such as clearance, license, or required location if unmet"]
+  },
+  "skillsKeywords": {
+    "jdRequires": ["must-have tools/tech from JD"],
+    "resumeHas": [],
+    "resumeMissing": [],
+    "skillsOnly": ["JD must-have tools that appear only in Skills, not experience"]
+  },
+  "responsibilities": {
+    "jdDuties": ["key duties / type of work the JD is hiring for"],
+    "resumeEvidence": ["how experience bullets match those duties"],
+    "gaps": []
+  },
+  "seniority": {
+    "jdLevel": "junior|mid|senior|lead|staff|manager|unknown",
+    "resumeLevel": "junior|mid|senior|lead|staff|manager|unknown",
+    "fit": "strong|partial|weak",
+    "ownershipSignals": ["ownership, production, decisions, troubleshooting, mentoring if present"]
+  },
+  "requiredIndustry": {
+    "jdRequiresIndustry": false,
+    "industries": ["only if the JD explicitly requires healthcare/mortgage/retail/finance/etc experience"],
+    "resumeHas": [],
+    "note": "If the JD does not require industry experience, leave jdRequiresIndustry false even if the company is in that industry."
+  },
+  "evidenceNotes": ["how convincingly skills are demonstrated — listing vs used in work vs scale/result"],
+  "achievementNotes": ["results, business impact, real metrics — never invent numbers"],
+  "structureNotes": ["headers, sections, parse risk, single-column, selectable text"],
+  "titleAlignment": {
+    "jdTitle": "",
+    "resumeTitles": [],
+    "sameFamily": true,
+    "note": "Do not expect past job titles to be rewritten to the JD title."
+  },
+  "readabilityNotes": ["10-second scan: role, years, strongest tech, employers, recent-work fit"],
+  "primary": ["up to 10 must-have tech keywords from JD, exact spelling"],
+  "secondary": ["up to 10 secondary tech keywords"]
+}
+
+Rules:
+- Be factual. Quote tools with JD spelling.
+- Ignore certifications as requirements unless the JD makes them a hard gate.
+- Do not invent employers, degrees, or skills not in the resume.
+- Do not treat company industry as a requirement unless the JD explicitly requires that experience.
+- This is understanding only — no numeric score.`;
+}
+
+/** Structured resume schema (see resume_test/jsonresume.txt). Built BEFORE JD matching / scoring. */
+function buildResumeJsonPrompt(resume) {
+  return `You are a resume parser. Convert the resume into structured JSON only.
+Use ONLY facts present in the resume. Do not invent employers, dates, degrees, or skills.
+
+RESUME:
+${String(resume || '').slice(0, 14000)}
+
+Return JSON with exactly this shape:
+{
+  "personal_information": {
+    "name": "",
+    "location": "",
+    "phone": "",
+    "email": "",
+    "linkedin": ""
+  },
+  "professional_summary": "",
+  "education": [
+    {
+      "degree": "",
+      "start_date": "",
+      "end_date": "",
+      "institution": "",
+      "location": ""
+    }
+  ],
+  "skills": {
+    "languages": [],
+    "frameworks_and_tools": [],
+    "databases": [],
+    "cloud_platforms": [],
+    "visualization": [],
+    "ai_ml": [],
+    "version_control_and_devops": [],
+    "certifications": []
+  },
+  "professional_experience": [
+    {
+      "company": "",
+      "role": "",
+      "start_date": "",
+      "end_date": "",
+      "responsibilities": []
+    }
+  ]
+}
+
+Rules:
+- Put every skill into the best skills.* bucket; leave unused buckets as [].
+- responsibilities = experience bullets only (no Skills-section dump).
+- professional_summary = SUMMARY paragraph only.
+- Empty string / [] when unknown — never guess.`;
+}
+
+function emptyResumeJson() {
+  return {
+    personal_information: { name: '', location: '', phone: '', email: '', linkedin: '' },
+    professional_summary: '',
+    education: [],
+    skills: {
+      languages: [],
+      frameworks_and_tools: [],
+      databases: [],
+      cloud_platforms: [],
+      visualization: [],
+      ai_ml: [],
+      version_control_and_devops: [],
+      certifications: [],
+    },
+    professional_experience: [],
+  };
+}
+
+function normalizeResumeJson(parsed) {
+  const base = emptyResumeJson();
+  if (!parsed || typeof parsed !== 'object') return base;
+  const pi = parsed.personal_information || {};
+  base.personal_information = {
+    name: String(pi.name || '').trim(),
+    location: String(pi.location || '').trim(),
+    phone: String(pi.phone || '').trim(),
+    email: String(pi.email || '').trim(),
+    linkedin: String(pi.linkedin || '').trim(),
+  };
+  base.professional_summary = String(parsed.professional_summary || '').trim();
+  base.education = (Array.isArray(parsed.education) ? parsed.education : []).map(e => ({
+    degree: String(e?.degree || '').trim(),
+    start_date: String(e?.start_date || '').trim(),
+    end_date: String(e?.end_date || '').trim(),
+    institution: String(e?.institution || '').trim(),
+    location: String(e?.location || '').trim(),
+  })).filter(e => e.degree || e.institution);
+  const sk = parsed.skills || {};
+  for (const key of Object.keys(base.skills)) {
+    base.skills[key] = uniqTerms(sk[key] || []).map(s => String(s).trim()).filter(Boolean);
+  }
+  base.professional_experience = (Array.isArray(parsed.professional_experience) ? parsed.professional_experience : [])
+    .map(job => ({
+      company: String(job?.company || '').trim(),
+      role: String(job?.role || '').trim(),
+      start_date: String(job?.start_date || '').trim(),
+      end_date: String(job?.end_date || '').trim(),
+      responsibilities: (Array.isArray(job?.responsibilities) ? job.responsibilities : [])
+        .map(b => String(b || '').trim())
+        .filter(Boolean),
+    }))
+    .filter(j => j.company || j.role || j.responsibilities.length);
+  return base;
+}
+
+/** Flat skill list from structured JSON (Skills section only). */
+function skillsFromResumeJson(rj) {
+  const sk = (rj && rj.skills) || {};
+  return uniqTerms(Object.values(sk).flat().map(s => String(s || '').trim()).filter(Boolean));
+}
+
+/** Experience bullet corpus from structured JSON. */
+function experienceTextFromResumeJson(rj) {
+  return ((rj && rj.professional_experience) || [])
+    .flatMap(j => [j.role, j.company, ...(j.responsibilities || [])])
+    .filter(Boolean)
+    .join('\n');
+}
+
+/** Full searchable corpus from structured JSON (for presence checks). */
+function corpusFromResumeJson(rj) {
+  if (!rj) return '';
+  const pi = rj.personal_information || {};
+  const edu = (rj.education || []).map(e => [e.degree, e.institution, e.location].filter(Boolean).join(' '));
+  return [
+    pi.name, pi.location, pi.email, pi.phone, pi.linkedin,
+    rj.professional_summary,
+    ...skillsFromResumeJson(rj),
+    experienceTextFromResumeJson(rj),
+    ...edu,
+  ].filter(Boolean).join('\n');
+}
+
+function bulletsFromResumeJson(rj) {
+  return ((rj && rj.professional_experience) || []).flatMap(j => j.responsibilities || []).filter(Boolean);
+}
+
+function tenSecondTestFromJson(rj, jj, primary, aliasMap) {
+  const summary = String(rj?.professional_summary || '');
+  const skills = skillsFromResumeJson(rj).join('\n');
+  const exp = experienceTextFromResumeJson(rj);
+  const corpus = corpusFromResumeJson(rj);
+  const found = (primary || []).filter(k => keywordPresent(k, corpus, aliasMap));
+  const bullets = bulletsFromResumeJson(rj);
+  const title = String(jj?.job_information?.title || '');
+  return {
+    role: !!(summary || (rj?.professional_experience || [])[0]?.role),
+    years: /\d+\+?\s*years?/i.test(summary),
+    strongestTech: found.length >= Math.min(3, Math.max((primary || []).length, 1)),
+    cloud: /\b(aws|gcp|azure|google cloud|amazon web services)\b/i.test(`${skills}\n${exp}`),
+    problemsSolved: IMPACT_VERB_RE.test(exp) || OWNERSHIP_RE.test(exp),
+    measurableResults: bullets.filter(b => /\d/.test(b)).length >= Math.max(2, Math.floor(bullets.length * 0.3)),
+    jdMatch: found.length / Math.max((primary || []).length, 1) >= 0.7,
+    notes: [],
+    titleHint: title,
+  };
+}
+
+/** Seed a score object from resume JSON + JD JSON only — no raw-text RAG. */
+function seedUnifiedFromJson(resumeJson, jdJson, keywords) {
+  const jj = jdJson || emptyJdJson();
+  const rj = resumeJson || emptyResumeJson();
+  const kw = keywordsForScoring(keywords || keywordsFromJdJson(jj));
+  ensureAliasMap(kw);
+  const primary = dropCertTerms(kw.primary || jj.must_have_skills || []);
+  const secondary = dropCertTerms(kw.secondary || jj.nice_to_have_skills || []);
+  const aliasMap = kw.aliasMap || {};
+  const bullets = bulletsFromResumeJson(rj);
+  const missingSections = [];
+  if (!rj.professional_summary) missingSections.push('SUMMARY');
+  if (!skillsFromResumeJson(rj).length) missingSections.push('SKILLS');
+  if (!(rj.professional_experience || []).length) missingSections.push('EXPERIENCE');
+  if (!(rj.education || []).length) missingSections.push('EDUCATION');
+  return {
+    title: jj.job_information?.title || kw.title || '',
+    primary,
+    secondary,
+    aliasMap,
+    resumeJson: rj,
+    jdJson: jj,
+    resumeUsed: resumeJsonToScoreText(rj),
+    tenSecondTest: tenSecondTestFromJson(rj, jj, primary, aliasMap),
+    scorecard: {
+      bulletsWithMetrics: bullets.filter(b => /\d/.test(b)).length,
+      bulletsTotal: bullets.length,
+      formatCheck: missingSections.length ? 'WARNING' : 'PASS',
+      formatIssues: [],
+      sectionCheck: missingSections.length ? 'FAIL' : 'PASS',
+      missingSections,
+      jsonScore: true,
+    },
+  };
+}
+
+/**
+ * Heuristic local parse when Gemini is unavailable — same schema as jsonresume.txt.
+ */
+function parseResumeToJsonLocal(resume) {
+  const text = String(resume || '');
+  const lines = text.split(/\r?\n/).map(l => l.trim());
+  const out = emptyResumeJson();
+  const headerIdx = (re) => lines.findIndex(l => re.test(l));
+  const nextHeader = (from) => {
+    for (let i = from + 1; i < lines.length; i++) {
+      if (/^(SUMMARY|PROFESSIONAL SUMMARY|OBJECTIVE|SKILLS|TECHNICAL SKILLS|PROFESSIONAL EXPERIENCE|WORK EXPERIENCE|EXPERIENCE|EDUCATION|PROJECTS|CERTIFICATIONS)\b/i.test(lines[i])
+        && lines[i].length < 60) return i;
+    }
+    return lines.length;
+  };
+  const sliceSection = (re) => {
+    const s = headerIdx(re);
+    if (s < 0) return [];
+    return lines.slice(s + 1, nextHeader(s)).filter(Boolean);
+  };
+
+  const top = lines.slice(0, 8).filter(Boolean);
+  out.personal_information.name = top[0] || '';
+  for (const l of top) {
+    if (/@/.test(l) && !out.personal_information.email) {
+      const m = l.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+      if (m) out.personal_information.email = m[0];
+    }
+    if (/\d{3}[-.\s)]?\d{3}[-.\s]?\d{4}/.test(l) && !out.personal_information.phone) {
+      const m = l.match(/\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/);
+      if (m) out.personal_information.phone = m[0];
+    }
+    if (/linkedin\.com/i.test(l) && !out.personal_information.linkedin) {
+      out.personal_information.linkedin = l.match(/https?:\/\/\S*linkedin\S*/i)?.[0] || 'LinkedIn';
+    }
+    if (/,/.test(l) && /(CA|NY|TX|WA|IL|GA|FL|NJ|MA|CT|VA|NC|USA|India)/i.test(l) && !out.personal_information.location) {
+      out.personal_information.location = l.replace(/[|•].*$/, '').trim();
+    }
+  }
+
+  const sumLines = sliceSection(/^(SUMMARY|PROFESSIONAL SUMMARY|OBJECTIVE)\b/i);
+  out.professional_summary = sumLines.filter(l => !/^[-•]/.test(l)).join(' ').trim();
+
+  const skillLines = sliceSection(/^(SKILLS|TECHNICAL SKILLS)\b/i);
+  const skillBlob = skillLines.join(' ');
+  const skillParts = skillBlob
+    .split(/[:|•,;/]|\n/)
+    .map(s => s.replace(/^[-•\s]+/, '').trim())
+    .filter(s => s.length > 1 && s.length < 48 && !/^(languages?|tools?|cloud|databases?|frameworks?)$/i.test(s));
+  const buckets = out.skills;
+  for (const s of uniqTerms(skillParts).slice(0, 80)) {
+    if (/\b(python|java|scala|sql|javascript|typescript|bash|shell|php|go|r\b|hack|graphql|rest)\b/i.test(s)) buckets.languages.push(s);
+    else if (/\b(aws|gcp|azure|google cloud)\b/i.test(s)) buckets.cloud_platforms.push(s);
+    else if (/\b(mysql|postgres|snowflake|redshift|bigquery|mongodb|cassandra|dynamodb|netezza|hive)\b/i.test(s)) buckets.databases.push(s);
+    else if (/\b(tableau|power bi|looker|streamlit|metabase|quicksight)\b/i.test(s)) buckets.visualization.push(s);
+    else if (/\b(tensorflow|pytorch|scikit|langchain|rag|llm|ml|nlp|xgboost)\b/i.test(s)) buckets.ai_ml.push(s);
+    else if (/\b(git|docker|jenkins|ci\/cd|kubernetes|terraform|composer|step functions)\b/i.test(s)) buckets.version_control_and_devops.push(s);
+    else if (/certif/i.test(s)) buckets.certifications.push(s);
+    else buckets.frameworks_and_tools.push(s);
+  }
+  for (const k of Object.keys(buckets)) buckets[k] = uniqTerms(buckets[k]);
+
+  const expLines = sliceSection(/^(PROFESSIONAL EXPERIENCE|WORK EXPERIENCE|EXPERIENCE)\b/i);
+  let cur = null;
+  for (const l of expLines) {
+    const dateRe = /\b((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4})\s*[-–—to]+\s*((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}|Present|Current)/i;
+    if (dateRe.test(l) || (/\|/.test(l) && !/^[-•]/.test(l) && l.length < 120)) {
+      if (cur) out.professional_experience.push(cur);
+      const dm = l.match(dateRe);
+      const parts = l.split('|').map(p => p.trim());
+      cur = {
+        company: parts.length >= 2 ? parts[0] : (parts[0] || ''),
+        role: parts.length >= 2 ? parts[1].replace(dateRe, '').trim() : '',
+        start_date: dm ? dm[1] : '',
+        end_date: dm ? dm[2] : '',
+        responsibilities: [],
+      };
+      if (parts.length >= 3 && !cur.role) cur.role = parts[1];
+      continue;
+    }
+    if (/^[-•]/.test(l) || (cur && l.length > 40)) {
+      if (!cur) {
+        cur = { company: '', role: '', start_date: '', end_date: '', responsibilities: [] };
+      }
+      cur.responsibilities.push(l.replace(/^[-•\s]+/, '').trim());
+    }
+  }
+  if (cur) out.professional_experience.push(cur);
+
+  const eduLines = sliceSection(/^EDUCATION\b/i);
+  for (let i = 0; i < eduLines.length; i++) {
+    const l = eduLines[i];
+    if (/bachelor|master|b\.?s\.?|m\.?s\.?|b\.?tech|m\.?tech|ph\.?d/i.test(l)) {
+      const dm = l.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}|\d{4})\s*[-–—to]+\s*((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}|\d{4}|Present)/i);
+      out.education.push({
+        degree: l.replace(dm?.[0] || '', '').replace(/\|/g, ' ').trim(),
+        start_date: dm ? dm[1] : '',
+        end_date: dm ? dm[2] : '',
+        institution: eduLines[i + 1] && !/bachelor|master|b\.?s/i.test(eduLines[i + 1]) ? eduLines[i + 1] : '',
+        location: '',
+      });
+    }
+  }
+  return normalizeResumeJson(out);
+}
+
+async function parseResumeToJson(resume) {
+  const text = String(resume || '');
+  try {
+    const raw = await callGemini(buildResumeJsonPrompt(text), { json: true, maxTokens: 4000 });
+    const parsed = normalizeResumeJson(parseJsonLoose(raw));
+    const hasSignal = parsed.personal_information.name
+      || parsed.professional_experience.length
+      || skillsFromResumeJson(parsed).length;
+    if (hasSignal) return parsed;
+  } catch (err) {
+    console.warn('Resume JSON parse (Gemini) failed:', err);
+  }
+  return parseResumeToJsonLocal(text);
+}
+
+function buildScorePrompt(jd, resume, locked, understanding) {
   const lockedBlock = locked?.primary?.length
     ? `LOCKED KEYWORDS — score ONLY against these lists. Return them unchanged as "primary" and "secondary". Do not extract a new keyword list.
 PRIMARY: ${locked.primary.join(', ')}
 SECONDARY: ${(locked.secondary || []).join(', ')}
 A keyword is FOUND if it or a close variant appears (Spark counts for Apache Spark, Airflow for Apache Airflow).
 
-STRICT SCORING CALIBRATION — match external ATS tools (ChatGPT, Claude, Grok, Workday, Greenhouse, iCIMS):
-- keywordsInExperience: award 2-3 pts per primary keyword that appears with context in an EXPERIENCE bullet (not just listed in Skills). Max 25 only if ALL primary keywords appear in experience with demonstrated usage.
-- keywordCredibility: 10 only if every skill is backed by a specific project/achievement. Deduct for skills listed but never demonstrated. A skills-dump section alone = max 5.
-- secondaryKeywords: count how many of the 10 secondary keywords appear anywhere. Score = (count/10) * 8, rounded.
-- quantified: count bullets with real numbers/percentages/metrics. Score = min(bulletsWithMetrics * 2, 15). Zero metrics = 0.
-- achievementsNotDuties: deduct for bullets starting with "Responsible for", "Duties include", or passive language. 8 = all achievement-focused.
-- tenSecond: does the top third (summary + first job) clearly state role, years, primary stack, and cloud? Partial = partial credit.
-- format: 8 only for clean single-column, ALL-CAPS headers, consistent bullet style, no tables/icons/graphics. Deduct 2 per issue.
-- structure: 6 if SUMMARY, SKILLS (grouped by category), EXPERIENCE, EDUCATION all present and well-organized. Missing certifications never reduce this.
-- bulletQuality: 8 only if bullets follow action-tech-result pattern and are 1-2 lines. Deduct for vague or overlong bullets.
-
-IMPORTANT: Score strictly. A typical well-tailored resume scores 75-85. Only exceptional resumes with perfect keyword coverage, all quantified bullets, and flawless formatting reach 90+. Scores of 95-100 should be extremely rare. If you would give 95+, re-examine each sub-score critically — at least 2 sub-scores should have deductions.
-Do NOT inflate scores. External AI ATS tools are harsh — match their calibration.`
+Score each ${SCORE_RULE_NAME} category using the weights below. Be strict and evidence-based.
+IMPORTANT: Score ONLY against JD skills above. Do NOT require or deduct for internet/market/job-board stretch skills.`
     : `Extract exactly 10 primary and 10 secondary ATS keywords using the JD's exact spelling (Apache Spark not just Spark when the JD says Apache Spark).
-Keywords must be technologies, tools, platforms, and role skills ONLY.`;
+Keywords must be technologies, tools, platforms, and role skills ONLY from the JD — not generic market skills.`;
 
-  return `You are a strict ATS scoring engine. Simulate how ChatGPT / Claude / Grok score a resume when a user pastes the JD + resume and asks for an ATS match score out of 100. You must NOT inflate scores.
+  const understandingBlock = understanding
+    ? `PRIOR UNDERSTANDING (from a separate analysis pass — treat as ground truth for what the JD wants and what the resume shows):
+${JSON.stringify(understanding).slice(0, 6500)}
 
-Score this resume against the job description using the 20-rule US resume rubric. Return ONLY JSON.
+Use this understanding to score. Do not contradict clear facts in the analysis. Still verify against the resume text.`
+    : 'No prior analysis was provided — infer carefully from the JD and resume, then score.';
 
-IMPORTANT — MATCH EXTERNAL AI ATS BEHAVIOR:
-- ChatGPT typically scores skills-listed-but-not-in-bullets resumes around 70-80.
-- A well-tailored resume with most JD tools proven in experience usually lands 82-90.
-- 90+ requires near-complete primary coverage IN EXPERIENCE, ≥70% quantified bullets, exact JD title, and achievement language.
-- 95+ is rare. If you would give 95+, force at least two sub-score deductions and re-check.
-- Prefer evidence over keyword presence. Do not reward comma-dump skills sections.
+  return `You are a strict JD-alignment scorer, not an ATS vendor simulator. A prior analyst already mapped the JD and resume.
+Now score ONLY with the ${SCORE_RULE_NAME} (sums to 100). Do NOT use any other rubric. Return ONLY JSON.
+${SCORE_INTERPRETATION}
 
-RULES TO APPLY:
-1. 1-2 pages. 2. Tailor to JD — technologies must appear in EXPERIENCE, not only Skills. 3. Do not credit skills with no evidence. 4. Every bullet should answer "so what?" (action → technology → problem → result). 5. Quantify when numbers exist; do not invent. 6. Achievements over responsibilities. 7. Strongest info in top third. 8. No generic objective. 9-10. Use JD terminology when accurate. 11. No graphics/icons/tables/columns. 12. No sensitive personal data. 13. Concise education. 14. Only relevant projects. 15. Experience is the main section. 16. Short bullets, not paragraphs. 17. Technologies must be interview-defensible. 18. Do not reward exaggerated ownership language if the original was "contributed". 19. Show career progression. 20. This resume should look like a targeted version of a master resume.
+${understandingBlock}
 
-RUBRIC (sum to 100):
-- keywordsInExperience 0-25: primary JD tech appears in experience bullets (not just Skills section). 2-3 pts per keyword with demonstrated usage in a bullet. Max 25 only if ALL primary keywords appear in experience.
-- keywordCredibility 0-10: skills are demonstrated in work, not dumped. If skills only appear in a Skills section without evidence in experience bullets, max 5.
-- secondaryKeywords 0-8: score proportionally — (found / total) * 8
-- quantified 0-15: count bullets with real numbers/percentages. Score = min(count * 2, 15). No metrics = 0.
-- achievementsNotDuties 0-8: deduct for "Responsible for" or passive duty descriptions
-- tenSecond 0-12: top third answers who / years / stack / cloud clearly
-- format 0-8: ALL-CAPS headers, hyphen bullets, single column, no tables/icons. Deduct 2 per issue found.
-- structure 0-6: SUMMARY, SKILLS (grouped), EXPERIENCE, EDUCATION. CERTIFICATIONS are optional and never affect this score.
-- bulletQuality 0-8: 1-2 lines, action-tech-result pattern. Deduct for vague or overlong bullets.
+SCORE RULE (sum to 100):
+A. hardQualifications 0-20 — years vs JD, education/degree, work authorization if stated. Score industry ONLY if the JD explicitly requires that industry experience. Identify absolute knockouts separately (clearance, license, required location) — a resume can score well overall and still be screened out.
+B. skillsKeywords 0-20 — important JD skills appear naturally. Skills-section hits help; experience bullets that connect the tool to real work are stronger. Do not reward stuffing the same keyword.
+C. semanticResponsibilityMatch 0-20 — has this person done the type of work the JD is hiring for? Keyword overlap without matching responsibilities is weak.
+D. skillsEvidenceContext 0-10 — listing a skill is weak; using it in a bullet is better; action + scale/result is strongest. Never assume invented metrics.
+E. experienceSeniorityMatch 0-10 — appropriate for the JD level: ownership, production systems, technical decisions, troubleshooting, optimization, collaboration, mentoring if relevant. Not just "worked on tickets."
+F. achievementsImpact 0-8 — results vs activities. Real metrics help; never invent numbers.
+G. resumeParsingStructure 0-5 — clear SUMMARY/SKILLS/EXPERIENCE/EDUCATION, company/title/dates identifiable, single-column, no graphics, selectable text.
+H. jobTitleAlignment 0-2 — role-family alignment only (any role). Similar families count as aligned. Do not expect past titles to be rewritten.
+I. recruiterReadability 0-5 — 10-second scan: role, years, strongest tech, employers, recent-work fit.
 
-CALIBRATION: A well-tailored resume typically scores 75-85. Only exceptional resumes reach 90+. Scores above 95 are extremely rare — if you compute 95+, re-check each sub-score for at least 2 deductions. Match the strictness of ChatGPT/Claude/Grok ATS checkers.
+Do NOT score generic company industry. Do NOT treat the total as a Workday/Greenhouse prediction.
+CALIBRATION: Typical tailored resume 75-88. 90+ needs strong A/B/C plus solid D. 95+ is rare.
 
 ${lockedBlock}
-Do NOT extract certifications, licenses, or credential names (AWS Certified, PMP, Snowflake Certified, etc.).
-Do NOT deduct points, list gaps, or fail sections because certifications are missing or a CERTIFICATIONS section is absent.
-A resume with no certifications is complete. Ignore cert requirements in the JD.
+Do NOT extract certifications or deduct for missing CERTIFICATIONS.
 
 JOB DESCRIPTION:
 ${jd.slice(0, 8000)}
@@ -2239,16 +3487,17 @@ Return JSON:
   "secondary": ["10 keywords"],
   "atsScore": <sum of ruleScores, integer>,
   "ruleScores": {
-    "keywordsInExperience": 0,
-    "keywordCredibility": 0,
-    "secondaryKeywords": 0,
-    "quantified": 0,
-    "achievementsNotDuties": 0,
-    "tenSecond": 0,
-    "format": 0,
-    "structure": 0,
-    "bulletQuality": 0
+    "hardQualifications": 0,
+    "skillsKeywords": 0,
+    "semanticResponsibilityMatch": 0,
+    "skillsEvidenceContext": 0,
+    "experienceSeniorityMatch": 0,
+    "achievementsImpact": 0,
+    "resumeParsingStructure": 0,
+    "jobTitleAlignment": 0,
+    "recruiterReadability": 0
   },
+  "hardKnockouts": [],
   "keywordsFound": [],
   "keywordsMissing": [],
   "secondaryFound": [],
@@ -2275,6 +3524,234 @@ Return JSON:
     "notes": []
   }
 }`;
+}
+
+/** Build locked scoring keywords from structured JD JSON. */
+function keywordsFromJdJson(jdJson) {
+  const j = jdJson || emptyJdJson();
+  const primary = scoredSkillTerms(j.must_have_skills || []).slice(0, 14);
+  const secondary = scoredSkillTerms(j.nice_to_have_skills || [])
+    .filter(s => !primary.some(p => p.toLowerCase() === String(s).toLowerCase())).slice(0, 14);
+  const atsKeywords = atsPhrasesFromJdJson(j);
+  const analysis = jdJsonToAnalysis(j);
+  const title = j.job_information?.title || '';
+  return keywordsForScoring({
+    primary,
+    secondary,
+    jdPrimary: primary,
+    jdSecondary: secondary,
+    jdSkills: primary,
+    atsKeywords,
+    title,
+    role: { title, label: title, family: roleFamilyFromTitle(title) },
+    jdJson: j,
+    eligibility: analysis.eligibility,
+    source: 'jd-json',
+    geminiUsed: true,
+    aliasMap: buildAliasMap(primary, secondary, atsKeywords),
+  });
+}
+
+/** Flatten JD JSON into short text for local score helpers. */
+function jdJsonToScoreText(jdJson) {
+  const j = jdJson || {};
+  return [
+    j.job_information?.title,
+    j.job_information?.location,
+    j.overview,
+    j.years_of_experience?.note,
+    `Must-have: ${(j.must_have_skills || []).join(', ')}`,
+    `Nice-to-have: ${(j.nice_to_have_skills || []).join(', ')}`,
+    `ATS phrases: ${(j.ats_phrases || []).join(', ')}`,
+    `Responsibilities:\n${(j.responsibilities || []).map(r => `- ${r}`).join('\n')}`,
+    j.requirements?.education,
+    j.requirements?.experience,
+    ...(j.requirements?.hard_gates || []),
+    j.requirements?.work_authorization,
+    `Industry (score only if JD requires it): ${(j.domain_industry || []).join(', ')}`,
+  ].filter(Boolean).join('\n');
+}
+
+/** Flatten resume JSON into plain text for local score helpers. */
+function resumeJsonToScoreText(resumeJson) {
+  const r = resumeJson || {};
+  const pi = r.personal_information || {};
+  const skills = skillsFromResumeJson(r);
+  const jobs = (r.professional_experience || []).map(job => [
+    [job.company, job.role, job.start_date, job.end_date].filter(Boolean).join(' | '),
+    ...(job.responsibilities || []).map(b => `- ${b}`),
+  ].join('\n')).join('\n\n');
+  const edu = (r.education || []).map(e =>
+    [e.degree, e.institution, e.location, e.start_date, e.end_date].filter(Boolean).join(' | ')
+  ).join('\n');
+  return [
+    pi.name,
+    [pi.location, pi.phone, pi.email, pi.linkedin].filter(Boolean).join(' | '),
+    'SUMMARY',
+    r.professional_summary || '',
+    'SKILLS',
+    skills.join(', '),
+    'PROFESSIONAL EXPERIENCE',
+    jobs,
+    'EDUCATION',
+    edu,
+  ].filter(Boolean).join('\n');
+}
+
+function buildScoreRulePrompt(resumeJson, jdJson, locked) {
+  const primary = locked?.primary || jdJson?.must_have_skills || [];
+  const secondary = locked?.secondary || jdJson?.nice_to_have_skills || [];
+  return `You are a strict JD-alignment scorer (not an ATS vendor simulator).
+Score ONLY from the structured RESUME JSON and JD JSON below using the ${SCORE_RULE_NAME} (sum 100).
+Do not invent skills or experience that are not in the resume JSON.
+Do not use internet/market skills.
+${SCORE_INTERPRETATION}
+
+SCORE RULE (sum to 100) — points = round((matched ÷ total) × weight).
+A. hardQualifications 0-20 — applicable gates (years, education, work auth if stated, industry ONLY if the JD explicitly requires it). List absolute knockouts separately.
+B. skillsKeywords 0-20 — must-have credit: missing=0, Skills-only=0.45, in experience=1.0. Do not reward stuffing.
+C. semanticResponsibilityMatch 0-20 — JD responsibilities mirrored in experience ÷ duty count × 20.
+D. skillsEvidenceContext 0-10 — evidence quality of must-haves (list=weak, used in work=better, scale/result=strongest).
+E. experienceSeniorityMatch 0-10 — seniority/ownership/production checks ÷ checks × 10.
+F. achievementsImpact 0-8 — result/impact checks ÷ checks × 8. Never invent metrics.
+G. resumeParsingStructure 0-5 — SUMMARY/SKILLS/EXPERIENCE/EDUCATION present ÷ 4 × 5.
+H. jobTitleAlignment 0-2 — role-family alignment, not exact past-title rewrite.
+I. recruiterReadability 0-5 — 10-second scan checks ÷ checks × 5.
+
+Do not score generic company industry. Do not invent other formulas. Return ruleScores that match this coverage math.
+
+LOCKED PRIMARY (must-haves): ${primary.join(', ')}
+LOCKED SECONDARY: ${secondary.join(', ')}
+
+A skill is FOUND only if it appears in resume JSON skills buckets or experience responsibilities (or close variant).
+Return primary/secondary unchanged.
+
+JD JSON:
+${JSON.stringify(jdJson || {}).slice(0, 7000)}
+
+RESUME JSON:
+${JSON.stringify(resumeJson || {}).slice(0, 10000)}
+
+Return JSON only:
+{
+  "title": "<JD job title>",
+  "primary": ${JSON.stringify(primary.slice(0, 14))},
+  "secondary": ${JSON.stringify(secondary.slice(0, 14))},
+  "atsScore": <sum of ruleScores>,
+  "ruleScores": {
+    "hardQualifications": 0,
+    "skillsKeywords": 0,
+    "semanticResponsibilityMatch": 0,
+    "skillsEvidenceContext": 0,
+    "experienceSeniorityMatch": 0,
+    "achievementsImpact": 0,
+    "resumeParsingStructure": 0,
+    "jobTitleAlignment": 0,
+    "recruiterReadability": 0
+  },
+  "hardKnockouts": [],
+  "keywordsFound": [],
+  "keywordsMissing": [],
+  "secondaryFound": [],
+  "secondaryMissing": [],
+  "bulletsWithMetrics": 0,
+  "bulletsTotal": 0,
+  "summaryScore": 0,
+  "formatCheck": "PASS",
+  "formatIssues": [],
+  "sectionCheck": "PASS",
+  "missingSections": [],
+  "confidenceLevel": "High",
+  "confidenceReason": "Scored from structured resume JSON + JD JSON using ${SCORE_RULE_NAME}.",
+  "gaps": [],
+  "improvementSuggestions": [],
+  "tenSecondTest": {
+    "role": true,
+    "years": true,
+    "strongestTech": true,
+    "cloud": true,
+    "problemsSolved": true,
+    "measurableResults": true,
+    "jdMatch": true,
+    "notes": []
+  }
+}`;
+}
+
+/**
+ * Score a resume against a JD using ONLY the 9-point alignment rubric.
+ * Same function for the base resume and the tailored resume.
+ * JSON structure is input; Gemini does not assign the numeric score.
+ */
+function scoreWithNinePointRule(jd, resume, { resumeJson = null, jdJson = null, keywords = null } = {}) {
+  const jj = jdJson || state.lastJdJson || null;
+  const rj = resumeJson || state.lastResumeJson || null;
+  const kw = keywordsForScoring(keywords || state.keywords || (jj ? keywordsFromJdJson(jj) : {}) || {});
+  ensureAliasMap(kw);
+
+  let seed;
+  if (rj && jj) {
+    seed = seedUnifiedFromJson(rj, jj, kw);
+  } else {
+    const resumeText = String(resume || '');
+    const jdText = String(jd || '') || (jj ? jdJsonToScoreText(jj) : '');
+    seed = ragToUnified(jdText, resumeText, kw);
+    seed.resumeJson = rj;
+    seed.jdJson = jj;
+    seed.resumeUsed = resumeText;
+    seed.primary = kw.primary || seed.primary;
+    seed.secondary = kw.secondary || [];
+    seed.aliasMap = kw.aliasMap || seed.aliasMap;
+    seed.title = kw.title || jj?.job_information?.title || seed.title;
+  }
+
+  const resumeText = seed.resumeUsed || String(resume || '');
+  const unified = reconcileKeywordPresence(seed, resumeText, rj);
+  syncDisplayedAlignmentScore(unified);
+  unified.source = 'nine-point-json';
+  unified.resumeJson = rj;
+  unified.jdJson = jj;
+  if (jj?.job_information?.title) unified.title = jj.job_information.title;
+  if (unified.scorecard) {
+    unified.scorecard.ruleScores = unified.ruleScores;
+    unified.scorecard.atsScore = unified.atsScore;
+    unified.scorecard.scoreRule = SCORE_RULE_NAME;
+    unified.scorecard.resumeJsonUsed = !!rj;
+    unified.scorecard.jdJsonUsed = !!jj;
+    unified.scorecard.jsonScore = !!(rj && jj);
+    unified.scorecard.scoreInterpretation = SCORE_INTERPRETATION;
+    unified.scorecard.tenSecondTest = unified.tenSecondTest || seed.tenSecondTest || unified.scorecard.tenSecondTest;
+    unified.scorecard.confidenceReason = rj && jj
+      ? `Scored from resume JSON + JD JSON with the 9-point rubric. ${SCORE_INTERPRETATION}`
+      : `9-point JD alignment (A–I sum only). ${SCORE_INTERPRETATION}`;
+  }
+  return unified;
+}
+
+/**
+ * Score using structured resume JSON + JD JSON and the 100-point JD-alignment rule.
+ * Skips internet skills and raw-text inventing. Numeric score is the 9-point rubric only.
+ */
+async function scoreFromStructuredJson(resumeJson, jdJson, { resumeText = '', jdText = '' } = {}) {
+  const rj = resumeJson || state.lastResumeJson;
+  const jj = jdJson || state.lastJdJson;
+  if (!rj || !jj) throw new Error('Structure resume + JD into JSON first');
+
+  const kw = keywordsFromJdJson(jj);
+  state.keywords = { ...(state.keywords || {}), ...kw, jdJson: jj };
+  ensureAliasMap(state.keywords);
+
+  const resumeForLocal = resumeText || resumeJsonToScoreText(rj);
+  const jdForLocal = jdText || jdJsonToScoreText(jj);
+
+  updateAiProcessing(`Scoring with the 9-point ${SCORE_RULE_NAME}…`);
+  const unified = scoreWithNinePointRule(jdForLocal, resumeForLocal, {
+    resumeJson: rj,
+    jdJson: jj,
+    keywords: state.keywords,
+  });
+  unified.title = jj.job_information?.title || unified.title;
+  return { unified, resume: resumeForLocal, resumeJson: rj, jdJson: jj };
 }
 
 function missingSkillReport(keywords, resume) {
@@ -2305,12 +3782,126 @@ function missingSkillReport(keywords, resume) {
   };
 }
 
+function skillsPresentOnMaster(terms, masterText, aliasMap) {
+  const text = String(masterText || '');
+  const map = aliasMap || state.keywords?.aliasMap || {};
+  return (terms || []).filter(k => keywordPresent(k, text, map));
+}
+
+function skillsMissingFromMaster(terms, masterText, aliasMap) {
+  const text = String(masterText || '');
+  const map = aliasMap || state.keywords?.aliasMap || {};
+  return (terms || []).filter(k => k && !keywordPresent(k, text, map));
+}
+
+/** Preferred / secondary / market tools — Stretch mode only. */
+function stretchOnlyGaps(keywords, masterText, missingReport) {
+  const master = String(masterText || '');
+  const aliasMap = keywords?.aliasMap || state.keywords?.aliasMap || {};
+  const fromKw = uniqTerms([
+    ...dropCertTerms(keywords?.secondary || []),
+    ...dropCertTerms(keywords?.jdSecondary || []),
+    ...dropCertTerms(keywords?.internetSkills || keywords?.marketSkills || []),
+  ]);
+  const fromReport = dropCertTerms((missingReport && missingReport.extra) || []);
+  return dropEligibilityTerms(uniqTerms([...fromKw, ...fromReport]))
+    .filter(k => !keywordPresent(k, master, aliasMap));
+}
+
 function skillsToInject(missingReport, resumeText) {
-  const important = dropCertTerms((missingReport && missingReport.important) || []);
-  const extra = dropCertTerms((missingReport && missingReport.extra) || []);
-  const list = state.mode === 'aggressive' ? uniqTerms([...important, ...extra]) : important;
+  const important = dropEligibilityTerms(dropCertTerms((missingReport && missingReport.important) || []));
+  const extra = dropEligibilityTerms(dropCertTerms((missingReport && missingReport.extra) || []));
   const profile = (missingReport && missingReport.candidateProfile) || detectCandidateProfile(resumeText || '');
+
+  // Stay truthful: add JD must-have (primary) skills only — never Stretch-only preferred/secondary/market.
+  // Stretch mode: add must-haves + stretch gaps.
+  const list = state.mode === 'aggressive'
+    ? uniqTerms([...important, ...extra])
+    : important;
+
   return filterTermsForCandidateProfile(list, resumeText || '', profile);
+}
+
+/** Scrub Stretch-only tools not on master. Keep JD must-haves that truthful mode intentionally added. */
+function scrubSkillsNotOnMaster(resume, masterResume, keywords) {
+  const master = String(masterResume || '');
+  const text = String(resume || '');
+  if (!master || !text || state.mode === 'aggressive') return text;
+  const aliasMap = keywords?.aliasMap || {};
+  const primary = new Set(
+    dropEligibilityTerms(dropCertTerms(uniqTerms([
+      ...(keywords?.primary || []),
+      ...(keywords?.jdPrimary || []),
+    ]))).map(s => String(s).toLowerCase()),
+  );
+  const stretchTools = uniqTerms([
+    ...dropCertTerms(keywords?.secondary || []),
+    ...dropCertTerms(keywords?.jdSecondary || []),
+    ...dropCertTerms(keywords?.internetSkills || keywords?.marketSkills || []),
+    ...filterExtractedSkills(keywords?.atsKeywords || []),
+  ]).filter(k => !primary.has(String(k).toLowerCase()));
+  const invented = uniqTerms([
+    ...skillsMissingFromMaster(stretchTools, master, aliasMap),
+    ...stretchTools.filter(isEligibilityTerm),
+  ]);
+  if (!invented.length) return text;
+
+  const lines = text.split('\n');
+  const bounds = skillsSectionBounds(lines);
+  if (!bounds) return text;
+  const inventLower = invented.map(s => String(s).toLowerCase()).sort((a, b) => b.length - a.length);
+  for (let i = bounds.start; i < bounds.end; i++) {
+    let line = lines[i];
+    if (!line.trim() || isSectionHeader(line)) continue;
+    const labelMatch = line.match(/^(\s*[^:]{2,40}:\s*)/);
+    const label = labelMatch ? labelMatch[1] : '';
+    let body = labelMatch ? line.slice(label.length) : line;
+    for (const inv of inventLower) {
+      if (inv.length < 3) continue;
+      if (primary.has(inv)) continue;
+      const re = new RegExp(escapeRegExp(inv).replace(/\s+/g, '\\s+'), 'ig');
+      body = body.replace(re, ' ');
+    }
+    const parts = body.split(/([,;|/])/);
+    const kept = [];
+    for (let p = 0; p < parts.length; p++) {
+      const part = parts[p];
+      if (/^[,;|/]$/.test(part)) {
+        if (kept.length && !/^[,;|/]$/.test(kept[kept.length - 1])) kept.push(part);
+        continue;
+      }
+      const token = part.trim();
+      if (!token) {
+        kept.push(part);
+        continue;
+      }
+      const tok = token.toLowerCase();
+      if (primary.has(tok)) {
+        kept.push(part);
+        continue;
+      }
+      const isInvented = isEligibilityTerm(token)
+        || (inventLower.some(inv => tok === inv || (inv.length >= 4 && (tok.includes(inv) || inv.includes(tok))))
+          && !keywordPresent(token, master, aliasMap));
+      if (!isInvented) kept.push(part);
+    }
+    let nextBody = kept.join('')
+      .replace(/\s*([,;|/])\s*([,;|/])+/g, '$1 ')
+      .replace(/^\s*[,;|/]+\s*/, '')
+      .replace(/\s*[,;|/]+\s*$/, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    lines[i] = nextBody ? `${label}${nextBody}` : '';
+  }
+  return lines.filter((l, idx) => {
+    if (idx < bounds.start || idx >= bounds.end) return true;
+    if (!String(l).trim()) return true;
+    return !/^\s*[^:]{2,40}:\s*$/.test(l);
+  }).join('\n');
+}
+
+function escapeRegExp(s) {
+  return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function normAtsText(s) {
@@ -2516,9 +4107,9 @@ function formatRoleKeywordPlan(plan) {
   }).join('\n');
 }
 
-function buildRewritePrompt(jd, resume, keywords, missingReport) {
-  const primary = keywords.primary || [];
-  const secondary = keywords.secondary || [];
+function buildRewritePrompt(jd, resume, keywords, missingReport, scoreUnified) {
+  const primary = dropEligibilityTerms(keywords.primary || []);
+  const secondary = dropEligibilityTerms(keywords.secondary || []);
   const roles = extractRolesFromResume(resume);
   const cf = extractContactFields(resume);
   const headline = currentHeadline();
@@ -2526,38 +4117,72 @@ function buildRewritePrompt(jd, resume, keywords, missingReport) {
   const masterSkills = masterSkillsBlock(resume);
   const candidateProfile = detectCandidateProfile(resume);
   const mustAdd = skillsToInject(missingReport, resume);
+  const stretchGaps = stretchOnlyGaps(keywords, resume, missingReport);
   const atsMustAdd = filterAtsPhrasesForCandidate(
     atsPhrasesToInject(missingReport),
     resume,
     candidateProfile,
   );
-  const atsAll = filterExtractedSkills(keywords.atsKeywords || []);
+  // Truthful: ATS phrases from JD are OK; Stretch-only preferred phrases stay out
+  const atsAll = filterExtractedSkills(keywords.atsKeywords || [])
+    .filter(p => aggressive || !stretchGaps.some(s => String(s).toLowerCase() === String(p).toLowerCase()));
   const summaryKw = summaryKeywordList(keywords, resume);
   const rolePlan = planExperienceKeywords(resume, keywords);
   const extraBlock = extraSectionsPromptBlock(resume);
   const profileBlock = formatCandidateProfileBlock(candidateProfile);
+  const scoreUnifiedSafe = scoreUnified || state.lastAtsUnified;
+  const scoreReport = formatScoreRuleGapReport(scoreUnifiedSafe);
+  const rolePivot = formatRolePivotBlock(jd, resume, keywords);
+  const jdContract = formatJdProfileContract(jd, resume, keywords);
+  const closeList = formatMandatoryCloseList(scoreUnifiedSafe, mustAdd, atsMustAdd);
+  const formatMust = formatMandatoryTemplateBlock(headline, resume);
+
+  const stretchBan = !aggressive
+    ? `STRETCH-ONLY — DO NOT ADD (only when Stretch mode is selected):
+${(stretchGaps.length ? stretchGaps : secondary).slice(0, 20).map(s => `  - ${s}`).join('\n') || '  - (none listed)'}
+These preferred/secondary/market items must stay OFF the page in Stay truthful.`
+    : `STRETCH MODE — you MAY add these stack-aligned stretch skills when honest enough to defend:
+${mustAdd.filter(s => stretchGaps.some(g => String(g).toLowerCase() === String(s).toLowerCase())).join(', ') || stretchGaps.slice(0, 14).join(', ') || 'none'}`;
 
   const integrityBlock = aggressive
     ? `STRETCH FOR THE POSTING MODE:
-- SUCCESS METRIC: ATS score must be ${SCORE_THRESHOLD}+ / 100.
-- ADD missing JD skills that fit the master. Weave a cloud into experience only when it already fits that role or employer (Microsoft→Azure, Amazon→AWS, Google→GCP). Do not force every master cloud into every company.
+- SUCCESS METRIC: ${SCORE_RULE_NAME} score must be ${SCORE_THRESHOLD}+ / 100.
+- ADD JD must-have skills AND Stretch-only gaps that fit the candidate stack.
 - MUST ADD THESE SKILLS (stack-aligned): ${mustAdd.join(', ') || 'none — already covered'}
 - MUST WEAVE THESE JD ATS PHRASES naturally (only if they fit the candidate stack): ${atsMustAdd.join(' · ') || 'none — already covered'}
-- Preserve name, contact, companies, job titles, dates, education.
+- Preserve name, contact, companies, PAST job titles, dates, education (past titles stay as on master; Line 2 = TARGET JD title).
 - NEVER add certifications that are not in the master resume.
-- Do not invent employers, degrees, or job titles.`
+- Do not invent employers, degrees, or job titles.
+${stretchBan}`
     : `STAY TRUTHFUL MODE:
-- SUCCESS METRIC: ATS score must be ${SCORE_THRESHOLD}+ / 100.
-- Keep companies, job titles, dates, education, and ownership language honest.
-- ADD only JD skills evidenced on the master. Do not force every cloud into experience — weave a cloud only when it fits that role/employer.
-- MUST ADD THESE JD SKILLS (stack-aligned): ${mustAdd.join(', ') || 'none — already covered'}
-- MUST WEAVE THESE JD ATS PHRASES naturally: ${atsMustAdd.join(' · ') || 'none — already covered'}
-- Do NOT add market-only stretch skills that are not in the JD and not on the master resume.
-- Do NOT add certifications. Do not invent employers, degrees, or fake job history.`;
+- SUCCESS METRIC: ${SCORE_RULE_NAME} score must be ${SCORE_THRESHOLD}+ / 100.
+- ADD JD must-have (primary) skills into SKILLS + experience bullets (exact JD spelling).
+- MUST ADD THESE JD SKILLS: ${mustAdd.join(', ') || 'none — already covered'}
+- MUST WEAVE THESE JD ATS PHRASES naturally: ${atsMustAdd.filter(p => !stretchGaps.some(s => String(s).toLowerCase() === String(p).toLowerCase())).join(' · ') || 'none — already covered'}
+- Do NOT add Stretch-only / preferred / secondary / market skills unless Stretch mode is selected.
+- Do NOT add clearances, DOD Secret, citizenship, or eligibility into SKILLS or SUMMARY.
+- Do NOT add certifications. Do not invent employers, degrees, or fake job history.
+- Keep companies, PAST titles, dates, education, and ownership language honest. Line 2 = TARGET JD title.
+${stretchBan}`;
 
-  return `You are a US full-time resume writer. Rewrite the MASTER resume into the EXACT Anirudh Word template (Calibri, US Letter, 1 page preferred / 2 max).
+  return `You are a US full-time resume writer. Rewrite the MASTER resume into the EXACT Anirudh Word template (Calibri, US Letter, 1 page preferred / 2 max). Format is mandatory — same priority as closing score-rule gaps.
 
 ${integrityBlock}
+
+${formatMust}
+
+${jdContract}
+
+${rolePivot}
+
+${closeList}
+
+${formatTwentyRulesRewriteBlock()}
+
+${formatAiRubricRewriteTargets()}
+
+SCORE-RULE REPORT (what failed / what we got — close these gaps completely):
+${scoreReport}
 
 ${profileBlock}
 
@@ -2571,19 +4196,19 @@ LOCKED CONTACT — use exactly these formatted values:
 
 ${roles.length ? `MANDATORY ROLES (${roles.length}) — output all of them:\n${roles.map((r, i) => `  ${i + 1}. ${r}`).join('\n')}` : ''}
 
-${masterSkills ? `MASTER SKILLS LAYOUT — keep these category names and this order. Only add missing JD tools into the matching line:\n${masterSkills}` : ''}
+${masterSkills ? `MASTER SKILLS LAYOUT — keep these category names and this order of labels. Inside each line, put JD must-have skills FIRST, then remaining honest tools that support this JD. Demote or omit master-only tools from a different career family that are not on this posting:\n${masterSkills}` : ''}
 
 ${extraBlock}
 
 ROLE DETECTED: ${(keywords.role && keywords.role.label) || headline || 'from JD'}
 LOCKED SKILL SET (${keywords.geminiUsed ? 'Gemini AI' : (keywords.analysisSource || keywords.source || 'rag')}):
-  From JD (Gemini): ${(keywords.jdPrimary || keywords.jdSkills || primary).join(', ') || 'n/a'}
-  JD secondary / domain: ${(keywords.jdSecondary || []).join(', ') || 'n/a'}
+  JD must-have (ALWAYS add in Stay truthful + Stretch): ${(keywords.jdPrimary || keywords.jdSkills || primary).join(', ') || 'n/a'}
+  Stretch-only / secondary (ONLY if Stretch mode): ${(keywords.jdSecondary || secondary).join(', ') || 'n/a'}
   JD ATS phrases: ${(keywords.atsKeywords || []).join(' · ') || 'n/a'}
-  From internet / job boards (Gemini): ${(keywords.internetSkills || keywords.marketSkills || []).join(', ') || 'n/a'}
-  Internet keyword phrases: ${(keywords.internetKeywords || []).join(' · ') || 'n/a'}
-  Stretch rewrite ${aggressive ? 'includes internet skills' : 'uses JD skills only — internet skills shown for reference'}.
-Apply the 20 US full-time resume rules. Keep the master's skill categories. Add missing tools from the locked skill set into those existing lines.
+  From internet / job boards: ${(keywords.internetSkills || keywords.marketSkills || []).join(', ') || 'n/a'}
+  Mode: ${aggressive ? 'STRETCH — include stretch-only gaps' : 'STAY TRUTHFUL — JD must-haves only; stretch-only stay off the page'}.
+Apply the 20 US full-time resume rules above. Keep the master's skill category labels. Put JD must-have tools FIRST on each line. Demote off-role master tools. ${aggressive ? 'Also add Stretch-only tools.' : 'Do not add Stretch-only tools.'}
+Obey FORMAT IS MANDATORY above exactly — do not invent a different layout.
 
 OUTPUT LAYOUT — match the Anirudh Word template exactly (this is how the downloaded .doc must look):
 
@@ -2595,18 +4220,21 @@ SUMMARY
 <one paragraph, 4-6 lines, no bullets. Written for an HR 6-second scan.>
 TECHNICAL SKILLS
 <COPY the master resume skill categories and their order exactly — same labels, same grouping. Header may be SKILLS if that is what the master uses.>
-(Add missing JD technologies into the matching existing line.)
+(Add missing JD technologies into the matching existing line — JD must-haves first on each line.)
+(Demote master-only tools from a different career family; do not leave them dominating SKILLS.)
 (Do NOT invent a new "Technical Skills:" line unless the master already has one.)
 (Do NOT repeat the same skill twice — each tool appears only once across the whole SKILLS section.)
 PROFESSIONAL EXPERIENCE
 Company | Location | Job Title Month YYYY – Month YYYY
 - Bullet ending with a period.
 EDUCATION
-Degree | University, City, ST
+Qualification / degree on its own line (bold)
+College, City, ST on the next line (not bold)
 Then keep every extra master section in the same place it already sits (before or after these cores). Headings stay ALL CAPS.
 If the master has PROJECTS, output that section once: project name, then hyphen bullets only — no dates, no location/role line. Keep the same projects and facts. Do not add another PROJECTS heading. If the master has no PROJECTS section, do not create one.
 
 HR SCAN — SUMMARY AND EXPERIENCE (these are what recruiters actually read):
+The SUMMARY is a ${headline ? headline.split('|')[0].trim() : 'TARGET JD'} profile — not a ${inferMasterCareerLabel(resume)} story with a new title.
 SUMMARY must naturally include AT LEAST 8 and AT MOST 9 of these IMPORTANT JD skills, exact spelling:
   ${summaryKw.join(', ') || primary.slice(0, 9).join(', ')}
 Do not dump a comma list. Weave them into one readable paragraph that opens with the JD title and years and names the stack.
@@ -2658,10 +4286,10 @@ CERTIFICATIONS AND EXTRA SECTIONS:
 - Include CERTIFICATIONS only if they already exist in the master resume. If the master has none, omit that section.
 - Keep every other extra master section (Projects, Awards, Volunteer, Languages, Publications, Leadership, and any other heading on the master) in the same relative place. Do not drop them.
 
-TARGET SCORE: ${SCORE_TARGET}+ / ${SCORE_MAX} (${SCORE_THRESHOLD}+ minimum). Optimized for ChatGPT, Claude, Grok, and enterprise ATS reviewers.
+TARGET SCORE: ${SCORE_THRESHOLD}+ / ${SCORE_MAX} on ${SCORE_RULE_NAME} (Push aims for ${SCORE_TARGET}+). Write with the 20 rules so score-rule categories pass.
 
-PRIMARY KEYWORDS (must appear in SKILLS, in SUMMARY, and in experience — technologies/tools, not certifications): ${primary.join(', ')}
-SECONDARY KEYWORDS (appear at least once in Skills or a later role; do not crowd the summary with these): ${secondary.join(', ')}
+PRIMARY KEYWORDS / JD MUST-HAVES (add in Stay truthful AND Stretch — SKILLS + SUMMARY + experience): ${primary.join(', ')}
+STRETCH-ONLY / SECONDARY (${aggressive ? 'ADD in Stretch mode' : 'DO NOT ADD — Stretch mode only'}): ${secondary.join(', ') || 'none'}
 
 JOB DESCRIPTION:
 ${jd.slice(0, 7000)}
@@ -2680,21 +4308,41 @@ function buildBoostPrompt(jd, resume, sc, keywords) {
   const gaps = stripCertGaps(sc.gaps || []);
   const suggestions = stripCertGaps(sc.improvementSuggestions || []);
   const aggressive = state.mode === 'aggressive';
-  const mustAdd = aggressive ? uniqTerms([...missingP, ...missingS]) : missingP;
+  const mustAdd = dropEligibilityTerms(
+    aggressive ? uniqTerms([...missingP, ...missingS]) : missingP,
+  );
   const ats = atsPhraseReport(keywords, resume);
   const atsMissing = filterAtsPhrasesForCandidate(ats.missing, master, profile);
   const summaryKw = summaryKeywordList(keywords, master);
   const rolePlan = planExperienceKeywords(resume, keywords);
   const profileBlock = formatCandidateProfileBlock(profile);
-  return `You are a precision ATS editor. External checkers (ChatGPT / Claude / Grok) scored this below ${SCORE_TARGET}/100. Rewrite so those same tools would give ${SCORE_TARGET}+. Output the complete resume.
+  const scoreUnifiedSafe = { scorecard: sc, ruleScores: sc.ruleScores || {}, atsScore: sc.atsScore };
+  return `You are a precision ATS editor. The ${SCORE_RULE_NAME} scored this below ${SCORE_TARGET}/100. Apply the 20 US resume writing rules to raise each weak score-rule category. Output the complete resume. Format is mandatory.
+
+${formatMandatoryTemplateBlock(currentHeadline(), resume)}
+
+${formatJdProfileContract(jd, resume, keywords)}
+
+${formatRolePivotBlock(jd, resume, keywords)}
+
+${formatMandatoryCloseList(scoreUnifiedSafe, mustAdd, atsMissing)}
+
+${formatTwentyRulesRewriteBlock()}
+
+${formatAiRubricRewriteTargets()}
+
+SCORE-RULE REPORT (what still failed — close these completely):
+${formatScoreRuleGapReport(scoreUnifiedSafe)}
 
 ${formatExternalAtsBlock(jd, keywords)}
 ${profileBlock}
 
 Mode: ${aggressive ? 'AGGRESSIVE' : 'INTEGRITY / HONEST'}
-Preserve name, contact, companies, titles, dates, education, and every extra section already on this resume (Projects, Awards, Volunteer, Languages, and any other heading). Keep those extra sections in the same place. Do not drop them. Do not invent new extra sections. If PROJECTS is already on the resume, keep those same projects once as a name plus hyphen bullets — no dates, no location/role line. Do not create another Projects heading.
-Keep the master's skill categories. Add missing tools into those existing lines. Do not invent a new Technical Skills line.
+Preserve name, contact, companies, PAST titles, dates, education, and every extra section already on this resume (Projects, Awards, Volunteer, Languages, and any other heading). Keep those extra sections in the same place. Do not drop them. Do not invent new extra sections. If PROJECTS is already on the resume, keep those same projects once as a name plus hyphen bullets — no dates, no location/role line. Do not create another Projects heading.
+Keep the master's skill categories. Put JD must-haves first on each line. Do not invent a new Technical Skills line.
 Each role must have 6 or 7 bullets. If a role has fewer than 6, add bullets. If it has more than 7, keep the strongest 7.
+Line 2 = TARGET JD title. Rewrite the page as that role (summary, skills order, experience). Do not 50/50 merge a different master career with the JD role.
+Keep the Anirudh template format exactly (ALL-CAPS headers, Company | Location | Title Dates, "- " bullets).
 
 HR SCAN: SUMMARY must contain 8-9 of these important skills (exact spelling) — only stack-aligned tools: ${summaryKw.join(', ') || 'keep current summary stack'}
 Write naturally — a career story, not a keyword dump. Never mention H1B, visa sponsorship, work authorization, or citizenship in SUMMARY.
@@ -2705,19 +4353,19 @@ ${formatRoleKeywordPlan(rolePlan)}
 Do not bold with **. Do not dump every secondary skill into the summary. Match cloud to employer when evidenced (Microsoft→Azure, Amazon→AWS, Google→GCP). Never put AWS tools on a Microsoft role.
 
 ${aggressive
-    ? `ADD remaining missing stack-aligned skills from the ATS REPORT into SKILLS and weave each into experience bullets where the work actually happened.`
-    : `ADD remaining IMPORTANT missing stack-aligned skills from the ATS REPORT into SKILLS and into experience bullets. Keep career facts honest. Do not invent employers, degrees, or certifications.`}
+    ? `ADD remaining missing stack-aligned skills from the ATS REPORT (JD must-haves + Stretch-only) into SKILLS and weave each into experience bullets where the work actually happened.`
+    : `ADD remaining JD must-have (IMPORTANT/primary) skills into SKILLS and experience. Do NOT add Stretch-only / secondary / preferred tools (Ignition, FactoryLogix, OSHA, clearance, etc.) — those only when Stretch mode is selected.`}
 
 MUST ADD THESE SKILLS (stack-aligned): ${mustAdd.join(', ') || 'none — already covered'}
 MUST WEAVE THESE JD ATS PHRASES naturally (only if they fit the candidate stack): ${atsMissing.join(' · ') || 'none — already covered'}
 
 CERTIFICATIONS: never add a certification that is not already on this resume. Never treat missing certs as a gap. If none exist, do not create a CERTIFICATIONS section.
 
-MISSING IMPORTANT (PRIMARY) SKILLS: ${missingP.join(', ') || 'none'}
-MISSING EXTRA (SECONDARY) SKILLS: ${missingS.join(', ') || 'none'}
+MISSING IMPORTANT (PRIMARY / JD must-have — add in Stay truthful): ${missingP.join(', ') || 'none'}
+MISSING EXTRA (SECONDARY / STRETCH — ${aggressive ? 'ADD in Stretch mode' : 'DO NOT ADD in Stay truthful'}): ${missingS.join(', ') || 'none'}
 MISSING JD ATS PHRASES (${atsMissing.length}/${ats.phrases.length}): ${atsMissing.join(' · ') || 'none'}
-CURRENT RULE SCORES: ${JSON.stringify(sc.ruleScores || {})}
-POINTS STILL NEEDED: ${Math.max(0, SCORE_TARGET - Number(sc.atsScore || 0))} — close the gap ChatGPT-style scorers still see.
+CURRENT RULE SCORES (${SCORE_RULE_NAME}): ${JSON.stringify(sc.ruleScores || {})}
+POINTS STILL NEEDED: ${Math.max(0, SCORE_TARGET - Number(sc.atsScore || 0))} — raise weak score-rule categories using the 20 writing rules.
 Put every skill in MUST ADD into SKILLS and weave into experience bullets using exact spelling — inside the sentence, not tacked on at the end.
 Weave each tool into the sentence body — never append a trailing comma skill dump (bad: "...decisions, Tableau.").
 NEVER use the word "leveraging" or "leveraged" — use natural alternatives (using, with, via, through, employing). Vary verb patterns across bullets.
@@ -2862,9 +4510,23 @@ async function finalizeBolding(jd, resume) {
 function normalizeGeminiScore(parsed, jd, resume) {
   const primary = dropCertTerms(parsed.primary || []).slice(0, 10);
   const secondary = dropCertTerms(parsed.secondary || []).slice(0, 10);
-  let ruleScores = parsed.ruleScores || {};
-  if (!ruleScores.keywordsInExperience && parsed.atsScore) {
+  let ruleScores = migrateLegacyRuleScores(parsed.ruleScores || {});
+  if (!ruleScores.hardQualifications && !ruleScores.skillsKeywords && parsed.atsScore) {
     ruleScores = fallbackRules({ ...parsed, primary, secondary });
+  }
+  // Migrate legacy keys if an old cached response slips through
+  if (ruleScores.keywordsInExperience != null && parsed.ruleScores?.hardQualifications == null) {
+    ruleScores = migrateLegacyRuleScores({
+      hardQualifications: Math.min(20, Math.round(Number(parsed.ruleScores?.tenSecond || 0) * 20 / 12)),
+      skillsKeywords: Math.min(20, Math.round(Number(parsed.ruleScores?.keywordsInExperience || 0) * 20 / 25)),
+      semanticResponsibilityMatch: Math.min(20, Math.round(Number(parsed.ruleScores?.achievementsNotDuties || 0) * 20 / 8)),
+      experienceSeniorityMatch: Math.min(10, Math.round(Number(parsed.ruleScores?.tenSecond || 0) * 10 / 12)),
+      skillsEvidenceContext: Math.min(10, Number(parsed.ruleScores?.keywordCredibility || 0)),
+      achievementsImpact: Math.min(8, Math.round(Number(parsed.ruleScores?.quantified || 0) * 8 / 15)),
+      resumeParsingStructure: Math.min(5, Math.round((Number(parsed.ruleScores?.format || 0) + Number(parsed.ruleScores?.structure || 0)) * 5 / 14)),
+      recruiterReadability: Math.min(5, Math.round(Number(parsed.ruleScores?.bulletQuality || 0) * 5 / 8)),
+      jobTitleAlignment: 1,
+    });
   }
   const aliasMap = Object.fromEntries([...primary, ...secondary].map(k => [k, [k]]));
   const keywordsFound = dropCertTerms(parsed.keywordsFound || []);
@@ -2879,22 +4541,13 @@ function normalizeGeminiScore(parsed, jd, resume) {
   const certDropped = rawMissing.filter(s => /certif/i.test(String(s))).length;
   const missingSections = rawMissing.filter(s => !/certif/i.test(String(s)));
   if (certDropped) {
-    ruleScores = {
+    ruleScores = clampRuleScores({
       ...ruleScores,
-      structure: Math.min(6, Number(ruleScores.structure || 0) + certDropped * 2),
-    };
+      resumeParsingStructure: Math.min(5, Number(ruleScores.resumeParsingStructure || 0) + Math.min(2, certDropped)),
+    });
   }
-  const sum = Object.values(ruleScores).reduce((a, b) => a + Number(b || 0), 0);
-  // Prefer rubric sum; if model also returns atsScore, take the lower (anti-inflation vs ChatGPT).
-  const fromField = Number(parsed.atsScore);
-  const atsScore = Math.min(
-    100,
-    Math.round(
-      sum > 0 && Number.isFinite(fromField) && fromField > 0
-        ? Math.min(sum, fromField)
-        : (sum || fromField || 0),
-    ),
-  );
+  const sum = sumRuleScores(ruleScores);
+  const atsScore = Math.min(SCORE_MAX, Math.round(sum || 0));
   const gaps = stripCertGaps(parsed.gaps || []);
   const improvementSuggestions = stripCertGaps(parsed.improvementSuggestions || []);
   return {
@@ -2936,17 +4589,18 @@ function fallbackRules(parsed) {
   const total = Math.max((parsed.primary || []).length, 10);
   const bullets = parsed.bulletsTotal || 1;
   const metrics = parsed.bulletsWithMetrics || 0;
-  return {
-    keywordsInExperience: Math.round((found / total) * 25),
-    keywordCredibility: Math.min(10, found),
-    secondaryKeywords: Math.min(8, (parsed.secondaryFound || []).length),
-    quantified: Math.round((metrics / bullets) * 15),
-    achievementsNotDuties: 6,
-    tenSecond: parsed.summaryScore || 8,
-    format: parsed.formatCheck === 'PASS' ? 8 : 5,
-    structure: parsed.sectionCheck === 'PASS' ? 6 : 3,
-    bulletQuality: 6,
-  };
+  const cov = found / total;
+  return clampRuleScores({
+    hardQualifications: Math.round(cov * 12 + 4),
+    skillsKeywords: Math.round(cov * 20),
+    semanticResponsibilityMatch: Math.round(cov * 14 + 2),
+    skillsEvidenceContext: Math.min(10, Math.round((metrics / bullets) * 10)),
+    experienceSeniorityMatch: 6,
+    achievementsImpact: Math.min(8, Math.round((metrics / bullets) * 8)),
+    resumeParsingStructure: parsed.formatCheck === 'PASS' ? 5 : 3,
+    jobTitleAlignment: 1,
+    recruiterReadability: Math.min(5, Math.round((parsed.summaryScore || 8) * 5 / 12)),
+  });
 }
 
 function ragToUnified(jd, resume, kw) {
@@ -3377,8 +5031,11 @@ function polishResumeForAts(resume, keywords, masterResume) {
   const primary = dropCertTerms(keywords.primary || []);
   const secondary = dropCertTerms(keywords.secondary || []);
   const aliasMap = keywords.aliasMap || {};
-  const rawInject = state.mode === 'aggressive' ? uniqTerms([...primary, ...secondary]) : primary;
-  const inject = filterTermsForCandidateProfile(rawInject, master, profile);
+  // Integrity: inject JD must-haves. Stretch: also inject secondary/preferred.
+  const rawInject = state.mode === 'aggressive'
+    ? uniqTerms([...primary, ...secondary])
+    : primary;
+  const inject = dropEligibilityTerms(filterTermsForCandidateProfile(rawInject, master, profile));
   const summaryKw = summaryKeywordList(keywords, master);
   let lines = sanitizeResumeHeadline(resume).split('\n');
   const full = () => lines.join('\n');
@@ -3515,41 +5172,8 @@ function polishResumeForAts(resume, keywords, masterResume) {
 }
 
 function calibrateLocalScore(unified) {
-  const merged = { ...(unified.ruleScores || {}) };
-  const missP = unified.scorecard?.keywordsMissing || [];
-  const sc = unified.scorecard || {};
-  const metricRatio = (Number(sc.bulletsWithMetrics || 0)) / Math.max(Number(sc.bulletsTotal || 1), 1);
-  const sumRules = () => Math.min(
-    SCORE_MAX,
-    Object.values(merged).reduce((a, b) => a + Number(b || 0), 0),
-  );
-
-  // Soft evidence bumps only — never invent a 90+/95 floor (that caused ChatGPT 70-80 gaps).
-  if (missP.length === 0) {
-    merged.keywordsInExperience = Math.max(Number(merged.keywordsInExperience || 0), 20);
-    merged.keywordCredibility = Math.max(Number(merged.keywordCredibility || 0), 7);
-  } else if (missP.length === 1) {
-    merged.keywordsInExperience = Math.max(Number(merged.keywordsInExperience || 0), 18);
-  }
-  if (sc.sectionCheck === 'PASS' || Number(merged.structure || 0) >= 4) {
-    merged.structure = Math.max(Number(merged.structure || 0), 5);
-  }
-  if (sc.formatCheck === 'PASS' || Number(merged.format || 0) >= 5) {
-    merged.format = Math.max(Number(merged.format || 0), 6);
-  }
-
-  let atsScore = sumRules();
-
-  // ChatGPT-style caps: missing must-haves or thin metrics cannot look like 90+.
-  if (missP.length >= 4) atsScore = Math.min(atsScore, 70);
-  else if (missP.length === 3) atsScore = Math.min(atsScore, 76);
-  else if (missP.length === 2) atsScore = Math.min(atsScore, 82);
-  else if (missP.length === 1) atsScore = Math.min(atsScore, 87);
-  if (metricRatio < 0.4) atsScore = Math.min(atsScore, 74);
-  else if (metricRatio < 0.55) atsScore = Math.min(atsScore, 82);
-  else if (metricRatio < 0.7) atsScore = Math.min(atsScore, 88);
-
-  atsScore = Math.min(SCORE_MAX, Math.round(atsScore));
+  const merged = clampRuleScores(unified.ruleScores || {});
+  const atsScore = Math.min(SCORE_MAX, sumRuleScores(merged));
   return { merged, atsScore };
 }
 
@@ -3558,96 +5182,763 @@ function applyTailoredScoreBoost(unified) {
 }
 
 function stableScore(jd, resume, keywords) {
-  const kw = keywords || state.keywords || {};
-  ensureAliasMap(kw);
-  const unified = ragToUnified(jd, resume, kw);
-  const { merged, atsScore } = calibrateLocalScore(unified);
-  return {
-    ...unified,
-    atsScore,
-    ruleScores: merged,
-    scorecard: { ...unified.scorecard, ruleScores: merged, atsScore },
-    source: 'rag',
-  };
+  return scoreWithNinePointRule(jd, resume, {
+    resumeJson: state.lastResumeJson,
+    jdJson: state.lastJdJson,
+    keywords: keywords || state.keywords,
+  });
 }
 
 function mergeWithLocalScore(jd, resume, geminiUnified, keywords) {
   return stableScore(jd, resume, keywords);
 }
 
+function blendAtsScores(localScore, modelScore) {
+  // Numeric score is the 9-point rubric only — never blend a second model %.
+  return Math.min(SCORE_MAX, Math.max(0, Math.round(Number(localScore) || 0)));
+}
+
+/**
+ * Score rule A–I: every category is (matched ÷ total checks) × category weight.
+ * Transparent coverage — not a vendor ATS prediction.
+ */
+function coveragePts(matched, total, weight) {
+  const t = Math.max(Number(total) || 0, 1);
+  const m = Math.max(0, Math.min(t, Number(matched) || 0));
+  return Math.max(0, Math.min(weight, Math.round((m / t) * weight)));
+}
+
+function sumRuleScores(ruleScores) {
+  return RULE_META.reduce((a, m) => a + Math.max(0, Math.min(m.max, Number(ruleScores?.[m.key] || 0))), 0);
+}
+
+function clampRuleScores(ruleScores) {
+  const out = {};
+  for (const m of RULE_META) {
+    out[m.key] = Math.max(0, Math.min(m.max, Math.round(Number(ruleScores?.[m.key] || 0))));
+  }
+  return out;
+}
+
+/** Match / donut always equals the visible A–I bars. Never display a leftover total. */
+function syncDisplayedAlignmentScore(unified) {
+  if (!unified) return unified;
+  const bars = clampRuleScores(unified.ruleScores || unified.scorecard?.ruleScores || {});
+  const total = Math.min(SCORE_MAX, sumRuleScores(bars));
+  unified.ruleScores = bars;
+  unified.atsScore = total;
+  if (unified.scorecard) {
+    unified.scorecard.ruleScores = { ...bars };
+    unified.scorecard.atsScore = total;
+  }
+  return unified;
+}
+
+function migrateLegacyRuleScores(rs) {
+  const src = rs && typeof rs === 'object' ? { ...rs } : {};
+  if (src.skillsKeywords == null && src.requiredTechnicalSkills != null) {
+    src.skillsKeywords = src.requiredTechnicalSkills;
+  }
+  if (src.achievementsImpact == null && src.credibilityDefensibility != null) {
+    src.achievementsImpact = Math.min(8, Math.round(Number(src.credibilityDefensibility) * 8 / 5));
+  }
+  if (src.jobTitleAlignment == null) {
+    src.jobTitleAlignment = Math.min(2, Math.round(Number(src.hardQualifications || 0) * 2 / 20));
+  }
+  return clampRuleScores(src);
+}
+
+function roleFamilyFromTitle(title) {
+  const t = String(title || '').toLowerCase();
+  if (/ai engineer|machine learning|ml engineer|llm|genai|deep learning/.test(t)) return 'ml';
+  if (/automation engineer|test automation|\bsdet\b|qa automation|rpa engineer|process automation/.test(t)) return 'automation';
+  if (/qa engineer|quality assurance|test engineer/.test(t)) return 'qa';
+  if (/data scientist/.test(t)) return 'data-scientist';
+  if (/data analyst|bi analyst|business intelligence|analytics analyst/.test(t)) return 'analyst';
+  if (/data engineer|big data|data platform|cloud data|spark engineer|etl engineer/.test(t)) return 'data-engineer';
+  if (/software engineer|full.?stack|backend|frontend|sde\b/.test(t)) return 'swe';
+  if (/devops|sre|platform engineer|site reliability/.test(t)) return 'devops';
+  if (/cloud engineer|solutions architect/.test(t)) return 'cloud';
+  if (/network engineer|network admin|network technician/.test(t)) return 'network';
+  if (/security engineer|security analyst|soc |cybersecurity/.test(t)) return 'security';
+  if (/help desk|desktop support|it support|service desk|sysadmin|systems administrator/.test(t)) return 'support';
+  if (/business analyst|product owner/.test(t)) return 'ba';
+  if (/product manager|program manager|project manager/.test(t)) return 'pm';
+  if (/data center|technician/.test(t)) return 'infra';
+  return t.split(/\s+/).slice(0, 2).join(' ') || 'other';
+}
+
+function isToolDumpBullet(bullet) {
+  const b = String(bullet || '');
+  return (b.match(/,/g) || []).length >= 4 && b.split(/\s+/).length < 28;
+}
+
+function jdRequiresIndustryExperience(jdJson, jdText) {
+  const jj = jdJson || {};
+  const gateBlob = [
+    ...(jj.requirements?.hard_gates || []),
+    jj.requirements?.experience,
+    ...(jj.requirements?.other || []),
+  ].filter(Boolean).join('\n');
+  const lines = `${gateBlob}\n${String(jdText || '')}`.split(/\n/).map(l => l.trim()).filter(Boolean);
+  const found = [];
+  for (const line of lines) {
+    if (!INDUSTRY_GATE_RE.test(line)) continue;
+    if (/\b(is revolutioniz|leading provider|our mission|we(?:'| a)re hiring|join our team|transforming)\b/i.test(line)) continue;
+    if (!/\b(require|must|need|minimum|experience|background|preferred)\b/i.test(line)) continue;
+    const m = line.match(INDUSTRY_GATE_RE);
+    if (m) found.push(m[0]);
+  }
+  return uniqTerms(found);
+}
+
+function skillEvidenceStrength(skill, bullets, aliasMap) {
+  const hits = (bullets || []).filter(b => keywordPresent(skill, b, aliasMap));
+  if (!hits.length) return 0;
+  const ACTION = /\b(built|developed|designed|implemented|owned|led|created|migrated|orchestrat|optimized|engineered|automated|deployed)\b/i;
+  if (hits.some(b => ACTION.test(b) && SCALE_EVIDENCE_RE.test(b))) return 1;
+  if (hits.some(b => ACTION.test(b) && !isToolDumpBullet(b))) return 0.75;
+  if (hits.every(isToolDumpBullet)) return 0.35;
+  return 0.5;
+}
+
+function coverageStat(matched, total, weight, pts) {
+  const t = Math.max(Number(total) || 0, 1);
+  const m = Math.max(0, Math.min(t, Number(matched) || 0));
+  const pct = Math.round((m / t) * 100);
+  return {
+    matched: m,
+    total: t,
+    missing: Math.max(0, t - m),
+    pct,
+    weight,
+    pts: pts != null ? pts : coveragePts(m, t, weight),
+  };
+}
+
+function applyScoreRuleFromCoverage(unified) {
+  if (!unified) return unified;
+  const primary = dropCertTerms(unified.primary || []);
+  const sc = { ...(unified.scorecard || {}) };
+  const found = listOrEmpty(sc.keywordsFound);
+  const missing = listOrEmpty(sc.keywordsMissing);
+  const skillsOnly = listOrEmpty(sc.jdSkillsOnly);
+  const rj = unified.resumeJson || state.lastResumeJson || null;
+  const jj = unified.jdJson || state.lastJdJson || state.keywords?.jdJson || null;
+  const text = String(unified.resumeUsed || '');
+  const jsonCorpus = rj ? corpusFromResumeJson(rj) : '';
+  const resumeLower = (jsonCorpus || text).toLowerCase();
+  const expText = rj ? experienceTextFromResumeJson(rj) : text;
+  const expLower = String(expText || '').toLowerCase();
+  const summary = String(rj?.professional_summary || '').toLowerCase();
+  const aliasMap = unified.aliasMap || state.keywords?.aliasMap || {};
+  const jdText = String(unified.jdUsed || $('jdInput')?.value || '');
+
+  const inExp = (k) => keywordPresent(k, expText, aliasMap);
+  const skillsCorpus = rj ? skillsFromResumeJson(rj).join('\n') : '';
+  const inSkills = (k) => skillsCorpus
+    ? keywordPresent(k, skillsCorpus, aliasMap)
+    : skillsOnly.some(s => String(s).toLowerCase() === String(k).toLowerCase());
+  const evidenced = primary.filter(k => inExp(k));
+  const bullets = bulletsFromResumeJson(rj);
+  const bulletPool = bullets.length ? bullets : String(expText || '').split(/\n/).filter(l => /^[-•*]/.test(String(l).trim()));
+
+  const jdTitle = String(jj?.job_information?.title || unified.title || '').trim();
+  const jdYearsNote = jj?.years_of_experience?.note || jj?.requirements?.experience || '';
+  const jdEdu = String(jj?.requirements?.education || '').trim();
+  const yearsReq = getJdYearsRequirement({
+    minYears: jj?.years_of_experience?.minimum,
+    maxYears: jj?.years_of_experience?.maximum,
+    yearsNote: jdYearsNote,
+  }, jdYearsNote);
+  const jdYearsMin = yearsReq?.min ?? jj?.years_of_experience?.minimum;
+  const jdYearsMax = yearsReq?.max ?? jj?.years_of_experience?.maximum;
+  const resumeYears = resumeYearsForAlignment(rj, text);
+  const yearsHit = yearsReq
+    ? yearsRequirementSatisfied(yearsReq, resumeYears)
+      || (resumeYears == null && (/\d+\+?\s*years?/.test(summary) || /\d+\+?\s*years?/.test(resumeLower)))
+    : true;
+  const eduHit = jdEdu
+    ? !!(rj?.education || []).length || /\b(bachelor|master|b\.?s\.?|m\.?s\.?|mba|phd|degree|b\.?tech)\b/i.test(text)
+    : true;
+
+  const workAuthText = String(jj?.requirements?.work_authorization || '').trim();
+  const workAuthRequired = !!(workAuthText || jj?.eligibility?.us_citizen_required);
+  const workAuthHit = !workAuthRequired || !/\b(not authorized|require sponsorship|need sponsorship)\b/i.test(resumeLower);
+
+  const requiredIndustries = jdRequiresIndustryExperience(jj, jdJsonToScoreText(jj));
+  const industryHit = !requiredIndustries.length
+    || requiredIndustries.some(ind => resumeLower.includes(String(ind).toLowerCase()));
+
+  const aChecks = [];
+  const yearsNeed = shortYearsNeed(jdYearsNote, jdYearsMin, jdYearsMax);
+  if (jdYearsNote || jdYearsMin) {
+    aChecks.push({
+      id: 'years',
+      ok: !!yearsHit,
+      label: yearsHit
+        ? (yearsNeed ? `${yearsNeed} is on the resume` : 'Years of experience are listed')
+        : (yearsNeed ? `Needs ${yearsNeed} on the resume` : 'Add years of experience to the summary'),
+    });
+  }
+  if (jdEdu) {
+    const degreeNeed = shortDegreeNeed(jdEdu);
+    aChecks.push({
+      id: 'education',
+      ok: !!eduHit,
+      label: eduHit ? `${degreeNeed || 'Education'} is listed` : `Needs ${degreeNeed || 'education'} on the resume`,
+    });
+  }
+  if (workAuthRequired) {
+    aChecks.push({
+      id: 'workAuth',
+      ok: workAuthHit,
+      label: workAuthText || 'US work authorization',
+    });
+  }
+  requiredIndustries.forEach(ind => {
+    aChecks.push({
+      id: `industry:${ind}`,
+      ok: resumeLower.includes(String(ind).toLowerCase()),
+      label: `Needs ${ind} experience`,
+    });
+  });
+  if (!aChecks.length) {
+    aChecks.push({ id: 'years', ok: !!yearsHit || resumeYears > 0, label: 'Years of experience stated' });
+    aChecks.push({ id: 'education', ok: !!(rj?.education || []).length || /\bEDUCATION\b/i.test(text), label: 'Education section' });
+  }
+  const aMatched = aChecks.filter(c => c.ok).length;
+  const ptsA = coveragePts(aMatched, aChecks.length, 20);
+
+  const hardKnockouts = [];
+  const elig = jj?.eligibility || {};
+  const gateBlob = [...(jj?.requirements?.hard_gates || []), ...(jj?.requirements?.other || [])].join(' ');
+  if (elig.clearance_required) {
+    const ok = /\b(clearance|secret|ts\/sci|public trust)\b/i.test(resumeLower);
+    hardKnockouts.push({
+      id: 'clearance',
+      ok,
+      knockout: true,
+      label: 'Security clearance',
+      detail: elig.notes?.[0] || 'JD requires clearance — confirm it is evidenced if you hold it',
+    });
+  }
+  if (LICENSE_GATE_RE.test(gateBlob) || LICENSE_GATE_RE.test(jdText)) {
+    const ok = LICENSE_GATE_RE.test(resumeLower);
+    hardKnockouts.push({
+      id: 'license',
+      ok,
+      knockout: true,
+      label: 'Required license',
+      detail: 'JD appears to require a license — missing license language can screen you out',
+    });
+  }
+  if (jj?.job_information?.work_mode === 'onsite' && jj?.job_information?.location) {
+    hardKnockouts.push({
+      id: 'location',
+      ok: true,
+      knockout: true,
+      review: true,
+      label: `On-site in ${shortPlace(jj.job_information.location)}`,
+      detail: `This job is on-site in ${shortPlace(jj.job_information.location)} — confirm you can work there`,
+    });
+  }
+  const screenOutRisk = hardKnockouts.some(k => k.knockout && k.ok === false);
+
+  // —— B. Skills and keywords (20): skills help; experience is stronger; stuffing does not extra-credit ——
+  const bCredits = primary.map(k => {
+    if (inExp(k)) {
+      const hits = bulletPool.filter(b => keywordPresent(k, b, aliasMap));
+      if (hits.length && hits.every(isToolDumpBullet)) return 0.7;
+      return 1;
+    }
+    if (inSkills(k) || skillsOnly.some(s => String(s).toLowerCase() === String(k).toLowerCase())) return 0.45;
+    return 0;
+  });
+  const bMatched = bCredits.reduce((a, n) => a + n, 0);
+  const bTotal = Math.max(primary.length, 1);
+  const ptsB = coveragePts(bMatched, bTotal, 20);
+
+  const duties = listOrEmpty(jj?.responsibilities);
+  const dutyStop = new Set(['with', 'from', 'that', 'this', 'have', 'will', 'your', 'their', 'into', 'using', 'ability', 'strong', 'years', 'experience', 'including', 'related', 'working', 'team', 'role', 'work', 'must', 'should', 'across', 'other', 'such', 'about', 'which', 'and', 'the', 'for']);
+  const jdSenior = /\b(senior|lead|principal|staff|manager|architect)\b/i.test(
+    [jj?.job_information?.seniority_level, jj?.job_information?.title, jdYearsNote].join(' '),
+  );
+  const ownershipHit = OWNERSHIP_RE.test(expText);
+  const roleCount = (rj?.professional_experience || []).length
+    || (text.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{4}\b/gi) || []).length;
+
+  const cChecks = duties.length
+    ? duties.map(d => {
+      const terms = String(d).toLowerCase().replace(/[^a-z0-9+#.\s-]/g, ' ').split(/\s+/)
+        .filter(w => w.length >= 5 && !dutyStop.has(w));
+      const ok = !terms.length
+        ? expLower.includes(String(d).toLowerCase().slice(0, 40))
+        : terms.filter(t => expLower.includes(t)).length >= Math.max(1, Math.ceil(terms.length * 0.35));
+      return {
+        ok,
+        label: ok ? clipWords(d, 72) : `Does not show: ${clipWords(d, 64)}`,
+      };
+    })
+    : [{ ok: true, label: 'No JD duties listed to mirror' }];
+  const cMatched = cChecks.filter(c => c.ok).length;
+  const ptsC = coveragePts(cMatched, cChecks.length, 20);
+
+  // —— D. Skill evidence (10) ——
+  const dStrengths = primary.map(k => {
+    if (inExp(k)) return skillEvidenceStrength(k, bulletPool, aliasMap);
+    if (inSkills(k)) return 0.25;
+    return 0;
+  });
+  const dMatched = dStrengths.reduce((a, n) => a + n, 0);
+  const ptsD = coveragePts(dMatched, Math.max(primary.length, 1), 10);
+
+  // —— E. Seniority (10) ——
+  const jdLevel = String(jj?.job_information?.seniority_level || '').trim() || (jdSenior ? 'senior+' : 'not specified');
+  const eChecks = [
+    {
+      ok: yearsHit,
+      label: yearsHit
+        ? (yearsNeed ? `${yearsNeed} is listed` : 'Years of experience are listed')
+        : (yearsNeed ? `Needs ${yearsNeed} in the summary` : 'Add years of experience to the summary'),
+    },
+    {
+      ok: ownershipHit,
+      label: ownershipHit
+        ? 'Shows ownership of real work'
+        : 'Needs clearer ownership of the work',
+    },
+    {
+      ok: !jdSenior || ownershipHit || /\b(senior|lead|principal|staff|manager|architect|mentor)\b/i.test(text),
+      label: !jdSenior
+        ? 'This posting is not a senior-only role'
+        : (ownershipHit || /\b(senior|lead|staff|mentor)\b/i.test(text)
+          ? 'Seniority looks like a fit'
+          : 'This posting wants a more senior signal'),
+    },
+    {
+      ok: roleCount >= 2,
+      label: roleCount >= 2
+        ? `${roleCount} jobs with dates`
+        : 'Needs at least two jobs with dates',
+    },
+  ];
+  const eMatched = eChecks.filter(c => c.ok).length;
+  const ptsE = coveragePts(eMatched, eChecks.length, 10);
+
+  // —— F. Achievements / impact (8) ——
+  const impactBullets = bulletPool.filter(b => IMPACT_VERB_RE.test(b));
+  const metricBullets = bulletPool.filter(b => /\d/.test(b));
+  const activityOnly = bulletPool.filter(b => /^(responsible for|worked on|assisted with|helped|involved in)\b/i.test(String(b).replace(/^[-•\s]+/, '')));
+  const fChecks = [
+    {
+      ok: bulletPool.length ? (impactBullets.length / bulletPool.length) >= 0.35 : false,
+      label: bulletPool.length && (impactBullets.length / bulletPool.length) >= 0.35
+        ? `Result language in ${impactBullets.length}/${bulletPool.length} bullets`
+        : 'Failed: too few bullets show a result (automated, reduced, improved, reliability)',
+    },
+    {
+      ok: !bulletPool.length || metricBullets.length > 0 || impactBullets.length >= Math.ceil(bulletPool.length * 0.5),
+      label: metricBullets.length
+        ? `${metricBullets.length} bullets have real numbers (do not invent more)`
+        : (impactBullets.length >= Math.ceil((bulletPool.length || 1) * 0.5)
+          ? 'Impact language present without forcing metrics'
+          : 'Failed: add real results when they exist — never manufacture numbers'),
+    },
+    {
+      ok: !bulletPool.length || (activityOnly.length / bulletPool.length) <= 0.35,
+      label: bulletPool.length && (activityOnly.length / bulletPool.length) <= 0.35
+        ? 'Most bullets are not “responsible for / worked on”'
+        : 'Failed: too many activity-only bullets',
+    },
+  ];
+  const fMatched = fChecks.filter(c => c.ok).length;
+  const ptsF = coveragePts(fMatched, fChecks.length, 8);
+
+  // —— G. ATS parseability (5) ——
+  const REQUIRED = ['SUMMARY', 'SKILLS', 'EXPERIENCE', 'EDUCATION'];
+  const hasSection = (name) => {
+    if (name === 'SUMMARY') return !!(rj?.professional_summary) || /\b(SUMMARY|PROFESSIONAL SUMMARY|OBJECTIVE)\b/i.test(text);
+    if (name === 'SKILLS') return skillsFromResumeJson(rj || {}).length > 0 || /\b(SKILLS|TECHNICAL SKILLS)\b/i.test(text);
+    if (name === 'EXPERIENCE') return (rj?.professional_experience || []).length > 0 || /\b(EXPERIENCE|WORK HISTORY)\b/i.test(text);
+    if (name === 'EDUCATION') return (rj?.education || []).length > 0 || /\bEDUCATION\b/i.test(text);
+    return false;
+  };
+  const datedRoles = (rj?.professional_experience || []).filter(j => j.company && j.role && (j.start_date || j.end_date));
+  const tableLike = text.split('\n').some(l => l.split('|').length >= 4 && !/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{4}|present)\b/i.test(l));
+  const gChecks = [
+    {
+      ok: !!(rj?.professional_summary),
+      label: rj?.professional_summary ? 'Summary is present' : 'Missing a summary',
+    },
+    {
+      ok: skillsFromResumeJson(rj || {}).length > 0,
+      label: skillsFromResumeJson(rj || {}).length ? 'Skills are listed' : 'Missing a skills list',
+    },
+    {
+      ok: (rj?.professional_experience || []).length > 0,
+      label: (rj?.professional_experience || []).length ? 'Work history is present' : 'Missing work history',
+    },
+    {
+      ok: (rj?.education || []).length > 0,
+      label: (rj?.education || []).length ? 'Education is listed' : 'Missing education',
+    },
+    {
+      ok: datedRoles.length >= 1,
+      label: datedRoles.length >= 1
+        ? 'Company, title, and dates are clear'
+        : 'Work history needs company, title, and dates',
+    },
+  ];
+  const gMatched = gChecks.filter(c => c.ok).length;
+  const ptsG = coveragePts(gMatched, gChecks.length, 5);
+
+  // —— H. Title / role alignment (2) — family only; do not require rewriting past titles ——
+  const resumeRoles = (rj?.professional_experience || []).map(j => j.role).filter(Boolean);
+  const jdFam = roleFamilyFromTitle(jdTitle);
+  const resumeFams = resumeRoles.map(roleFamilyFromTitle);
+  const summaryFam = roleFamilyFromTitle(summary.slice(0, 80));
+  const familyHit = !jdTitle
+    || resumeFams.includes(jdFam)
+    || summaryFam === jdFam
+    || (jdTitle && summary.includes(String(jdTitle).toLowerCase()))
+    || resumeFams.some(f => familiesAligned(f, jdFam))
+    || familiesAligned(summaryFam, jdFam);
+  const adjacentHit = familyHit || resumeFams.some(f => f === jdFam);
+  const hTitleChecks = [
+    {
+      ok: familyHit,
+      label: familyHit
+        ? `Reads as a ${jdTitle || 'matching'} role`
+        : `Does not yet read as ${jdTitle || 'this job'}`,
+    },
+    {
+      ok: adjacentHit || familyHit,
+      label: 'Past job titles can stay as they were',
+    },
+  ];
+  const hTitleMatched = hTitleChecks.filter(c => c.ok).length;
+  const ptsH = coveragePts(hTitleMatched, hTitleChecks.length, 2);
+
+  // —— I. Recruiter readability (5) — 10-second scan ——
+  const companiesVisible = (rj?.professional_experience || []).some(j => j.company)
+    || /\b(inc\.|llc|corp|technologies|systems|labs)\b/i.test(text);
+  const strongestTech = primary.filter(k => keywordPresent(k, `${rj?.professional_summary || ''}\n${skillsFromResumeJson(rj || {}).join(' ')}`, aliasMap)).length;
+  const longBullets = bulletPool.filter(b => String(b).length > 220).length;
+  const iChecks = [
+    {
+      ok: !!(rj?.professional_summary || summary),
+      label: (rj?.professional_summary || summary) ? 'Role is stated in the summary' : 'Failed: no summary',
+    },
+    {
+      ok: /\d+\+?\s*years?/.test(summary) || yearsHit,
+      label: /\d+\+?\s*years?/.test(summary) || yearsHit ? 'Years of experience are visible' : 'Failed: years not obvious in 10 seconds',
+    },
+    {
+      ok: strongestTech >= Math.min(3, Math.max(primary.length, 1)),
+      label: strongestTech >= 3
+        ? 'Strongest technologies are visible up top'
+        : 'Failed: strongest JD tools are not obvious in summary/skills',
+    },
+    {
+      ok: companiesVisible,
+      label: companiesVisible ? 'Where you worked is obvious' : 'Failed: employers are not obvious',
+    },
+    {
+      ok: bulletPool.length ? (longBullets / bulletPool.length) <= 0.35 : false,
+      label: bulletPool.length && (longBullets / bulletPool.length) <= 0.35
+        ? 'Recent work is scannable'
+        : 'Failed: too many long bullets for a 10-second scan',
+    },
+  ];
+  const iMatched = iChecks.filter(c => c.ok).length;
+  const ptsI = coveragePts(iMatched, iChecks.length, 5);
+
+  const withFailed = (stat, checks) => ({
+    ...stat,
+    checks,
+    failed: (checks || []).filter(c => !c.ok).map(c => c.label),
+    passed: (checks || []).filter(c => c.ok).map(c => c.label),
+  });
+
+  const bFailed = [
+    ...missing.slice(0, 10).map(s => `Failed: must-have missing — ${s}`),
+    ...skillsOnly.slice(0, 8).map(s => `Partial: Skills only (experience would be stronger) — ${s}`),
+  ].slice(0, 14);
+  const dFailed = primary.map((k, idx) => {
+    const w = dStrengths[idx];
+    if (w >= 0.75) return null;
+    if (w === 0) return `Failed: not on resume — ${k}`;
+    if (w <= 0.25) return `Weak: listed only — ${k}`;
+    if (w <= 0.5) return `Partial: mentioned without action/scale — ${k}`;
+    return `Partial: used in work but thin context — ${k}`;
+  }).filter(Boolean).slice(0, 14);
+
+  const coverage = {
+    hardQualifications: withFailed(coverageStat(aMatched, aChecks.length, 20, ptsA), aChecks.map(c => ({
+      ...c,
+      label: c.ok ? `Pass: ${c.label}` : `Failed: ${c.label}`,
+    }))),
+    skillsKeywords: {
+      ...coverageStat(bMatched, bTotal, 20, ptsB),
+      failed: bFailed,
+      passed: evidenced.slice(0, 10).map(s => `Pass: in experience — ${s}`),
+    },
+    semanticResponsibilityMatch: withFailed(coverageStat(cMatched, cChecks.length, 20, ptsC), cChecks),
+    skillsEvidenceContext: {
+      ...coverageStat(dMatched, Math.max(primary.length, 1), 10, ptsD),
+      failed: dFailed,
+      passed: primary.filter((_, i) => dStrengths[i] >= 0.75).slice(0, 10).map(s => `Pass: strong evidence — ${s}`),
+    },
+    experienceSeniorityMatch: withFailed(coverageStat(eMatched, eChecks.length, 10, ptsE), eChecks),
+    achievementsImpact: withFailed(coverageStat(fMatched, fChecks.length, 8, ptsF), fChecks),
+    resumeParsingStructure: withFailed(coverageStat(gMatched, gChecks.length, 5, ptsG), gChecks),
+    jobTitleAlignment: withFailed(coverageStat(hTitleMatched, hTitleChecks.length, 2, ptsH), hTitleChecks),
+    recruiterReadability: withFailed(coverageStat(iMatched, iChecks.length, 5, ptsI), iChecks),
+  };
+
+  const ruleScores = clampRuleScores({
+    hardQualifications: ptsA,
+    skillsKeywords: ptsB,
+    semanticResponsibilityMatch: ptsC,
+    skillsEvidenceContext: ptsD,
+    experienceSeniorityMatch: ptsE,
+    achievementsImpact: ptsF,
+    resumeParsingStructure: ptsG,
+    jobTitleAlignment: ptsH,
+    recruiterReadability: ptsI,
+  });
+  const atsScore = Math.min(SCORE_MAX, sumRuleScores(ruleScores));
+  const credibilitySoft = skillsOnly.length >= 2 || (skillsOnly.length >= 1 && evidenced.length < Math.ceil(primary.length * 0.7));
+
+  sc.keywordMatch = evidenced.length;
+  sc.skillCoverageFound = Math.round(bMatched);
+  sc.skillCoverageTotal = bTotal;
+  sc.skillCoverageMissing = Math.max(0, bTotal - bMatched);
+  sc.skillCoveragePct = Math.round((bMatched / bTotal) * 100);
+  sc.coverage = coverage;
+  sc.ruleScores = { ...ruleScores };
+  sc.atsScore = atsScore;
+  sc.scoreRule = SCORE_RULE_NAME;
+  sc.credibilitySoft = credibilitySoft;
+  sc.hardKnockouts = hardKnockouts;
+  sc.screenOutRisk = screenOutRisk;
+  sc.scoreInterpretation = SCORE_INTERPRETATION;
+  sc.tenSecondTest = unified.tenSecondTest || sc.tenSecondTest;
+  sc.jsonScore = !!rj && !!jj;
+  sc.confidenceReason = screenOutRisk
+    ? `Alignment ${atsScore}/100 from the 9-point rubric, but a hard gate can still screen you out. ${SCORE_INTERPRETATION}`
+    : (credibilitySoft
+      ? `9-point JD alignment. ${skillsOnly.length} must-have(s) are Skills-only — that already lowers Skills/evidence points. ${SCORE_INTERPRETATION}`
+      : `9-point JD alignment: A–I sum only. Not an ATS vendor prediction.`);
+
+  return syncDisplayedAlignmentScore({
+    ...unified,
+    ruleScores,
+    atsScore,
+    scorecard: sc,
+  });
+}
+
+function reconcileKeywordPresence(unified, resume, resumeJson) {
+  if (!unified) return unified;
+  const text = String(resume || unified.resumeUsed || '');
+  const rj = resumeJson || unified.resumeJson || state.lastResumeJson || null;
+  const primary = dropCertTerms(unified.primary || state.keywords?.primary || []);
+  const secondary = dropCertTerms(unified.secondary || state.keywords?.secondary || []);
+  const aliasMap = unified.aliasMap || state.keywords?.aliasMap || {};
+
+  const skillsCorpus = rj ? skillsFromResumeJson(rj).join('\n') : '';
+  const expCorpus = rj ? experienceTextFromResumeJson(rj) : '';
+  const fullCorpus = rj ? corpusFromResumeJson(rj) : text;
+
+  const present = (k) => keywordPresent(k, fullCorpus, aliasMap);
+  const inSkills = (k) => skillsCorpus
+    ? keywordPresent(k, skillsCorpus, aliasMap)
+    : false;
+  const inExperience = (k) => expCorpus
+    ? keywordPresent(k, expCorpus, aliasMap)
+    : keywordPresent(k, text, aliasMap);
+
+  const keywordsFound = primary.filter(present);
+  const keywordsMissing = primary.filter(k => !present(k));
+  const secondaryFound = secondary.filter(present);
+  const secondaryMissing = secondary.filter(k => !present(k));
+
+  let jdSkillsOnly = [];
+  if (rj && skillsCorpus) {
+    jdSkillsOnly = uniqTerms([
+      ...keywordsFound.filter(k => inSkills(k) && !inExperience(k)),
+      ...secondaryFound.filter(k => inSkills(k) && !inExperience(k)),
+    ]);
+  }
+
+  // Also flag tailored Skills tools that are on the JD but not on the master (invented preferred platforms).
+  const masterText = ($('resumeInput') && $('resumeInput').value) || '';
+  let inventedSkills = [];
+  if (masterText && skillsCorpus) {
+    const jdTools = uniqTerms([...primary, ...secondary]);
+    inventedSkills = jdTools.filter(k =>
+      inSkills(k) && !keywordPresent(k, masterText, aliasMap)
+    );
+    jdSkillsOnly = uniqTerms([...jdSkillsOnly, ...inventedSkills]);
+  }
+
+  const sc = { ...(unified.scorecard || {}) };
+  sc.keywordsFound = keywordsFound;
+  sc.keywordsMissing = keywordsMissing;
+  sc.secondaryFound = secondaryFound;
+  sc.secondaryMissing = secondaryMissing;
+  sc.jdSkillsOnly = jdSkillsOnly;
+  sc.inventedSkills = inventedSkills;
+  sc.keywordMatch = keywordsFound.length;
+
+  return applyScoreRuleFromCoverage({
+    ...unified,
+    primary,
+    secondary,
+    aliasMap,
+    scorecard: sc,
+    resumeUsed: text,
+    resumeJson: rj || unified.resumeJson || null,
+    jdJson: unified.jdJson || state.lastJdJson || state.keywords?.jdJson || null,
+  });
+}
+
 function mergeExternalAndLocal(local, gemini) {
-  if (!gemini) return local;
-  const missP = uniqTerms([
-    ...(gemini.scorecard?.keywordsMissing || []),
-    ...(local.scorecard?.keywordsMissing || []),
-  ]);
-  const missS = uniqTerms([
-    ...(gemini.scorecard?.secondaryMissing || []),
-    ...(local.scorecard?.secondaryMissing || []),
-  ]);
+  const resumeText = local.resumeUsed || gemini?.resumeUsed || '';
+  const jdText = jdJsonToScoreText(local.jdJson || gemini?.jdJson || state.lastJdJson) || '';
+  const unified = scoreWithNinePointRule(jdText, resumeText, {
+    resumeJson: local.resumeJson || gemini?.resumeJson,
+    jdJson: local.jdJson || gemini?.jdJson || state.lastJdJson,
+    keywords: state.keywords,
+  });
+  if (!gemini) return unified;
   const gaps = stripCertGaps(uniqTerms([
     ...(gemini.scorecard?.gaps || []),
     ...(local.scorecard?.gaps || []),
+    ...(unified.scorecard?.gaps || []),
   ]));
   const suggestions = stripCertGaps(uniqTerms([
     ...(gemini.scorecard?.improvementSuggestions || []),
     ...(local.scorecard?.improvementSuggestions || []),
+    ...(unified.scorecard?.improvementSuggestions || []),
   ]));
-  // Display ChatGPT-calibrated Gemini score; keep local for diagnostics.
-  const atsScore = Math.min(SCORE_MAX, Math.round(Number(gemini.atsScore || 0)));
-  const ruleScores = gemini.ruleScores && Object.keys(gemini.ruleScores).length
-    ? gemini.ruleScores
-    : local.ruleScores;
-  return {
-    ...gemini,
-    atsScore,
-    ruleScores,
-    primary: state.keywords?.primary || gemini.primary || local.primary,
-    secondary: state.keywords?.secondary || gemini.secondary || local.secondary,
-    aliasMap: state.keywords?.aliasMap || gemini.aliasMap || local.aliasMap,
-    scorecard: {
-      ...gemini.scorecard,
-      keywordsMissing: missP,
-      secondaryMissing: missS,
-      gaps,
-      improvementSuggestions: suggestions,
-      ruleScores,
-      atsScore,
-      localAtsScore: local.atsScore,
-    },
-    source: 'gemini-external',
-    localAtsScore: local.atsScore,
-    resumeUsed: gemini.resumeUsed || local.resumeUsed,
+  unified.scorecard = {
+    ...unified.scorecard,
+    gaps,
+    improvementSuggestions: suggestions,
   };
+  unified.source = 'nine-point';
+  return unified;
 }
 
-async function scoreTailoredResume(jd, resume, { verifyExternal = false } = {}) {
-  const master = ($('resumeInput') && $('resumeInput').value) || '';
-  const polished = polishResumeForAts(resume, state.keywords || {}, master);
-  const local = stableScore(jd, polished, state.keywords || {});
-  local.resumeUsed = polished;
-  if (!verifyExternal) {
-    return { unified: local, resume: polished };
+async function analyzeJdAndResume(jd, resume) {
+  const raw = await callGemini(buildUnderstandingPrompt(jd, resume), { json: true, maxTokens: 3500 });
+  const parsed = parseJsonLoose(raw);
+  if (!parsed || typeof parsed !== 'object') throw new Error('Understanding pass returned empty analysis');
+  return parsed;
+}
+
+function enrichKeywordsFromUnderstanding(keywords, understanding) {
+  if (!keywords || !understanding) return keywords;
+  // Only JD-side tools from understanding — never fold internet/market lists into scoring keys.
+  const primary = dropCertTerms(understanding.primary || []);
+  const secondary = dropCertTerms(understanding.secondary || []);
+  if (!primary.length && !secondary.length) return keywords;
+  const next = { ...keywords };
+  if (primary.length) {
+    next.jdPrimary = uniqTerms([...(keywords.jdPrimary || keywords.primary || []), ...primary]).slice(0, 14);
+    next.jdSkills = next.jdPrimary;
+    next.primary = next.jdPrimary;
   }
+  if (secondary.length) {
+    next.jdSecondary = uniqTerms([...(keywords.jdSecondary || []), ...secondary])
+      .filter(s => !(next.primary || []).some(p => p.toLowerCase() === String(s).toLowerCase()))
+      .slice(0, 14);
+    next.secondary = next.jdSecondary;
+  }
+  if (understanding.roleTitle) {
+    next.title = understanding.roleTitle;
+    if (next.role) next.role = { ...next.role, label: understanding.roleTitle, title: understanding.roleTitle };
+  }
+  const scored = keywordsForScoring(next);
+  next.primary = scored.primary;
+  next.secondary = scored.secondary;
+  next.aliasMap = scored.aliasMap;
+  return next;
+}
+
+/**
+ * 1) Parse resume → structured JSON (jsonresume schema)
+ * 2) AI understands JD + resume JSON/text
+ * 3) Score with the 100-point JD-alignment rubric only
+ * Never polish/inject skills before scoring — that fakes "on the page" hits.
+ */
+async function scoreWithUnderstandingAndAiRubric(jd, resume) {
+  const text = String(resume || '');
+  // Gemini JSON convert — silent (no loader convert copy, no UI dump)
+  let resumeJson = state.lastResumeJson;
+  let jdJson = state.lastJdJson;
   try {
-    updateAiProcessing('Running external ATS score…');
-    const gemini = await scoreWithGemini(jd, polished, { keepKeywords: true });
-    gemini.resumeUsed = polished;
-    const unified = mergeExternalAndLocal(local, gemini);
-    unified.resumeUsed = polished;
-    return { unified, resume: polished };
-  } catch (err) {
-    local.scorecard = {
-      ...local.scorecard,
-      confidenceReason: `External ATS score unavailable (${String(err.message || err).slice(0, 80)}) — showing calibrated local score.`,
-    };
-    return { unified: local, resume: polished };
+    const tasks = [];
+    if (!resumeJson) tasks.push(parseResumeToJson(text).then(r => { resumeJson = r; }));
+    if (!jdJson) tasks.push(parseJdToJson(jd).then(j => { jdJson = j; }));
+    if (tasks.length) await Promise.all(tasks);
+  } catch {
+    resumeJson = resumeJson || parseResumeToJsonLocal(text);
+    jdJson = jdJson || parseJdToJsonLocal(jd);
   }
+  state.lastResumeJson = resumeJson;
+  state.lastJdJson = jdJson;
+
+  let understanding = null;
+  try {
+    updateAiProcessing('Analysing resume and job description…');
+    understanding = await analyzeJdAndResume(jd, text);
+    state.lastUnderstanding = understanding;
+    if (state.keywords) {
+      state.keywords = enrichKeywordsFromUnderstanding(state.keywords, understanding);
+    }
+  } catch (err) {
+    state.lastUnderstanding = null;
+    understanding = null;
+    console.warn('Understanding pass failed:', err);
+  }
+
+  updateAiProcessing(`Scoring with the 9-point ${SCORE_RULE_NAME}…`);
+  const unified = scoreWithNinePointRule(jd, text, {
+    resumeJson,
+    jdJson,
+    keywords: state.keywords || {},
+  });
+  unified.understanding = understanding;
+  unified.source = 'nine-point';
+  if (unified.scorecard) {
+    unified.scorecard.understandingUsed = !!understanding;
+    unified.scorecard.resumeJsonUsed = !!resumeJson;
+    unified.scorecard.jdJsonUsed = !!jdJson;
+    unified.scorecard.scoreRule = SCORE_RULE_NAME;
+  }
+  return { unified, resume: text, understanding, resumeJson };
 }
 
-async function scoreWithGemini(jd, resume, { keepKeywords = false } = {}) {
-  const locked = keepKeywords && state.keywords?.primary?.length ? state.keywords : null;
-  const raw = await callGemini(buildScorePrompt(jd, resume, locked), { json: true, maxTokens: 2500 });
+async function scoreTailoredResume(jd, resume, { verifyExternal = false, withUnderstanding = false } = {}) {
+  const text = String(resume || '');
+  if (withUnderstanding || verifyExternal) {
+    return scoreWithUnderstandingAndAiRubric(jd, text);
+  }
+  return scoreDraftWithScoreRule(jd, text, { structureWithGemini: true });
+}
+
+async function scoreWithGemini(jd, resume, { keepKeywords = false, understanding = null } = {}) {
+  const locked = keepKeywords && state.keywords?.primary?.length
+    ? keywordsForScoring(state.keywords)
+    : null;
+  const raw = await callGemini(
+    buildScorePrompt(jd, resume, locked, understanding || state.lastUnderstanding || null),
+    { json: true, maxTokens: 2500 },
+  );
   const parsed = parseJsonLoose(raw);
   const unified = normalizeGeminiScore(parsed, jd, resume);
   if (locked) {
@@ -3687,6 +5978,7 @@ function cacheKeywords(jd, keywords, cacheKey) {
   cleaned.internetUsed = !!keywords.internetUsed;
   cleaned.geminiError = keywords.geminiError || null;
   cleaned.internetError = keywords.internetError || null;
+  cleaned.jdJson = keywords.jdJson || state.lastJdJson || null;
   cleaned._mode = keywords._mode || state.mode;
   cleaned.title = keywords.title || cleaned.role?.title || cleaned.role?.label || '';
   cleaned.aliasMap = keywords.aliasMap && Object.keys(keywords.aliasMap).length
@@ -3738,15 +6030,34 @@ function snapshotScore(unified) {
     primary: [...(unified.primary || [])],
     secondary: [...(unified.secondary || [])],
     ruleScores: { ...(unified.ruleScores || {}) },
+    resumeJson: unified.resumeJson || null,
+    jdJson: unified.jdJson || null,
     scorecard: {
       ...sc,
       keywordsFound: [...(sc.keywordsFound || [])],
       keywordsMissing: [...(sc.keywordsMissing || [])],
       secondaryFound: [...(sc.secondaryFound || [])],
       secondaryMissing: [...(sc.secondaryMissing || [])],
+      jdSkillsOnly: [...(sc.jdSkillsOnly || [])],
       gaps: [...(sc.gaps || [])],
       tenSecondTest: { ...(sc.tenSecondTest || {}) },
+      coverage: sc.coverage || null,
+      ruleScores: { ...(unified.ruleScores || sc.ruleScores || {}) },
     },
+  };
+}
+
+function packedScoreUnified(snap, fallback) {
+  if (!snap) return null;
+  return {
+    ...snap,
+    atsScore: Number(snap.atsScore || 0),
+    ruleScores: snap.ruleScores || snap.scorecard?.ruleScores || {},
+    scorecard: snap.scorecard || {},
+    primary: snap.primary || fallback?.primary || [],
+    secondary: snap.secondary || fallback?.secondary || [],
+    jdJson: snap.jdJson || fallback?.jdJson || state.lastJdJson,
+    resumeJson: snap.resumeJson || fallback?.resumeJson || null,
   };
 }
 
@@ -3755,6 +6066,45 @@ function scoreHue(score) {
   if (n >= SCORE_THRESHOLD) return '#16a34a';
   if (n >= 70) return '#d97706';
   return '#e11d48';
+}
+
+function formatMatchToast(unified) {
+  const score = Number(unified?.atsScore || 0);
+  const screenOut = !!(unified?.scorecard?.screenOutRisk);
+  const skillsOnly = listOrEmpty(unified?.scorecard?.jdSkillsOnly);
+  if (screenOut) {
+    return `9-point alignment ${score}/${SCORE_MAX} — hard-gate screen-out risk.`;
+  }
+  if (skillsOnly.length) {
+    return `9-point alignment ${score}/${SCORE_MAX} — ${skillsOnly.length} Skills-only must-have(s) already lower B/D.`;
+  }
+  if (score >= SCORE_TARGET) return `9-point alignment ${score}/${SCORE_MAX}`;
+  if (score >= SCORE_THRESHOLD) return `9-point alignment ${score}/${SCORE_MAX} — Push toward ${SCORE_TARGET}+`;
+  return `9-point alignment ${score}/${SCORE_MAX} — raise weak A–I categories`;
+}
+
+function renderHardKnockoutBanner(sc) {
+  const knocks = (sc?.hardKnockouts || []).filter(k => k && typeof k === 'object' && (k.ok === false || k.review));
+  if (!knocks.length && !sc?.screenOutRisk) return '';
+  const fails = knocks.filter(k => k.ok === false);
+  const reviews = knocks.filter(k => k.review && k.ok !== false);
+  if (!fails.length && !reviews.length && !sc.screenOutRisk) return '';
+  const gateName = (k) => {
+    if (k.id === 'location') return k.label || 'on-site work';
+    if (k.id === 'clearance') return 'a security clearance';
+    if (k.id === 'license') return 'a required license';
+    return humanizeScoreLine(k.label) || k.label;
+  };
+  if (fails.length) {
+    return `<div class="gate-banner gate-fail">
+      <strong>Must-have missing</strong>
+      <p>${escapeHtml(fails.map(gateName).join(' · '))}. A high match score will not get you past this.</p>
+    </div>`;
+  }
+  return `<div class="gate-banner gate-review">
+    <strong>Confirm before you apply</strong>
+    <p>${escapeHtml(reviews.map(k => k.detail || gateName(k)).join(' · '))}</p>
+  </div>`;
 }
 
 function svgDonut(score, size = 160) {
@@ -3834,19 +6184,376 @@ function renderGlanceCompare(beforeTest, afterTest) {
     ${stillFail.length ? `<div class="stack-legend">Still weak: ${stillFail.join('; ')}</div>` : '<div class="stack-legend">Every glance check is clear.</div>'}`;
 }
 
+function listOrEmpty(arr) {
+  return (arr || []).map(x => String(x || '').trim()).filter(Boolean);
+}
+
+function buildAiCategoryDetails(unified) {
+  const sc = unified?.scorecard || {};
+  const scores = unified?.ruleScores || sc.ruleScores || {};
+  const u = unified?.understanding || state.lastUnderstanding || {};
+  const missP = scoredSkillTerms(sc.keywordsMissing);
+  const foundP = scoredSkillTerms(sc.keywordsFound);
+  const skillsOnly = scoredSkillTerms(sc.jdSkillsOnly);
+  const jdJson = unified?.jdJson || state.lastJdJson || state.keywords?.jdJson || null;
+  const resumeJson = unified?.resumeJson || state.lastResumeJson || null;
+  const jdTitle = jdJson?.job_information?.title || unified?.title || '';
+  const jdYears = jdJson?.years_of_experience?.note || jdJson?.years_of_experience?.minimum || '';
+  const jdEdu = jdJson?.requirements?.education || '';
+  const resumeSummary = String(resumeJson?.professional_summary || '').toLowerCase();
+  const resumeYearsHit = resumeSummary && jdYears
+    ? /\d+\+?\s*years?/.test(resumeSummary)
+    : null;
+  const titleOnResume = jdTitle
+    ? (resumeSummary.includes(String(jdTitle).toLowerCase())
+      || (resumeJson?.professional_experience || []).some(j => String(j.role || '').toLowerCase().includes(String(jdTitle).toLowerCase().split(/\s+/)[0] || '')))
+    : null;
+  const hard = u.hardQualifications || {};
+  const resp = u.responsibilities || {};
+  const senior = u.seniority || {};
+  const domain = u.requiredIndustry || u.domain || {};
+  const knockouts = (sc.hardKnockouts || []).filter(k => k && typeof k === 'object');
+  const fmtIssues = listOrEmpty(sc.formatIssues);
+  const missingSections = listOrEmpty(sc.missingSections);
+  const jdDuties = listOrEmpty(jdJson?.responsibilities).length
+    ? listOrEmpty(jdJson.responsibilities)
+    : listOrEmpty(resp.jdDuties);
+
+  const cov = sc.coverage || {};
+  const failedOf = (key) => humanLines(cov[key]?.failed);
+  const passedOf = (key) => humanLines(cov[key]?.passed);
+  const yearsNeed = shortYearsNeed(jdYears, jdJson?.years_of_experience?.minimum, jdJson?.years_of_experience?.maximum);
+  const degreeNeed = shortDegreeNeed(jdEdu);
+  const industryMiss = failedOf('hardQualifications').filter(f => /experience$/i.test(f) || /^Needs /i.test(f));
+
+  const byKey = {
+    hardQualifications: {
+      failed: [
+        ...failedOf('hardQualifications'),
+        ...knockouts.filter(k => !k.ok).map(k => k.label || k.detail),
+      ],
+      findings: [
+        ...passedOf('hardQualifications').slice(0, 6),
+        ...knockouts.filter(k => k.review && k.ok !== false).map(k => k.detail || k.label),
+      ],
+      improvements: uniqTerms([
+        industryMiss.length ? 'Add that industry experience only if you actually have it.' : null,
+        resumeYearsHit === false && yearsNeed ? `Put “${yearsNeed}” in the summary if it is true.` : null,
+        jdEdu && Number(scores.hardQualifications || 0) < 14 ? `Keep ${degreeNeed || 'your degree'} easy to see.` : null,
+        ...knockouts.filter(k => !k.ok).map(k => k.detail || k.label),
+      ].filter(Boolean)).slice(0, 4),
+    },
+    skillsKeywords: {
+      failed: uniqTerms([
+        ...missP.map(s => `Missing: ${s}`),
+        ...skillsOnly.map(s => `In Skills only: ${s}`),
+      ]).slice(0, 12),
+      findings: foundP
+        .filter(s => !skillsOnly.some(x => String(x).toLowerCase() === String(s).toLowerCase()))
+        .slice(0, 8),
+      improvements: uniqTerms([
+        ...skillsOnly.slice(0, 5).map(s => `Show ${s} in a work bullet, not only in Skills.`),
+        ...missP.slice(0, 5).map(s => `Add ${s} only if you have used it.`),
+        !missP.length && !skillsOnly.length ? 'Keep the important tools visible in both Skills and work history.' : null,
+      ].filter(Boolean)).slice(0, 6),
+    },
+    semanticResponsibilityMatch: {
+      failed: failedOf('semanticResponsibilityMatch'),
+      findings: passedOf('semanticResponsibilityMatch').slice(0, 6),
+      improvements: uniqTerms([
+        ...failedOf('semanticResponsibilityMatch').slice(0, 4).map(f =>
+          `Add a work bullet for: ${String(f).replace(/^Does not show:\s*/i, '')}`),
+        jdTitle ? `Write the page for the ${jdTitle} job. Keep older work only when it overlaps.` : null,
+      ].filter(Boolean)).slice(0, 5),
+    },
+    skillsEvidenceContext: {
+      failed: failedOf('skillsEvidenceContext').length
+        ? failedOf('skillsEvidenceContext')
+        : [
+          ...missP.map(s => `Missing: ${s}`),
+          ...skillsOnly.map(s => `Listed only: ${s}`),
+        ].slice(0, 12),
+      findings: passedOf('skillsEvidenceContext').length
+        ? passedOf('skillsEvidenceContext')
+        : [],
+      improvements: uniqTerms([
+        ...skillsOnly.slice(0, 5).map(s => `Describe how you used ${s} — do not invent numbers.`),
+        ...missP.slice(0, 3).map(s => `Do not add ${s} unless it is already on your source resume.`),
+      ].filter(Boolean)).slice(0, 6),
+    },
+    experienceSeniorityMatch: {
+      failed: failedOf('experienceSeniorityMatch'),
+      findings: passedOf('experienceSeniorityMatch'),
+      improvements: uniqTerms([
+        ...failedOf('experienceSeniorityMatch').map(f => {
+          if (/years/i.test(f)) return yearsNeed
+            ? `Put “${yearsNeed}” in the summary if it is true.`
+            : 'Put your years of experience in the summary.';
+          if (/ownership|production|decision/i.test(f))
+            return 'Show work you owned, production systems, or decisions you made.';
+          if (/role|depth|date/i.test(f))
+            return 'Show at least two jobs with dates so growth is obvious.';
+          return f;
+        }),
+        !failedOf('experienceSeniorityMatch').length
+          ? 'Seniority already looks clear.'
+          : null,
+      ].filter(Boolean)).slice(0, 4),
+    },
+    achievementsImpact: {
+      failed: failedOf('achievementsImpact'),
+      findings: uniqTerms([
+        ...passedOf('achievementsImpact'),
+        Number(sc.bulletsWithMetrics || 0)
+          ? `${sc.bulletsWithMetrics} bullets already have numbers`
+          : 'No numbers yet — that is fine if you do not invent them',
+      ]),
+      improvements: uniqTerms([
+        'Say what changed: faster, fewer errors, more reliable, people helped.',
+        'Add a number only if it is already true on your source resume.',
+      ]),
+    },
+    resumeParsingStructure: {
+      failed: failedOf('resumeParsingStructure').length
+        ? failedOf('resumeParsingStructure')
+        : missingSections.map(s => `Missing ${s}`),
+      findings: passedOf('resumeParsingStructure'),
+      improvements: uniqTerms([
+        ...missingSections.map(s => `Add a clear ${s} section.`),
+        'Keep one simple column: name, title, summary, skills, work, education.',
+      ]),
+    },
+    jobTitleAlignment: {
+      failed: failedOf('jobTitleAlignment'),
+      findings: passedOf('jobTitleAlignment'),
+      improvements: uniqTerms([
+        'Do not rename old jobs to copy this posting.',
+        jdTitle ? `Use “${jdTitle}” as the target title at the top.` : 'Keep old titles honest; let the summary show the job you want.',
+      ].filter(Boolean)),
+    },
+    recruiterReadability: {
+      failed: failedOf('recruiterReadability'),
+      findings: passedOf('recruiterReadability'),
+      improvements: uniqTerms([
+        Number(scores.recruiterReadability || 0) < 4
+          ? 'Open with the job title, years, and main tools.'
+          : 'Keep the top of the page showing role, years, tools, and employers.',
+      ].filter(Boolean)),
+    },
+  };
+
+  const out = {};
+  for (const meta of RULE_META) {
+    const val = Number(scores[meta.key] || 0);
+    const pack = byKey[meta.key] || { findings: [], improvements: [], failed: [] };
+    const ratio = val / Math.max(meta.max, 1);
+    out[meta.key] = {
+      key: meta.key,
+      letter: meta.letter,
+      label: meta.label,
+      score: val,
+      max: meta.max,
+      status: ratio >= 0.85 ? 'ok' : ratio >= 0.55 ? 'mid' : 'bad',
+      statusLabel: ratio >= 0.85 ? 'Strong' : ratio >= 0.55 ? 'Close' : 'Needs work',
+      failed: listOrEmpty(pack.failed),
+      findings: listOrEmpty(pack.findings),
+      improvements: listOrEmpty(pack.improvements),
+      // keep legacy keys empty for any old callers
+      missing: [],
+      found: [],
+      tips: listOrEmpty(pack.improvements),
+    };
+  }
+  return out;
+}
+
+function defaultAiCategoryKey(details) {
+  if (state.selectedAiCategory && details[state.selectedAiCategory]) return state.selectedAiCategory;
+  const weak = RULE_META.find(m => details[m.key] && details[m.key].status !== 'ok');
+  return (weak && weak.key) || RULE_META[0].key;
+}
+
+function formatScoreRuleDetailHtml(d) {
+  if (!d) return '';
+  const failed = humanLines(d.failed);
+  const subjectOf = (s) => String(s || '')
+    .replace(/^(missing|listed only|in skills only|needs a real work example|needs a stronger example):\s*/i, '')
+    .replace(/\s+is shown in work history$/i, '')
+    .trim()
+    .toLowerCase();
+  const failedSubjects = new Set(failed.map(subjectOf).filter(Boolean));
+  const findings = humanLines(d.findings).filter(f => {
+    const sub = subjectOf(f);
+    if (failed.some(x => x.toLowerCase() === f.toLowerCase())) return false;
+    if (sub && failedSubjects.has(sub)) return false;
+    return true;
+  });
+  const improvements = listOrEmpty(d.improvements).slice(0, 5);
+  const blurb = d.key === 'skillsKeywords'
+    ? 'Same JD must-have tools as the chip row. Gold = Skills only. Purple nice-to-have chips are not scored here.'
+    : d.status === 'ok'
+      ? 'This part looks solid.'
+      : d.status === 'mid'
+        ? 'This part is partly there.'
+        : 'This part needs work.';
+  const list = (items, kind) => items.length
+    ? `<ul class="ai-cat-items">${items.map(m =>
+      `<li class="${kind}">${escapeHtml(m)}</li>`).join('')}</ul>`
+    : '';
+  return `
+    <div class="ai-cat-score">
+      <strong>${d.score}</strong><span> of ${d.max}</span>
+      <span class="ai-cat-status ${d.status}">${escapeHtml(d.statusLabel)}</span>
+    </div>
+    <p class="ai-cat-blurb">${blurb}</p>
+    ${failed.length ? `<div><h4>What's missing</h4>${list(failed, 'miss')}</div>` : ''}
+    ${findings.length ? `<div><h4>What's working</h4>${list(findings, 'ok')}</div>` : ''}
+    <div>
+      <h4>What to do</h4>
+      ${improvements.length
+        ? `<ul class="ai-cat-tips">${improvements.map(t => `<li>${escapeHtml(t)}</li>`).join('')}</ul>`
+        : '<div class="ai-cat-empty">Nothing to change here.</div>'}
+    </div>`;
+}
+
+function selectAiCategory(key) {
+  state.selectedAiCategory = key;
+  const rewriteOpen = $('postRewriteScore') && !$('postRewriteScore').classList.contains('hidden');
+  const afterU = state.lastAtsUnified || { scorecard: state.scorecard, ruleScores: state.scorecard?.ruleScores };
+  const beforeU = rewriteOpen ? packedScoreUnified(state.preTailor, afterU) : null;
+  const panelU = beforeU || afterU;
+  const details = buildAiCategoryDetails(panelU);
+  renderAiCategoryBars(panelU.ruleScores || {}, key);
+  renderAiCategoryDetail(key, details);
+  const afterDetails = buildAiCategoryDetails(afterU);
+  const d = afterDetails[key] || details[key];
+  const titleR = $('aiCategoryDetailTitleResults');
+  const elR = $('aiCategoryDetailResults');
+  if (titleR && d) titleR.textContent = d.label;
+  if (elR && d) elR.innerHTML = formatScoreRuleDetailHtml(d);
+  const scorecard = $('scorecardContent');
+  if (scorecard) {
+    scorecard.querySelectorAll('.bar-row.ai-cat').forEach(row => {
+      const label = row.querySelector('.ai-cat-label')?.textContent || '';
+      const meta = RULE_META.find(m =>
+        label === `${m.letter}. ${m.label}` || label === m.label || label.endsWith(m.label)
+      );
+      row.classList.toggle('active', !!(meta && meta.key === key));
+    });
+  }
+  if (rewriteOpen && typeof window.selectRewriteCategory === 'function') window.selectRewriteCategory(key);
+}
+
+window.selectAiCategory = selectAiCategory;
+
+function renderAiCategoryBars(scores, activeKey) {
+  const el = $('ruleBars');
+  if (!el) return;
+  const active = activeKey || state.selectedAiCategory || RULE_META[0].key;
+  el.innerHTML = RULE_META.map(r => {
+    const val = Number(scores[r.key] || 0);
+    const pct = Math.max(0, Math.min(100, (val / r.max) * 100));
+    const on = r.key === active ? ' active' : '';
+    return `<div class="bar-row ai-cat${on}" role="button" tabindex="0" onclick="selectAiCategory('${r.key}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectAiCategory('${r.key}')}">
+      <div class="ai-cat-label">${escapeHtml(r.label)}</div>
+      <div class="track"><div class="fill" style="width:${pct}%"></div></div>
+      <div>${val}/${r.max}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderAiCategoryDetail(key, detailsMap) {
+  const details = detailsMap || (state.lastAtsUnified ? buildAiCategoryDetails(state.lastAtsUnified) : null);
+  const d = details && details[key];
+  const title = $('aiCategoryDetailTitle');
+  const el = $('aiCategoryDetail');
+  if (!el) return;
+  if (!d) {
+    if (title) title.textContent = 'Why this score';
+    el.innerHTML = `<p class="hint" style="margin:0;">Click a row on the left to see what that number means.</p>`;
+    return;
+  }
+  if (title) title.textContent = d.label;
+  el.innerHTML = formatScoreRuleDetailHtml(d);
+}
+
+function syncAiCategoryPanel(unified) {
+  state.lastAtsUnified = unified;
+  const details = buildAiCategoryDetails(unified);
+  const key = defaultAiCategoryKey(details);
+  state.selectedAiCategory = key;
+  renderAiCategoryBars(unified.ruleScores || {}, key);
+  renderAiCategoryDetail(key, details);
+}
+
 function renderBarChart(scores) {
   return RULE_META.map(r => {
     const val = Number(scores[r.key] || 0);
     const pct = Math.max(0, Math.min(100, (val / r.max) * 100));
-    return `<div class="bar-row"><div>${r.label}</div><div class="track"><div class="fill" style="width:${pct}%"></div></div><div>${val}/${r.max}</div></div>`;
+    return `<div class="bar-row"><div>${r.label}</div><div class="track"><div class="fill" style="width:${pct}%"></div></div><div>${val}/${r.max} pts</div></div>`;
   }).join('');
 }
+
+function renderRewriteRuleCompareBars(beforeScores, afterScores, activeKey) {
+  const before = beforeScores || {};
+  const after = afterScores || {};
+  const active = activeKey || state.selectedRewriteCategory || RULE_META[0].key;
+  return RULE_META.map(r => {
+    const bv = Number(before[r.key] || 0);
+    const av = Number(after[r.key] || 0);
+    const bp = Math.max(0, Math.min(100, (bv / r.max) * 100));
+    const ap = Math.max(0, Math.min(100, (av / r.max) * 100));
+    const delta = av - bv;
+    const deltaTxt = delta > 0 ? `+${delta}` : String(delta);
+    const on = r.key === active ? ' active' : '';
+    return `<div class="bar-row ai-cat rewrite-cmp${on}" role="button" tabindex="0" onclick="selectRewriteCategory('${r.key}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectRewriteCategory('${r.key}')}">
+      <div class="ai-cat-label">${escapeHtml(r.label)}</div>
+      <div>
+        <div class="track" style="margin-bottom:5px;"><div class="fill ghost" style="width:${bp}%"></div></div>
+        <div class="track"><div class="fill" style="width:${ap}%"></div></div>
+      </div>
+      <div class="rewrite-cmp-pts">${bv}→${av}<small>${escapeHtml(deltaTxt)}</small></div>
+    </div>`;
+  }).join('');
+}
+
+function renderBeforeAfterCategoryHtml(beforeD, afterD) {
+  return `<div class="ba-split">
+    <div class="ba-col">
+      <h4>Before rewrite</h4>
+      ${beforeD ? formatScoreRuleDetailHtml(beforeD) : '<p class="hint" style="margin:0;">No before score for this category.</p>'}
+    </div>
+    <div class="ba-col ba-col-after">
+      <h4>After rewrite</h4>
+      ${afterD ? formatScoreRuleDetailHtml(afterD) : '<p class="hint" style="margin:0;">No after score yet.</p>'}
+    </div>
+  </div>`;
+}
+
+window.selectRewriteCategory = function selectRewriteCategory(key) {
+  state.selectedRewriteCategory = key;
+  const after = state.lastAtsUnified;
+  const before = packedScoreUnified(state.preTailor, after);
+  if (!after) return;
+  const afterDetails = buildAiCategoryDetails(after);
+  const beforeDetails = before ? buildAiCategoryDetails(before) : null;
+  const bars = $('rewriteRuleBars');
+  if (bars) bars.innerHTML = renderRewriteRuleCompareBars(before?.ruleScores, after.ruleScores, key);
+  const meta = RULE_META.find(m => m.key === key);
+  const title = $('rewriteCatTitle');
+  if (title) title.textContent = meta ? meta.label : 'Why this score';
+  const detail = $('rewriteCatDetail');
+  if (detail) detail.innerHTML = renderBeforeAfterCategoryHtml(beforeDetails?.[key], afterDetails[key]);
+};
 
 function renderCompareChart(before, after) {
   const b = before || {};
   const a = after || {};
+  const bRules = before?.ruleScores || b.ruleScores || {};
+  const aRules = after?.ruleScores || a.ruleScores || {};
   const rows = [
-    ['Match score', Number(before?.atsScore || 0), Number(after?.atsScore || 0), 100],
+    ['Match score', Number(before?.atsScore || b.atsScore || 0), Number(after?.atsScore || 0), 100],
+    ...RULE_META.map(r => [r.label, Number(bRules[r.key] || 0), Number(aRules[r.key] || 0), r.max]),
     ['Must-have skills', (b.keywordsFound || []).length, (a.keywordsFound || []).length, Math.max((after?.primary || before?.primary || []).length, 1)],
     ['Measured bullets', Number(b.bulletsWithMetrics || 0), Number(a.bulletsWithMetrics || 0), Math.max(Number(a.bulletsTotal || b.bulletsTotal || 1), 1)],
     ['Recruiter glance', glancePassCount(b.tenSecondTest), glancePassCount(a.tenSecondTest), TEN_QUESTIONS.length],
@@ -3855,7 +6562,7 @@ function renderCompareChart(before, after) {
     const bp = Math.max(0, Math.min(100, (bv / max) * 100));
     const ap = Math.max(0, Math.min(100, (av / max) * 100));
     return `<div class="compare-pair">
-      <div class="pair-label">${label} · ${bv} → ${av}</div>
+      <div class="pair-label">${escapeHtml(label)} · ${bv} → ${av}</div>
       <div class="bar-row" style="grid-template-columns:52px 1fr;">
         <div>Before</div><div class="track"><div class="fill ghost" style="width:${bp}%"></div></div>
       </div>
@@ -3972,18 +6679,49 @@ function renderTen(containerId, test) {
 }
 
 function renderRuleBars(scores) {
-  const el = $('ruleBars');
-  if (!el) return;
-  el.innerHTML = renderBarChart(scores);
+  const unified = state.lastAtsUnified || { ruleScores: scores, scorecard: state.scorecard };
+  if (!unified.ruleScores) unified.ruleScores = scores;
+  syncAiCategoryPanel(unified);
 }
 
-function renderKeywordGrid(targetId, primary, secondary, foundP, foundS) {
-  const foundSet = new Set([...(foundP || []), ...(foundS || [])].map(k => k.toLowerCase()));
-  const html = [
-    ...primary.map(k => `<span class="kw-tag ${foundSet.has(k.toLowerCase()) ? 'kw-match' : 'kw-miss'}">${k}</span>`),
-    ...secondary.map(k => `<span class="kw-tag ${foundSet.has(k.toLowerCase()) ? 'kw-match' : 'kw-miss'}">${k}</span>`),
-  ].join('');
-  $(targetId).innerHTML = html;
+function renderKeywordGrid(targetId, primary, secondary, foundP, foundS, scorecard) {
+  const el = $(targetId);
+  if (!el) return;
+  const sc = scorecard || state.lastAtsUnified?.scorecard || {};
+  const scored = scoredSkillTerms(primary || []);
+  const extra = scoredSkillTerms(secondary || []).filter(s =>
+    !scored.some(p => p.toLowerCase() === String(s).toLowerCase()),
+  );
+  const phrases = filterExtractedSkills(
+    (state.keywords && state.keywords.atsKeywords)
+    || (state.lastJdJson && state.lastJdJson.ats_phrases)
+    || [],
+  ).filter(p =>
+    !scored.some(s => s.toLowerCase() === String(p).toLowerCase())
+    && !extra.some(s => s.toLowerCase() === String(p).toLowerCase()),
+  );
+  const cls = (k) => {
+    const st = skillStatusOnResume(k, sc);
+    if (st === 'work') return 'kw-match';
+    if (st === 'skills-only') return 'kw-skills';
+    return 'kw-miss';
+  };
+  const scoredHtml = scored.map(k =>
+    `<span class="kw-tag ${cls(k)}">${escapeHtml(k)}</span>`
+  ).join('');
+  const extraHtml = extra.map(k =>
+    `<span class="kw-tag kw-stretch">${escapeHtml(k)}</span>`
+  ).join('');
+  const resumeText = (state.lastAtsUnified && state.lastAtsUnified.resumeUsed)
+    || ($('resumeInput') && $('resumeInput').value)
+    || '';
+  const atsHtml = phrases.map(p => {
+    const on = atsPhrasePresent(p, resumeText);
+    return `<span class="kw-tag ${on ? 'kw-ats-on' : 'kw-ats'}">${escapeHtml(p)}</span>`;
+  }).join('');
+  el.innerHTML = scoredHtml
+    + (extraHtml ? `<span class="kw-set-break">Nice-to-have (not scored)</span>${extraHtml}` : '')
+    + (atsHtml ? `<span class="kw-set-break">ATS phrases (weave into work bullets)</span>${atsHtml}` : '');
 }
 
 function renderGaps(targetId, items) {
@@ -4070,7 +6808,14 @@ function renderRewritePlanReport({
       <div class="rp-hero-left">
         <div class="rp-hero-eyebrow">Target role for rewrite</div>
         <h3 class="rp-hero-title">${escapeHtml(displayRole)}</h3>
-        <p class="rp-hero-sub">${state.mode === 'aggressive' ? 'Stretch mode — JD skills plus internet / market skills' : 'Stay truthful — JD skills only, no invented experience'}</p>
+        <p class="rp-hero-sub">${(() => {
+          const master = inferMasterCareerLabel(($('resumeInput') && $('resumeInput').value) || '');
+          const same = familiesAligned(roleFamilyFromTitle(master), roleFamilyFromTitle(displayRole));
+          const mode = state.mode === 'aggressive' ? 'Stretch — JD + market skills' : 'Stay truthful — JD skills only';
+          return same
+            ? `${mode}. Previous role matches this family — rebuild around JD skills and duties, keep overlapping experience.`
+            : `${mode}. Previous role is ${escapeHtml(master)}; rewrite is a ${escapeHtml(displayRole)} resume using JD skills/duties plus overlapping prior work.`;
+        })()}</p>
       </div>
       <div class="rp-hero-score ${score >= SCORE_THRESHOLD ? 'ok' : 'low'}">
         <span class="rp-hero-score-val">${score}</span>
@@ -4141,80 +6886,85 @@ function renderRewritePlanReport({
 
 function renderRewriteCta(score, roleLabel) {
   const title = escapeHtml(formatTabJobTitle(roleLabel, { full: true }) || roleLabel);
-  if (score < SCORE_THRESHOLD) {
-    return `<div class="rp-cta rp-cta-warn">
-      <div class="rp-cta-copy">
-        <div class="rp-cta-score"><span>${score}</span><small>/100</small></div>
-        <div>
-          <strong>Below your ${SCORE_THRESHOLD} target</strong>
-          <p>Rewrite tailors your base resume for <em>${title}</em> using the skill plan above.</p>
-        </div>
-      </div>
-      <button class="btn-primary rp-cta-btn" onclick="runAnalysis()">Rewrite to ${SCORE_THRESHOLD}+</button>
-    </div>`;
-  }
-  return `<div class="rp-cta rp-cta-ok">
+  const need = score < SCORE_THRESHOLD;
+  return `<div class="rp-cta ${need ? 'rp-cta-warn' : 'rp-cta-ok'}">
     <div class="rp-cta-copy">
+      ${need ? `<div class="rp-cta-score"><span>${score}</span><small>/100</small></div>` : ''}
       <div>
-        <strong>Already at ${score}/100</strong>
-        <p>Optional: polish the language for <em>${title}</em>.</p>
+        <strong>Rewrite this resume for ${title}</strong>
+        <p>Skills and work history will be written for this job. Old jobs stay honest.</p>
       </div>
     </div>
-    <button class="btn-secondary rp-cta-btn" onclick="runAnalysis()">Polish for this posting</button>
+    <button class="btn-primary rp-cta-btn" onclick="runAnalysis()">Rewrite resume</button>
   </div>`;
 }
 
 function renderAtsPanel(unified) {
-  const sc = unified.scorecard;
-  const score = unified.atsScore;
+  const aligned = syncDisplayedAlignmentScore(unified);
+  const sc = aligned.scorecard;
+  const score = aligned.atsScore;
   const color = scoreHue(score);
-  const kw = state.keywords || unified;
-  const roleLabel = (kw.role && kw.role.label) || unified.title || 'Read from posting';
-  state.preTailor = snapshotScore(unified);
+  const kw = state.keywords || aligned;
+  const roleLabel = (kw.role && kw.role.label) || aligned.title || 'Read from posting';
+  state.preTailor = snapshotScore(aligned);
   $('freeAtsPanel').classList.remove('hidden');
   if ($('postRewriteScore')) $('postRewriteScore').classList.add('hidden');
   if ($('scoreSection')) $('scoreSection').classList.add('hidden');
   if ($('optimizeBoard')) $('optimizeBoard').classList.add('hidden');
   $('scoreSourceLabel').textContent = roleLabel;
+  const resumeText = ($('resumeInput') && $('resumeInput').value.trim()) || aligned.resumeUsed || '';
+  paintRoleCompare(aligned, resumeText);
   if ($('roleDetectLine')) {
-    const jdSrc = kw.geminiUsed ? 'Gemini (JD)' : 'local RAG';
-    const netSrc = kw.internetUsed ? 'Gemini (internet)' : (kw.internetError ? 'internet lookup failed' : 'local RAG fallback');
-    const geminiNote = kw.geminiUsed
-      ? `Skills from posting via ${jdSrc}. Market skills from ${netSrc}.`
-      : (kw.geminiError ? `Gemini unavailable (${kw.geminiError}) — using local RAG.` : 'Using local RAG fallback.');
-    const modeNote = state.mode === 'aggressive'
-      ? 'Stay truthful = JD only · Stretch = JD + internet/market skills'
-      : 'Locked to JD skills. Switch to Stretch to also add internet/market skills.';
-    $('roleDetectLine').textContent = `Role: ${roleLabel} · ${geminiNote} ${modeNote}`;
+    $('roleDetectLine').classList.add('hidden');
+    $('roleDetectLine').textContent = '';
   }
-  const resumeText = ($('resumeInput') && $('resumeInput').value.trim()) || unified.resumeUsed || '';
   const jdText = ($('jdInput') && $('jdInput').value.trim()) || '';
   const candidateProfile = detectCandidateProfile(resumeText);
   renderStackDetectLine(candidateProfile);
-  const eligibility = kw.eligibility || mergeEligibility(null, extractLocalEligibilityFromJd(jdText));
+  const jj = aligned.jdJson || state.lastJdJson || kw.jdJson || null;
+  const eligibility = mergeEligibility(
+    kw.eligibility,
+    mergeEligibility(
+      jj ? {
+        minYears: jj.years_of_experience?.minimum,
+        maxYears: jj.years_of_experience?.maximum,
+        yearsNote: jj.years_of_experience?.note || jj.requirements?.experience || '',
+      } : null,
+      extractLocalEligibilityFromJd(jdText),
+    ),
+  );
   renderEligibilityPanel(buildEligibilityReport(eligibility, resumeText));
+  const knockEl = $('hardKnockoutBanner');
+  if (knockEl) {
+    knockEl.innerHTML = renderHardKnockoutBanner(sc);
+    knockEl.classList.toggle('hidden', !renderHardKnockoutBanner(sc));
+  }
   if ($('atsDonut')) $('atsDonut').innerHTML = svgDonut(score);
   $('freeAtsScore').textContent = score;
   $('freeAtsScore').style.color = color;
-  $('freeKwMatch').textContent = `${(sc.keywordsFound || []).length}/${Math.max(unified.primary.length, 1)}`;
-  $('freeKwMatchSub').textContent = state.mode === 'aggressive' ? 'JD + internet skills found' : 'JD skills found';
+  const workHistoryHits = Number.isFinite(Number(sc.keywordMatch))
+    ? Number(sc.keywordMatch)
+    : (sc.keywordsFound || []).length;
+  $('freeKwMatch').textContent = `${workHistoryHits}/${Math.max((unified.primary || []).length, 1)}`;
+  $('freeKwMatchSub').textContent = 'JD tools shown in work history';
   $('freeFmtCheck').textContent = sc.formatCheck || '--';
   $('freeFmtCheck').style.color = sc.formatCheck === 'PASS' ? '#16a34a' : '#d97706';
   $('freeBulletScore').textContent = `${sc.bulletsWithMetrics || 0}/${sc.bulletsTotal || 0}`;
-  renderRuleBars(unified.ruleScores || {});
+  if ($('scoreDisclaimer')) {
+    $('scoreDisclaimer').textContent = SCORE_UI_BLURB;
+  }
+  state.lastAtsUnified = {
+    ...unified,
+    understanding: unified.understanding || state.lastUnderstanding || null,
+    resumeJson: unified.resumeJson || state.lastResumeJson || null,
+    jdJson: unified.jdJson || state.lastJdJson || state.keywords?.jdJson || null,
+  };
+  syncAiCategoryPanel(state.lastAtsUnified);
   renderTen('tenSecondList', sc.tenSecondTest || {});
   if ($('glanceChart')) $('glanceChart').innerHTML = renderGlanceChart(sc.tenSecondTest || {});
-  renderKeywordGrid('freeKwGrid', unified.primary, unified.secondary, sc.keywordsFound, sc.secondaryFound);
-  const matched = (sc.keywordsFound || []).length + (sc.secondaryFound || []).length;
-  const total = unified.primary.length + unified.secondary.length;
-  const pct = total ? Math.round((matched / total) * 100) : 0;
-  $('freeKwBar').style.width = pct + '%';
-  $('freeKwBarLabel').textContent = `${matched}/${total} skills on the page · ${pct}%`;
+  renderKeywordGrid('freeKwGrid', unified.primary, unified.secondary, sc.keywordsFound, sc.secondaryFound, sc);
   const missingImportant = filterTermsForCandidateProfile(dropCertTerms(sc.keywordsMissing || []), resumeText, candidateProfile);
   const missingExtra = filterTermsForCandidateProfile(dropCertTerms(sc.secondaryMissing || []), resumeText, candidateProfile);
-  if ($('skillCoverageChart')) {
-    $('skillCoverageChart').innerHTML = svgPie(matched, missingImportant.length + missingExtra.length);
-  }
   if ($('atsFlow')) $('atsFlow').innerHTML = renderFlow(atsStory(unified));
   const missing = uniqTerms([...missingImportant, ...missingExtra]);
   const found = [...(sc.keywordsFound || []), ...(sc.secondaryFound || [])];
@@ -4267,8 +7017,9 @@ function renderAtsPanel(unified) {
 function renderPostRewriteScore(unified, before) {
   const el = $('postRewriteScore');
   if (!el) return;
-  const sc = unified.scorecard || {};
-  const score = Number(unified.atsScore || 0);
+  const aligned = syncDisplayedAlignmentScore(unified);
+  const sc = aligned.scorecard || {};
+  const score = Number(aligned.atsScore || 0);
   const prev = before ? Number(before.atsScore || 0) : null;
   const delta = prev != null ? score - prev : null;
   const hue = scoreHue(score);
@@ -4280,24 +7031,36 @@ function renderPostRewriteScore(unified, before) {
     : `${prev} → ${score} (${delta >= 0 ? '+' : ''}${delta})`;
   const master = ($('resumeInput') && $('resumeInput').value.trim()) || '';
   const stackBlock = master ? stackDetectHtml(detectCandidateProfile(master)) : '';
+  const beforeU = packedScoreUnified(before, aligned);
+  const afterDetails = buildAiCategoryDetails(aligned);
+  const beforeDetails = beforeU ? buildAiCategoryDetails(beforeU) : null;
+  const key = state.selectedRewriteCategory || defaultAiCategoryKey(afterDetails);
+  state.selectedRewriteCategory = key;
+  const catLabel = RULE_META.find(m => m.key === key)?.label || 'Why this score';
   el.classList.remove('hidden');
   el.innerHTML = `
     <div class="insight-hero">
-      <div>
-        <div class="donut-wrap" id="postRewriteDonut">${svgDonut(score, 140)}</div>
-        ${prev != null ? `<div class="post-score-delta ${deltaClass}">${escapeHtml(deltaText)}</div>` : ''}
+      <div class="ba-donuts">
+        ${prev != null ? `<div class="ba-donut">
+          <div class="donut-wrap">${svgDonut(prev, 120)}</div>
+          <div class="score-sub" style="text-align:center;margin-top:4px;">Before rewrite</div>
+        </div>` : ''}
+        <div class="ba-donut">
+          <div class="donut-wrap" id="postRewriteDonut">${svgDonut(score, 140)}</div>
+          ${prev != null ? `<div class="post-score-delta ${deltaClass}">${escapeHtml(deltaText)}</div>` : ''}
+        </div>
       </div>
       <div>
         <div class="card-title">Match score after rewrite</div>
         ${stackBlock}
         <p class="hint" style="margin-bottom:12px;">${prev != null
-    ? `Moved from ${prev}/100 before rewrite to ${score}/100 on the tailored draft.`
+    ? `Moved from ${prev}/100 before rewrite to ${score}/100 on the tailored draft. Grey bars = before · colored bars = after.`
     : 'How the rewritten page scores against this posting.'}</p>
         <div class="kpi-mini">
           <div class="score-card">
             <div class="score-label">Match score</div>
             <div class="score-value" style="color:${hue}">${score}</div>
-            <div class="score-sub">ChatGPT-calibrated · target ${SCORE_TARGET}+</div>
+            <div class="score-sub">${prev != null ? `was ${prev}` : `${SCORE_RULE_NAME} · target ${SCORE_TARGET}+`}</div>
           </div>
           <div class="score-card">
             <div class="score-label">Must-have skills</div>
@@ -4316,12 +7079,24 @@ function renderPostRewriteScore(unified, before) {
           </div>
         </div>
       </div>
+    </div>
+    <div class="chart-grid" style="margin-top:18px;">
+      <div class="chart-card">
+        <h3>A–I scores before vs after</h3>
+        <p class="ai-cat-hint">Grey = before rewrite · color = after. Click a row for the details.</p>
+        <div class="bar-chart" id="rewriteRuleBars">${renderRewriteRuleCompareBars(beforeU?.ruleScores, aligned.ruleScores, key)}</div>
+      </div>
+      <div class="chart-card">
+        <h3 id="rewriteCatTitle">${escapeHtml(catLabel)}</h3>
+        <div class="ai-cat-detail" id="rewriteCatDetail">${renderBeforeAfterCategoryHtml(beforeDetails?.[key], afterDetails[key])}</div>
+      </div>
     </div>`;
 }
 
 function renderResults(unified, resumeText) {
-  const sc = unified.scorecard;
-  const score = unified.atsScore;
+  const aligned = syncDisplayedAlignmentScore(unified);
+  const sc = aligned.scorecard;
+  const score = aligned.atsScore;
   const before = state.preTailor;
   stopAiProcessing();
   setDetailAnalysisOpen(false);
@@ -4336,15 +7111,22 @@ function renderResults(unified, resumeText) {
   if ($('afterDonut')) $('afterDonut').innerHTML = svgDonut(score);
   if ($('afterCompareHint')) {
     const prev = before ? Number(before.atsScore || 0) : null;
-    const calib = unified.source === 'gemini-external' ? ' ChatGPT-calibrated external estimate.' : '';
+    const calib = unified.scorecard?.understandingUsed
+      ? ` Analysed structured JSON, then scored with ${SCORE_RULE_NAME}.`
+      : ` Scored with ${SCORE_RULE_NAME}.`;
     $('afterCompareHint').textContent = prev == null
-      ? `How the page moved toward the posting.${calib}`
-      : `Match score moved ${prev} → ${score}.${calib}`;
+      ? `How the page moved toward the posting.${calib} ${SCORE_INTERPRETATION}`
+      : `Alignment moved ${prev} → ${score}.${calib} ${SCORE_INTERPRETATION}`;
   }
   if ($('compareChart')) {
     $('compareChart').innerHTML = renderCompareChart(
-      before ? { ...before.scorecard, atsScore: before.atsScore, primary: before.primary } : null,
-      { ...sc, atsScore: score, primary: unified.primary }
+      before ? {
+        ...before.scorecard,
+        atsScore: before.atsScore,
+        primary: before.primary,
+        ruleScores: before.ruleScores,
+      } : null,
+      { ...sc, atsScore: score, primary: unified.primary, ruleScores: unified.ruleScores }
     );
   }
   if ($('afterGlanceChart')) {
@@ -4361,6 +7143,13 @@ function renderResults(unified, resumeText) {
   $('outputArea').textContent = resumeText;
   showFormattedResume(resumeText);
   setResumeView('formatted');
+  state.lastAtsUnified = {
+    ...unified,
+    understanding: unified.understanding || state.lastUnderstanding || null,
+  };
+  const aiDetails = buildAiCategoryDetails(state.lastAtsUnified);
+  const activeCat = defaultAiCategoryKey(aiDetails);
+  state.selectedAiCategory = activeCat;
   $('scorecardContent').innerHTML = [
     ['Match score', score + '/' + SCORE_MAX, score >= SCORE_THRESHOLD ? 'sc-green' : 'sc-yellow'],
     ['Must-have skills', `${(sc.keywordsFound || []).length} found · ${(sc.keywordsMissing || []).length} missing`, 'sc-blue'],
@@ -4369,11 +7158,46 @@ function renderResults(unified, resumeText) {
     ['Page hygiene', sc.formatCheck, sc.formatCheck === 'PASS' ? 'sc-green' : 'sc-yellow'],
     ['Sections', sc.sectionCheck, sc.sectionCheck === 'PASS' ? 'sc-green' : 'sc-red'],
     ['Read on this', sc.confidenceLevel, 'sc-yellow'],
-    ['Why', sc.confidenceReason || '—', ''],
+    ['Why', sc.confidenceReason || SCORE_INTERPRETATION, ''],
   ].map(([l, v, c]) => `<div class="scorecard-row"><span class="sc-label">${l}</span><span class="sc-value ${c}">${v}</span></div>`).join('')
-    + '<div class="bar-chart" style="margin-top:14px;">' + renderBarChart(unified.ruleScores || {}) + '</div>';
+    + renderHardKnockoutBanner(sc)
+    + ((sc.jdSkillsOnly || []).length
+      ? `<div class="scorecard-row" style="border:1px solid #fecdd3;background:#fff1f2;border-radius:10px;padding:10px 12px;margin-top:8px;">
+          <span class="sc-label" style="color:#9f1239;">Credibility risk</span>
+          <span class="sc-value sc-red">Skills only (no experience proof): ${(sc.jdSkillsOnly || []).slice(0, 8).map(escapeHtml).join(', ')}${(sc.jdSkillsOnly || []).length > 8 ? '…' : ''}. Recruiters will ask where you used these — omit or prove in bullets.</span>
+        </div>`
+      : '')
+    + ((sc.inventedSkills || []).length
+      ? `<div class="scorecard-row" style="border:1px solid #fde68a;background:#fffbeb;border-radius:10px;padding:10px 12px;margin-top:8px;">
+          <span class="sc-label" style="color:#92400e;">Not on master</span>
+          <span class="sc-value" style="color:#92400e;">Removed or still listed without master evidence: ${(sc.inventedSkills || []).slice(0, 8).map(escapeHtml).join(', ')}</span>
+        </div>`
+      : '')
+    + `<p class="ai-cat-hint" style="margin-top:14px;">Click a row to see why.</p>`
+    + `<div class="bar-chart" style="margin-top:8px;">${RULE_META.map(r => {
+      const val = Number((unified.ruleScores || {})[r.key] || 0);
+      const pct = Math.max(0, Math.min(100, (val / r.max) * 100));
+      const on = r.key === activeCat ? ' active' : '';
+      return `<div class="bar-row ai-cat${on}" role="button" tabindex="0" onclick="selectAiCategory('${r.key}')"><div class="ai-cat-label">${escapeHtml(r.label)}</div><div class="track"><div class="fill" style="width:${pct}%"></div></div><div>${val}/${r.max}</div></div>`;
+    }).join('')}</div>`
+    + `<div class="chart-card" style="margin-top:12px;"><h3 id="aiCategoryDetailTitleResults">${escapeHtml(aiDetails[activeCat]?.label || 'Why this score')}</h3><div class="ai-cat-detail" id="aiCategoryDetailResults"></div></div>`;
+  // Mirror detail into results scorecard panel
+  const detailEl = $('aiCategoryDetailResults');
+  if (detailEl) {
+    const d = aiDetails[activeCat];
+    if (d) detailEl.innerHTML = formatScoreRuleDetailHtml(d);
+  }
+  // Keep the original Score panel as the before-rewrite snapshot.
+  if (before && $('freeAtsPanel') && !$('freeAtsPanel').classList.contains('hidden')) {
+    const beforeU = packedScoreUnified(before, unified);
+    if ($('scoreSourceLabel') && !$('scoreSourceLabel').textContent.includes('before')) {
+      $('scoreSourceLabel').textContent = `${$('scoreSourceLabel').textContent} (before rewrite)`;
+    }
+    renderAiCategoryBars(beforeU.ruleScores || {}, activeCat);
+    renderAiCategoryDetail(activeCat, buildAiCategoryDetails(beforeU));
+  }
 
-  renderKeywordGrid('kwGrid', unified.primary, unified.secondary, sc.keywordsFound, sc.secondaryFound);
+  renderKeywordGrid('kwGrid', unified.primary, unified.secondary, sc.keywordsFound, sc.secondaryFound, sc);
   const matched = (sc.keywordsFound || []).length;
   const pct = Math.round((matched / Math.max(unified.primary.length, 1)) * 100);
   $('kwProgressBar').style.width = pct + '%';
@@ -4398,7 +7222,7 @@ function renderRuleHtml(scores) {
   return '<div class="rule-bars" style="margin-top:12px;">' + RULE_META.map(r => {
     const val = Number(scores[r.key] || 0);
     const pct = Math.max(0, Math.min(100, (val / r.max) * 100));
-    return `<div class="rule-row"><div>${r.label}</div><div class="rule-track"><div class="rule-fill" style="width:${pct}%"></div></div><div>${val}/${r.max}</div></div>`;
+    return `<div class="rule-row"><div>${r.label}</div><div class="rule-track"><div class="rule-fill" style="width:${pct}%"></div></div><div>${val}/${r.max} pts</div></div>`;
   }).join('') + '</div>';
 }
 
@@ -4410,6 +7234,138 @@ function getInputs() {
   return { jd, resume };
 }
 
+function prettyJson(obj) {
+  try {
+    return JSON.stringify(obj, null, 2);
+  } catch {
+    return String(obj || '');
+  }
+}
+
+function renderStructuredJsonPanel(resumeJson, jdJson) {
+  const panel = $('jsonStructurePanel');
+  if (panel) panel.classList.remove('hidden');
+  const rView = $('resumeJsonView');
+  const jView = $('jdJsonView');
+  const rMeta = $('resumeJsonMeta');
+  const jMeta = $('jdJsonMeta');
+  if (rView) {
+    rView.classList.remove('json-empty');
+    rView.textContent = resumeJson ? prettyJson(resumeJson) : 'No resume JSON';
+  }
+  if (jView) {
+    jView.classList.remove('json-empty');
+    jView.textContent = jdJson ? prettyJson(jdJson) : 'No JD JSON';
+  }
+  if (rMeta) {
+    const name = resumeJson?.personal_information?.name || 'parsed';
+    const jobs = (resumeJson?.professional_experience || []).length;
+    const skills = resumeJson ? skillsFromResumeJson(resumeJson).length : 0;
+    rMeta.textContent = `${name} · ${jobs} roles · ${skills} skills`;
+  }
+  if (jMeta) {
+    const title = jdJson?.job_information?.title || 'parsed';
+    const must = (jdJson?.must_have_skills || []).length;
+    const duties = (jdJson?.responsibilities || []).length;
+    jMeta.textContent = `${title} · ${must} must-haves · ${duties} duties`;
+  }
+  try {
+    panel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch { /* ignore */ }
+}
+
+async function copyStructuredJson(which) {
+  const obj = which === 'jd' ? state.lastJdJson : state.lastResumeJson;
+  if (!obj) {
+    showToast('Nothing to copy yet — run Score first', '#d97706');
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(prettyJson(obj));
+    showToast(which === 'jd' ? 'JD JSON copied' : 'Resume JSON copied');
+  } catch {
+    showToast('Copy failed', '#e11d48');
+  }
+}
+
+function downloadStructuredJson() {
+  if (!state.lastResumeJson && !state.lastJdJson) {
+    showToast('Nothing to download yet — run Score first', '#d97706');
+    return;
+  }
+  const payload = {
+    resume: state.lastResumeJson || null,
+    jd: state.lastJdJson || null,
+    generated_at: new Date().toISOString(),
+  };
+  const blob = new Blob([prettyJson(payload)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'structured-resume-jd.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/** Fast local structure — no Gemini, no UI. Used under Score. */
+function fastStructureResumeJson(resume) {
+  return parseResumeToJsonLocal(String(resume || ''));
+}
+
+function fastStructureJdJson(jd) {
+  let parsed = parseJdToJsonLocal(String(jd || ''));
+  try {
+    if (window.RAGEngine && typeof RAGEngine.buildJdOnlySkillSet === 'function') {
+      const rag = RAGEngine.buildJdOnlySkillSet(jd);
+      const primary = dropCertTerms(rag.jdPrimary || rag.primary || []);
+      const secondary = dropCertTerms(rag.jdSecondary || rag.secondary || []);
+      if (primary.length) {
+        parsed.must_have_skills = uniqTerms([...(parsed.must_have_skills || []), ...primary]).slice(0, 16);
+      }
+      if (secondary.length) {
+        parsed.nice_to_have_skills = uniqTerms([...(parsed.nice_to_have_skills || []), ...secondary])
+          .filter(s => !parsed.must_have_skills.some(p => p.toLowerCase() === String(s).toLowerCase()))
+          .slice(0, 12);
+      }
+      if (rag.role?.title && !parsed.job_information?.title) {
+        parsed.job_information = { ...parsed.job_information, title: rag.role.title };
+      }
+      if (rag.role?.label && !parsed.overview) {
+        parsed.overview = String(rag.role.label);
+      }
+    }
+  } catch { /* ignore */ }
+  return normalizeJdJson(parsed);
+}
+
+/** Score a draft with the JD-alignment rule (structure JSON → coverage A–I). */
+async function scoreDraftWithScoreRule(jd, resume, { structureWithGemini = true } = {}) {
+  const text = String(resume || '');
+  let resumeJson;
+  let jdJson = state.lastJdJson;
+  if (structureWithGemini) {
+    const tasks = [parseResumeToJson(text).then(r => { resumeJson = r; })];
+    if (!jdJson) tasks.push(parseJdToJson(jd).then(j => { jdJson = j; }));
+    await Promise.all(tasks);
+  } else {
+    resumeJson = fastStructureResumeJson(text);
+    jdJson = jdJson || fastStructureJdJson(jd);
+  }
+  state.lastResumeJson = resumeJson;
+  state.lastJdJson = jdJson;
+  if (jdJson && (!state.keywords?.primary?.length || state.keywords?.source === 'jd-json')) {
+    const kw = keywordsFromJdJson(jdJson);
+    state.keywords = { ...(state.keywords || {}), ...kw, jdJson };
+    ensureAliasMap(state.keywords);
+  }
+  const { unified } = await scoreFromStructuredJson(resumeJson, jdJson, {
+    resumeText: text,
+    jdText: jd,
+  });
+  state.lastAtsUnified = unified;
+  state.scorecard = unified.scorecard;
+  return { unified, resume: text, resumeJson, jdJson };
+}
+
 async function runAtsCheck() {
   const inputs = getInputs();
   if (!inputs) return;
@@ -4418,27 +7374,42 @@ async function runAtsCheck() {
   btn.disabled = true;
   btn.textContent = 'Scoring…';
   setStep(2);
+  // Loader stays on scoring only — JSON convert is silent (no UI, no convert copy)
   showAiProcessing(
-    'AI is analysing the job description…',
-    'Extracting skills from the posting and job boards…'
+    `Scoring with the 9-point ${SCORE_RULE_NAME}…`,
+    'Comparing resume to the posting',
   );
   try {
-    const kw = await lockKeywordsFromJd(jd);
+    const [resumeJson, jdJson] = await Promise.all([
+      parseResumeToJson(resume),
+      parseJdToJson(jd),
+    ]);
+    state.lastResumeJson = resumeJson;
+    state.lastJdJson = jdJson;
+
+    const kw = keywordsFromJdJson(jdJson);
+    state.keywords = { ...(state.keywords || {}), ...kw };
+    state.kwHash = jdHash(jd);
     syncJdSessionMeta(getActiveJdSession(), kw);
     renderJdTabs();
-    updateAiProcessing('Checking posting eligibility and scoring your resume…');
-    if (!kw.geminiUsed && kw.geminiError) {
-      showToast('Gemini unavailable — using local RAG for skills', '#d97706');
-    }
-    const unified = stableScore(jd, resume, kw);
+
+    const { unified } = await scoreFromStructuredJson(resumeJson, jdJson, {
+      resumeText: resume,
+      jdText: jd,
+    });
+    state.lastAtsUnified = unified;
+    state.scorecard = unified.scorecard;
+    state.manualScoreKey = scorePairKey(jd, resume);
+    state.manualScoreUnified = snapshotScore(unified);
     renderAtsPanel(unified);
-    const role = (kw.role && kw.role.label) || 'this role';
-    showToast(`Match ${unified.atsScore}/100 · ${role}`);
+    if ($('freeAtsPanel')) $('freeAtsPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const role = jdJson.job_information?.title || unified.title || 'this role';
+    showToast(`9-point alignment ${unified.atsScore}/100 · ${role}`);
   } catch (err) {
     showToast('Match score failed: ' + String(err.message || err).slice(0, 80), '#e11d48');
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Score this match';
+    btn.textContent = 'Score (score rule)';
     stopAiProcessing();
     stopLoading();
   }
@@ -4448,6 +7419,13 @@ async function runAnalysis() {
   const inputs = getInputs();
   if (!inputs) return;
   const { jd, resume } = inputs;
+
+  if (!hasFreshManualScore(jd, resume)) {
+    showToast('Check the score first', '#d97706');
+    return;
+  }
+
+  const baselineUnified = state.manualScoreUnified || state.lastAtsUnified;
   $('analyzeBtn').disabled = true;
   if ($('postRewriteScore')) $('postRewriteScore').classList.add('hidden');
   $('scoreSection').classList.add('hidden');
@@ -4456,108 +7434,94 @@ async function runAnalysis() {
   if ($('detailAnalysisBar')) $('detailAnalysisBar').classList.add('hidden');
   if ($('detailAnalysisPanel')) $('detailAnalysisPanel').classList.add('hidden');
   if ($('progressSection')) $('progressSection').classList.add('hidden');
-  setStep(2);
+  setStep(3);
   showAiProcessing(
-    'AI is analysing the job description and rewriting your CV…',
-    'Extracting skills from the posting…'
+    'Rewriting as the JD role using your score-rule report…',
+    'Summary, skills, and experience will match that posting…'
   );
 
   try {
     await lockKeywordsFromJd(jd);
+    if (state.lastJdJson) {
+      state.keywords = { ...(state.keywords || {}), jdJson: state.lastJdJson };
+    }
     syncJdSessionMeta(getActiveJdSession(), state.keywords);
     renderJdTabs();
     if (!state.keywords.geminiUsed && state.keywords.geminiError) {
       showToast('Gemini unavailable — using local RAG for skills', '#d97706');
     }
-    state.preTailor = snapshotScore(stableScore(jd, resume, state.keywords));
+
+    // Use the manual Score report as the gap source — do not re-score before rewrite
+    state.preTailor = snapshotScore(baselineUnified);
+    state.scorecard = baselineUnified.scorecard;
+
     const missingReport = missingSkillReport(state.keywords, resume);
     state.lastMissingReport = missingReport;
-    updateAiProcessing('Researching market skills on job boards…');
-    setStep(3);
-    updateAiProcessing('Rewriting your CV for this role…');
+    updateAiProcessing('Rewriting as the JD role — summary, skills, and experience…');
 
-    const tailored = cleanupResume(await callGemini(buildRewritePrompt(jd, resume, state.keywords, missingReport), { maxTokens: 7000 }));
+    // 1) Rewrite with 20 rules + score-rule failure report
+    const tailored = cleanupResume(await callGemini(
+      buildRewritePrompt(jd, resume, state.keywords, missingReport, baselineUnified),
+      { maxTokens: 7000 },
+    ));
     if (!tailored || tailored.length < 200) throw new Error('Rewrite was empty');
     state.tailoredResume = tailored;
     $('outputArea').textContent = tailored;
 
     setStep(4);
-    updateAiProcessing('Polishing the language…');
-    let { unified, resume: polished } = await scoreTailoredResume(jd, state.tailoredResume, { verifyExternal: false });
-    state.tailoredResume = polished;
-    $('outputArea').textContent = polished;
+    updateAiProcessing(`Scoring the rewrite with the 9-point ${SCORE_RULE_NAME}…`);
+    let scored = await scoreDraftWithScoreRule(jd, state.tailoredResume, { structureWithGemini: true });
+    let unified = scored.unified;
+    state.tailoredResume = scored.resume;
+    $('outputArea').textContent = scored.resume;
 
+    // 2) Loop: 20-rule boost → score rule until 90+
     let pass = 0;
     while (unified.atsScore < SCORE_THRESHOLD && pass < MAX_BOOST_PASSES) {
       pass += 1;
-      updateAiProcessing(`Tightening the draft — pass ${pass} of ${MAX_BOOST_PASSES}…`);
+      updateAiProcessing(`Closing remaining gaps — pass ${pass} of ${MAX_BOOST_PASSES} (now ${unified.atsScore})…`);
       const boosted = cleanupResume(await callGemini(
-        buildBoostPrompt(jd, state.tailoredResume, { ...unified.scorecard, atsScore: unified.atsScore, ruleScores: unified.ruleScores }, state.keywords || {}),
-        { maxTokens: 7000 }
+        buildBoostPrompt(jd, state.tailoredResume, {
+          ...unified.scorecard,
+          atsScore: unified.atsScore,
+          ruleScores: unified.ruleScores,
+        }, state.keywords || {}),
+        { maxTokens: 7000 },
       ));
       const nextText = boosted && boosted.length > 200 ? boosted : state.tailoredResume;
-      const scored = await scoreTailoredResume(jd, nextText, { verifyExternal: false });
+      scored = await scoreDraftWithScoreRule(jd, nextText, { structureWithGemini: pass % 2 === 0 });
       state.tailoredResume = scored.resume;
       unified = scored.unified;
       state.scorecard = unified.scorecard;
+      state.lastAtsUnified = unified;
       $('outputArea').textContent = scored.resume;
     }
 
-    updateAiProcessing('Optimizing for external ATS checks…');
-    const externalPass = cleanupResume(await callGemini(
-      buildExternalAtsPassPrompt(jd, state.tailoredResume, state.keywords, missingReport),
-      { maxTokens: 7000 },
-    ));
-    if (externalPass && externalPass.length > 200) {
-      state.tailoredResume = externalPass;
-      $('outputArea').textContent = externalPass;
-    }
-
-    let { unified: extUnified, resume: extResume } = await scoreTailoredResume(jd, state.tailoredResume, { verifyExternal: true });
-    state.tailoredResume = extResume;
-    unified = extUnified;
-    state.scorecard = unified.scorecard;
-    $('outputArea').textContent = extResume;
-
-    let extPass = 0;
-    const maxExtPasses = 3;
-    while (unified.atsScore < SCORE_THRESHOLD && extPass < maxExtPasses) {
-      extPass += 1;
-      updateAiProcessing(`External ATS polish — pass ${extPass} of ${maxExtPasses}…`);
-      const boosted = cleanupResume(await callGemini(
-        buildBoostPrompt(jd, state.tailoredResume, { ...unified.scorecard, atsScore: unified.atsScore, ruleScores: unified.ruleScores }, state.keywords || {}),
+    // 3) Extra polish if still under threshold
+    if (unified.atsScore < SCORE_THRESHOLD) {
+      updateAiProcessing('Final score-rule polish…');
+      const externalPass = cleanupResume(await callGemini(
+        buildExternalAtsPassPrompt(jd, state.tailoredResume, state.keywords, missingReport),
         { maxTokens: 7000 },
       ));
-      if (boosted && boosted.length > 200) {
-        state.tailoredResume = boosted;
-        $('outputArea').textContent = boosted;
+      if (externalPass && externalPass.length > 200) {
+        state.tailoredResume = externalPass;
+        $('outputArea').textContent = externalPass;
       }
-      const again = cleanupResume(await callGemini(
-        buildExternalAtsPassPrompt(jd, state.tailoredResume, state.keywords, state.lastMissingReport),
-        { maxTokens: 7000 },
-      ));
-      if (again && again.length > 200) {
-        state.tailoredResume = again;
-        $('outputArea').textContent = again;
-      }
-      const rescored = await scoreTailoredResume(jd, state.tailoredResume, { verifyExternal: true });
-      state.tailoredResume = rescored.resume;
-      unified = rescored.unified;
+      scored = await scoreDraftWithScoreRule(jd, state.tailoredResume, { structureWithGemini: true });
+      unified = scored.unified;
+      state.tailoredResume = scored.resume;
       state.scorecard = unified.scorecard;
-      $('outputArea').textContent = rescored.resume;
+      state.lastAtsUnified = unified;
+      $('outputArea').textContent = scored.resume;
     }
 
-    state.scorecard = unified.scorecard;
     updateAiProcessing('Finalizing emphasis and formatting…');
     await finalizeBolding(jd, state.tailoredResume);
     renderResults(unified, state.tailoredResume);
     persistCurrentJdSession();
     saveWorkspace();
-    showToast(unified.atsScore >= SCORE_TARGET
-      ? `External ATS ~${unified.atsScore}/${SCORE_MAX} (ChatGPT-calibrated)`
-      : unified.atsScore >= SCORE_THRESHOLD
-        ? `External ATS ~${unified.atsScore}/${SCORE_MAX} — Push to reach ${SCORE_TARGET}+`
-        : `External ATS ~${unified.atsScore}/${SCORE_MAX} — Push to close gaps`);
+    showToast(formatMatchToast(unified));
   } catch (err) {
     showToast('Rewrite failed: ' + String(err.message || err).slice(0, 90), '#e11d48');
     stopAiProcessing();
@@ -4575,20 +7539,25 @@ async function boostScore() {
   btn.disabled = true;
   btn.textContent = 'Pushing…';
   showAiProcessing(
-    'Polishing your CV…',
-    'Closing gaps external ATS checkers still flag…'
+    `Pushing with ${SCORE_RULE_NAME}…`,
+    'Closing score-rule gaps with the 20 writing rules…'
   );
   try {
-    let unified = {
+    let unified = state.lastAtsUnified || {
       scorecard: state.scorecard || {},
       atsScore: Number(state.scorecard?.atsScore || 0),
       ruleScores: state.scorecard?.ruleScores || {},
     };
+    // Fresh score-rule baseline on current draft
+    if (!unified.scorecard?.coverage) {
+      const base = await scoreDraftWithScoreRule(inputs.jd, state.tailoredResume, { structureWithGemini: true });
+      unified = base.unified;
+    }
     let pass = 0;
-    const maxPushPasses = 3;
+    const maxPushPasses = 4;
     while (unified.atsScore < SCORE_TARGET && pass < maxPushPasses) {
       pass += 1;
-      updateAiProcessing(`Push pass ${pass} of ${maxPushPasses} — closing gaps…`);
+      updateAiProcessing(`Push pass ${pass} of ${maxPushPasses} — score ${unified.atsScore}, need ${SCORE_TARGET}+…`);
       const missingReport = state.lastMissingReport || missingSkillReport(state.keywords || {}, state.tailoredResume);
       const boosted = cleanupResume(await callGemini(
         buildBoostPrompt(
@@ -4603,19 +7572,22 @@ async function boostScore() {
         state.tailoredResume = boosted;
         $('outputArea').textContent = boosted;
       }
-      updateAiProcessing(`External ATS polish — pass ${pass}…`);
-      const externalPass = cleanupResume(await callGemini(
-        buildExternalAtsPassPrompt(inputs.jd, state.tailoredResume, state.keywords, missingReport),
-        { maxTokens: 7000 },
-      ));
-      if (externalPass && externalPass.length > 200) {
-        state.tailoredResume = externalPass;
-        $('outputArea').textContent = externalPass;
+      if (unified.atsScore < SCORE_THRESHOLD || pass === maxPushPasses) {
+        updateAiProcessing(`Score-rule polish — pass ${pass}…`);
+        const externalPass = cleanupResume(await callGemini(
+          buildExternalAtsPassPrompt(inputs.jd, state.tailoredResume, state.keywords, missingReport),
+          { maxTokens: 7000 },
+        ));
+        if (externalPass && externalPass.length > 200) {
+          state.tailoredResume = externalPass;
+          $('outputArea').textContent = externalPass;
+        }
       }
-      const scored = await scoreTailoredResume(inputs.jd, state.tailoredResume, { verifyExternal: true });
+      const scored = await scoreDraftWithScoreRule(inputs.jd, state.tailoredResume, { structureWithGemini: true });
       state.tailoredResume = scored.resume;
       unified = scored.unified;
       state.scorecard = unified.scorecard;
+      state.lastAtsUnified = unified;
       $('outputArea').textContent = scored.resume;
       if (unified.atsScore >= SCORE_TARGET) break;
     }
@@ -4624,9 +7596,7 @@ async function boostScore() {
     renderResults(unified, state.tailoredResume);
     persistCurrentJdSession();
     saveWorkspace();
-    showToast(unified.atsScore >= SCORE_TARGET
-      ? `External ATS ~${unified.atsScore}/${SCORE_MAX} — ChatGPT-calibrated`
-      : `External ATS ~${unified.atsScore}/${SCORE_MAX} — still below ${SCORE_TARGET}`);
+    showToast(formatMatchToast(unified));
   } catch (err) {
     showToast('Push failed: ' + String(err.message || err).slice(0, 80), '#e11d48');
     stopAiProcessing();
@@ -4707,14 +7677,88 @@ function stripEligibilityFromSummary(text) {
   return lines.join('\n');
 }
 
-function cleanupResume(text) {
+function cleanupResume(text, opts = {}) {
   let t = (text || '').replace(/```(?:text|markdown)?/gi, '').trim();
   t = t.replace(/^here is[^\n]*\n+/i, '');
+  t = enforceAnirudhTemplate(t);
   t = sanitizeResumeHeadline(t);
   t = stripEligibilityFromSummary(t);
   t = normalizeExperienceRoleLines(t);
   t = t.split('\n').map(repairBrokenBulletMetrics).join('\n');
-  return normalizeContactInResume(t).trim();
+  t = normalizeContactInResume(t).trim();
+  const master = opts.master || ($('resumeInput') && $('resumeInput').value) || '';
+  const kw = opts.keywords || state.keywords || null;
+  if (state.mode !== 'aggressive' && master && kw) {
+    t = scrubSkillsNotOnMaster(t, master, kw);
+  }
+  return t;
+}
+
+/** Post-process so page layout always matches the Anirudh template. */
+function enforceAnirudhTemplate(text) {
+  let lines = String(text || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\*\*/g, '')
+    .split('\n');
+
+  const HEADER_MAP = [
+    [/^(professional\s+)?summary$/i, 'SUMMARY'],
+    [/^profile$/i, 'SUMMARY'],
+    [/^objective$/i, 'SUMMARY'],
+    [/^technical\s+skills$/i, 'TECHNICAL SKILLS'],
+    [/^skills$/i, 'SKILLS'],
+    [/^core\s+competencies$/i, 'SKILLS'],
+    [/^(professional\s+|work\s+)?experience$/i, 'PROFESSIONAL EXPERIENCE'],
+    [/^work\s+history$/i, 'PROFESSIONAL EXPERIENCE'],
+    [/^employment$/i, 'PROFESSIONAL EXPERIENCE'],
+    [/^education$/i, 'EDUCATION'],
+    [/^projects?$/i, 'PROJECTS'],
+    [/^key\s+projects$/i, 'PROJECTS'],
+    [/^certifications?$/i, 'CERTIFICATIONS'],
+  ];
+
+  lines = lines.map((line, idx) => {
+    const raw = String(line || '').trim();
+    if (!raw) return '';
+    for (const [re, canon] of HEADER_MAP) {
+      if (re.test(raw.replace(/[:.\s]+$/g, ''))) return canon;
+    }
+    // Normalize bullets to "- "
+    if (/^[•*·◦▸▶▪▫]\s*/.test(raw) || /^\d{1,2}[.)]\s+/.test(raw)) {
+      return '- ' + raw.replace(/^[•*·◦▸▶▪▫]\s*/, '').replace(/^\d{1,2}[.)]\s+/, '');
+    }
+    if (/^-\s+/.test(raw) && !/^- /.test(raw)) {
+      return '- ' + raw.replace(/^-\s+/, '');
+    }
+    // Title-case name on first non-empty line if ALL CAPS
+    if (idx < 3 && !seenContentBefore(lines, idx) && /^[A-Z][A-Z\s.'.-]{2,60}$/.test(raw) && !/@/.test(raw) && !/\d{3}/.test(raw)) {
+      return toTitleCase(raw);
+    }
+    return line.replace(/\s+$/, '');
+  });
+
+  // Ensure blank line after contact before SUMMARY
+  const out = [];
+  let sawSummary = false;
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    const t = l.trim();
+    if (!sawSummary && /^SUMMARY$/i.test(t)) {
+      if (out.length && out[out.length - 1].trim() !== '') out.push('');
+      out.push('SUMMARY');
+      sawSummary = true;
+      continue;
+    }
+    out.push(l);
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function seenContentBefore(lines, idx) {
+  for (let i = 0; i < idx; i++) {
+    if (String(lines[i] || '').trim()) return true;
+  }
+  return false;
 }
 
 function sanitizeResumeHeadline(text) {
@@ -4744,6 +7788,7 @@ function resetResultsUi(silent) {
   state.boldTerms = [];
   state.boldFinalized = false;
   state.preTailor = null;
+  clearManualScoreGate();
   $('freeAtsPanel').classList.add('hidden');
   if ($('postRewriteScore')) $('postRewriteScore').classList.add('hidden');
   $('scoreSection').classList.add('hidden');
@@ -5069,7 +8114,8 @@ function bulletText(l) {
 function isRoleLine(l, section) {
   if (!l || isBulletLine(l) || l.includes('@')) return false;
   const sec = (section || '').toUpperCase();
-  if (/SKILL|EDUCATION|CERTIF|SUMMARY/.test(sec)) return false;
+  if (/SKILL|CERTIF|SUMMARY/.test(sec)) return false;
+  if (/EDUCATION/.test(sec)) return false;
   if (/PROJECT/.test(sec)) return isProjectTitleLine(l);
   if (/^client\s*:/i.test(l)) return true;
   const hasDate = /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{4}\b/i.test(l)
@@ -5079,7 +8125,54 @@ function isRoleLine(l, section) {
   return false;
 }
 
+function isEducationLine(l, section) {
+  if (!l || isBulletLine(l)) return false;
+  if (!/EDUCATION/.test(String(section || '').toUpperCase())) return false;
+  if (l.includes('|')) return true;
+  return /\b(bachelor|master|b\.?\s?s\.?|m\.?\s?s\.?|mba|ph\.?d|associate|diploma|degree|b\.?\s?tech|m\.?\s?tech)\b/i.test(l);
+}
+
+function formatEduHtml(line) {
+  const raw = String(line || '').trim();
+  if (!raw) return '';
+  const parts = raw.split('|').map(s => s.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    const degree = escapeHtml(parts[0]);
+    const school = escapeHtml(parts.slice(1).join(', '));
+    return `<div class="r-edu-block">`
+      + `<div class="r-edu-degree">${degree}</div>`
+      + `<div class="r-edu-school">${school}</div>`
+      + `</div>`;
+  }
+  // Single line — try "Degree, School..." or just show as degree
+  const comma = raw.indexOf(',');
+  if (comma > 12 && /\b(bachelor|master|b\.?\s?s|m\.?\s?s|mba|ph\.?d|b\.?\s?tech|m\.?\s?tech|associate|diploma)\b/i.test(raw.slice(0, comma))) {
+    return `<div class="r-edu-block">`
+      + `<div class="r-edu-degree">${escapeHtml(raw.slice(0, comma).trim())}</div>`
+      + `<div class="r-edu-school">${escapeHtml(raw.slice(comma + 1).trim())}</div>`
+      + `</div>`;
+  }
+  return `<div class="r-edu-block"><div class="r-edu-degree">${escapeHtml(raw)}</div></div>`;
+}
+
 const ROLE_DATE_RE = /((?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{4}\s*[–—\-to]+\s*(?:Present|Current|(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{4}))\s*$/i;
+
+function compactMonthDates(dates, compact) {
+  let d = String(dates || '').replace(/\s*[–—-]\s*/g, ' – ').replace(/\s+to\s+/i, ' – ');
+  if (!compact) return d;
+  return d
+    .replace(/\bJanuary\b/gi, 'Jan')
+    .replace(/\bFebruary\b/gi, 'Feb')
+    .replace(/\bMarch\b/gi, 'Mar')
+    .replace(/\bApril\b/gi, 'Apr')
+    .replace(/\bJune\b/gi, 'Jun')
+    .replace(/\bJuly\b/gi, 'Jul')
+    .replace(/\bAugust\b/gi, 'Aug')
+    .replace(/\bSeptember\b/gi, 'Sep')
+    .replace(/\bOctober\b/gi, 'Oct')
+    .replace(/\bNovember\b/gi, 'Nov')
+    .replace(/\bDecember\b/gi, 'Dec');
+}
 
 function linkify(text) {
   const line = formatContactLine(text);
@@ -5165,13 +8258,18 @@ function normalizeExperienceRoleLines(text) {
   return lines.join('\n');
 }
 
-function formatRoleHtml(line) {
+function formatRoleHtml(line, opts = {}) {
   const { company, location, title, dates } = parseRoleLineParts(line);
   const leftHtml = escapeHtml(company) + (title ? ' | <i>' + escapeHtml(title) + '</i>' : '');
-  const rightBits = [location, dates].filter(Boolean);
+  const dateStr = compactMonthDates(dates, !!opts.compactDates);
+  const rightBits = [location, dateStr].filter(Boolean);
   const rightHtml = rightBits.join(' | ');
+  // Always use left | right table so location + years stay on the right (1-page and 2-page).
+  if (!rightHtml && !company) return '';
   if (!rightHtml) return `<p class="r-role">${leftHtml}</p>`;
-  return `<table class="r-job" width="100%" cellspacing="0" cellpadding="0"><tr>`
+  return `<table class="r-job" width="100%" cellspacing="0" cellpadding="0">`
+    + `<colgroup><col class="r-col-left" /><col class="r-col-right" /></colgroup>`
+    + `<tr>`
     + `<td class="r-job-left">${leftHtml}</td>`
     + `<td class="r-dates">${escapeHtml(rightHtml).replace(/ \| /g, '&nbsp;|&nbsp;')}</td>`
     + `</tr></table>`;
@@ -5287,12 +8385,20 @@ function boldResumeKeywords(text) {
   return s;
 }
 
-function parseResumeToHtml(text) {
+function parseResumeToHtml(text, opts = {}) {
   if (!text || !text.trim()) return '';
+  const roleOpts = { compactDates: !!opts.compactDates || opts.pages === 1 };
   const lines = text.split('\n');
   let html = '';
   let i = 0;
   let currentSection = '';
+  let entryOpen = false;
+  const closeEntry = () => {
+    if (entryOpen) {
+      html += '</div>';
+      entryOpen = false;
+    }
+  };
   while (i < lines.length && !lines[i].trim()) i++;
   if (i < lines.length) {
     const rawName = lines[i].trim();
@@ -5320,6 +8426,7 @@ function parseResumeToHtml(text) {
     const l = lines[i].trim();
     if (!l) continue;
     if (isAnySectionHeader(l)) {
+      closeEntry();
       currentSection = l.toUpperCase();
       html += `<div class="r-section">${escapeHtml(currentSection)}</div>`;
     } else if (isBulletLine(l)) {
@@ -5328,15 +8435,24 @@ function parseResumeToHtml(text) {
         : escapeHtml(bulletText(l));
       html += `<p class="r-bullet" align="left"><span class="r-bmark">•</span><span class="r-btext">${body}</span></p>`;
     } else if (/SKILL/.test(currentSection) && /^[A-Za-z][A-Za-z0-9 &\/+.#-]{1,50}:\s*\S/.test(l)) {
+      closeEntry();
       const idx = l.indexOf(':');
       html += `<p class="r-skill-line"><span class="r-skill-label">${escapeHtml(l.slice(0, idx))}:</span> ${escapeHtml(l.slice(idx + 1).trim())}</p>`;
+    } else if (isEducationLine(l, currentSection)) {
+      closeEntry();
+      entryOpen = true;
+      html += `<div class="r-entry r-entry-edu">${formatEduHtml(l)}`;
     } else if (isRoleLine(l, currentSection)) {
-      html += formatRoleHtml(l);
+      closeEntry();
+      entryOpen = true;
+      html += `<div class="r-entry">${formatRoleHtml(l, roleOpts)}`;
     } else {
+      closeEntry();
       const body = /SUMMARY/.test(currentSection) ? boldResumeKeywords(l) : linkify(l);
       html += `<p class="r-body">${body}</p>`;
     }
   }
+  closeEntry();
   return html;
 }
 
@@ -5372,8 +8488,14 @@ function resumeCssBlock(bodyPt, lh, sel = '') {
     ${s}.r-contact { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsBody}; text-align: center; color: #000000; margin: 0; padding: 0; line-height: ${t.lhBody}; mso-line-height-rule: exactly; }
     ${s}.r-section { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsTitle}; font-weight: bold; color: #000000; text-transform: uppercase; letter-spacing: 0; border-bottom: 0.5pt solid #000000; margin: ${t.spSection} 0 0 4.55pt; padding: 0; line-height: ${t.fsTitle}; mso-line-height-rule: exactly; text-align: left; }
     ${s}.r-job { width: 100%; border-collapse: collapse; table-layout: fixed; margin: ${t.spJob} 0 0 0; border: none; }
+    ${s}.r-job col.r-col-left { width: 58%; }
+    ${s}.r-job col.r-col-right { width: 42%; }
     ${s}.r-job td { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsRole}; font-weight: bold; color: #000000; padding: 0; line-height: ${t.lhRole}; vertical-align: bottom; mso-line-height-rule: exactly; border: none; text-align: left; }
-    ${s}.r-job td:first-child, ${s}.r-job-left { padding-left: 4.55pt; width: 62%; }
+    ${s}.r-job td:first-child, ${s}.r-job-left { padding-left: 4.55pt; width: 58%; }
+    ${s}.r-dates { text-align: right !important; white-space: nowrap; width: 42%; vertical-align: bottom; font-weight: bold; }
+    ${s}.r-edu-block { margin: ${t.spJob} 0 0 4.55pt; padding: 0; }
+    ${s}.r-edu-degree { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsRole}; font-weight: bold; color: #000000; margin: 0; padding: 0; line-height: ${t.lhRole}; text-align: left; }
+    ${s}.r-edu-school { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsBody}; font-weight: normal; color: #000000; margin: 0.6pt 0 0 0; padding: 0; line-height: ${t.lhBody}; text-align: left; }
     ${s}.r-role { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsRole}; font-weight: bold; color: #000000; margin: ${t.spJob} 0 0 4.55pt; line-height: ${t.lhRole}; text-align: left; }
     ${s}.r-role i, ${s}.r-job i { font-style: italic; font-weight: bold; }
     ${s}.r-bullet { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsBody}; color: #000000; margin: 0 0 0 18pt; text-indent: -13.5pt; line-height: ${t.lhBody}; mso-line-height-rule: exactly; padding: 0; text-align: left; }
@@ -5390,7 +8512,9 @@ function resumeCss() {
     p { margin: 0; padding: 0; }
     .WordSection1 { text-align: left; }
     .r-rule { font-family: Calibri, Arial, sans-serif; font-size: 1pt; line-height: 1pt; mso-line-height-rule: exactly; margin: 0; padding: 0; height: 1pt; border: none; border-top: 0.5pt solid #000000; overflow: hidden; }
-    .r-dates { text-align: right; white-space: nowrap; width: 38%; vertical-align: bottom; }
+    .r-dates { text-align: right !important; white-space: nowrap; width: 42%; vertical-align: bottom; font-weight: bold; }
+    .r-edu-degree { font-weight: bold; }
+    .r-edu-school { font-weight: normal !important; }
     .r-bmark, .r-btext { text-align: left; }
     .r-skill-label { font-weight: bold; color: #000000; }
     b, strong { font-weight: bold; color: #000000; }
@@ -5416,14 +8540,19 @@ function inchesToPx(inches) {
   return px || inches * 96;
 }
 
-function applyResumeFitVars(el, bodyPt, lh) {
+function applyResumeFitVars(el, bodyPt, lh, pages = 1) {
   if (!el || !el.style) return;
   const t = resumeTypeFromBody(bodyPt, lh);
+  // Keep experience role/date lines readable so location|years stay locked on the right
+  const roleFloor = pages > 1 ? 10.4 : 9.8;
+  const rolePt = Math.max(bodyPt * 1.1, roleFloor);
+  const roleLh = (Math.round(rolePt * (1 + (lh - 1) * 0.4) * 100) / 100) + 'pt';
+  const roleFs = (Math.round(rolePt * 100) / 100) + 'pt';
   el.style.setProperty('--fs-name', t.fsName);
   el.style.setProperty('--lh-name', t.lhName);
   el.style.setProperty('--fs-title', t.fsTitle);
-  el.style.setProperty('--fs-role', t.fsRole);
-  el.style.setProperty('--lh-role', t.lhRole);
+  el.style.setProperty('--fs-role', roleFs);
+  el.style.setProperty('--lh-role', roleLh);
   el.style.setProperty('--fs-body', t.fsBody);
   el.style.setProperty('--lh-body', t.lhBody);
   el.style.setProperty('--sp-section', t.spSection);
@@ -5431,6 +8560,8 @@ function applyResumeFitVars(el, bodyPt, lh) {
   el.style.setProperty('--sp-bullet', t.spBullet);
   el.style.setProperty('--sp-body', t.spBody);
   el.style.setProperty('--sp-skill', t.spSkill);
+  el.style.setProperty('--job-left', pages > 1 ? '60%' : '55%');
+  el.style.setProperty('--job-right', pages > 1 ? '40%' : '45%');
 }
 
 function measureResumeContent(paper) {
@@ -5664,6 +8795,55 @@ function clearPrintPageMarkers(paper) {
   paper.querySelectorAll('.r-page-break').forEach(el => el.remove());
 }
 
+/** Keep experience/education blocks from splitting across the visual page line. */
+function insertVisualPageBreak(paper) {
+  if (!paper) return;
+  clearPageBreaks(paper);
+  const pageBreakY = inchesToPx(US_LETTER.heightIn);
+  const page2Top = inchesToPx(PAGE_MARGINS.top);
+  const kids = [...paper.children].filter(el => !el.classList.contains('r-page-break'));
+  if (!kids.length) return;
+
+  let idx = -1;
+  for (let i = 0; i < kids.length; i++) {
+    const el = kids[i];
+    const top = el.offsetTop;
+    const bottom = top + el.offsetHeight;
+    if (top >= pageBreakY - 1) { idx = i; break; }
+    if (bottom > pageBreakY && top < pageBreakY) { idx = i; break; }
+  }
+  if (idx < 0) return;
+
+  let breakEl = kids[idx];
+  for (let j = idx; j >= Math.max(0, idx - 12); j--) {
+    const el = kids[j];
+    if (el.classList.contains('r-entry') || el.classList.contains('r-section')) {
+      const bottom = el.offsetTop + el.offsetHeight;
+      if (el.offsetTop < pageBreakY * 0.55 && bottom <= pageBreakY + 2) {
+        breakEl = kids[j + 1] || breakEl;
+      } else {
+        breakEl = el;
+      }
+      break;
+    }
+  }
+  if (breakEl?.previousElementSibling?.classList.contains('r-section')
+    && !breakEl.classList.contains('r-section')) {
+    breakEl = breakEl.previousElementSibling;
+  }
+  if (!breakEl || !breakEl.parentNode) return;
+
+  const prev = breakEl.previousElementSibling;
+  const prevBottom = prev ? (prev.offsetTop + prev.offsetHeight) : 0;
+  const gap = Math.max(inchesToPx(0.08), (pageBreakY - prevBottom) + page2Top);
+  const spacer = document.createElement('div');
+  spacer.className = 'r-page-break';
+  spacer.setAttribute('aria-hidden', 'true');
+  spacer.style.cssText = `display:block;height:${Math.round(gap)}px;margin:0;padding:0;border:0;width:100%;`;
+  paper.insertBefore(spacer, breakEl);
+  breakEl.classList.add('r-page-start');
+}
+
 function currentResumeText() {
   return (state.tailoredResume || $('outputArea').textContent || '').trim();
 }
@@ -5676,20 +8856,31 @@ function showFormattedResume(text) {
     state.tailoredResume = cleaned;
     if ($('outputArea')) $('outputArea').textContent = cleaned;
   }
-  paper.classList.remove('two-page');
+  paper.classList.remove('two-page', 'one-page');
   paper.style.minHeight = '11in';
   clearPageBreaks(paper);
   clearPage2Wrap(paper);
-  paper.innerHTML = parseResumeToHtml(cleaned);
+  // Measure with 1-page compact role dates first
+  paper.innerHTML = parseResumeToHtml(cleaned, { pages: 1, compactDates: true });
   applyPageMargins(paper);
-  applyResumeFitVars(paper, PAGE_FIT.BODY_AVG, 1);
+  applyResumeFitVars(paper, PAGE_FIT.BODY_AVG, 1, 1);
   const fit = fitResumeToPage(paper);
   state.docFit = fit;
-  applyResumeFitVars(paper, fit.bodyPt, fit.lh);
+  const pages = fit.pages > 1 ? 2 : 1;
+  // Re-render with the matching format: 1-page (compact dates, wider right col) or 2-page (full months)
+  paper.classList.toggle('one-page', pages === 1);
+  paper.classList.toggle('two-page', pages === 2);
+  paper.innerHTML = parseResumeToHtml(cleaned, {
+    pages,
+    compactDates: pages === 1,
+  });
+  applyPageMargins(paper);
+  applyResumeFitVars(paper, fit.bodyPt, fit.lh, pages);
   clearPrintPageMarkers(paper);
-  if (fit.pages > 1) {
-    paper.classList.add('two-page');
-    paper.style.minHeight = (US_LETTER.heightIn * fit.pages) + 'in';
+  if (pages > 1) {
+    paper.style.minHeight = (US_LETTER.heightIn * pages) + 'in';
+    void paper.offsetHeight;
+    insertVisualPageBreak(paper);
   } else {
     paper.style.minHeight = US_LETTER.heightIn + 'in';
   }
@@ -5810,12 +9001,26 @@ function resumePaperLayoutCss() {
       width: 100%; border-collapse: collapse; table-layout: fixed; margin: var(--sp-job, 1.85pt) 0 0 0;
       break-inside: avoid; page-break-inside: avoid;
     }
+    .resume-paper .r-job col.r-col-left { width: var(--job-left, 58%); }
+    .resume-paper .r-job col.r-col-right { width: var(--job-right, 42%); }
     .resume-paper .r-job td {
       font-size: var(--fs-role, 13.2pt); font-weight: 700; color: #000; padding: 0; line-height: var(--lh-role, 13.2pt);
       vertical-align: bottom; font-family: Calibri, Arial, sans-serif; text-align: left;
     }
-    .resume-paper .r-job td:first-child { padding-left: 4.55pt; width: 62%; }
-    .resume-paper .r-dates { text-align: right; white-space: nowrap; width: 38%; vertical-align: bottom; }
+    .resume-paper .r-job td:first-child { padding-left: 4.55pt; width: var(--job-left, 58%); }
+    .resume-paper .r-dates {
+      text-align: right !important; white-space: nowrap; width: var(--job-right, 42%);
+      vertical-align: bottom; font-weight: 700;
+    }
+    .resume-paper .r-edu-block { margin: var(--sp-job, 1.85pt) 0 0 4.55pt; padding: 0; }
+    .resume-paper .r-edu-degree {
+      font-size: var(--fs-role, 13.2pt); font-weight: 700; color: #000; margin: 0; padding: 0;
+      line-height: var(--lh-role, 13.2pt); text-align: left;
+    }
+    .resume-paper .r-edu-school {
+      font-size: var(--fs-body, 12pt); font-weight: 400 !important; color: #000; margin: 0.6pt 0 0 0;
+      line-height: var(--lh-body, 13.8pt); text-align: left;
+    }
     .resume-paper .r-role {
       font-size: var(--fs-role, 13.2pt); font-weight: 700; color: #000;
       margin: var(--sp-job, 1.85pt) 0 0 4.55pt; line-height: var(--lh-role, 13.2pt); text-align: left;

@@ -1,0 +1,81 @@
+{
+  "job_information": {
+    "title": "Data Engineer",
+    "company": "",
+    "location": "Remote, USA",
+    "employment_type": "",
+    "seniority_level": "senior",
+    "work_mode": "remote"
+  },
+  "overview": "We are hiring a Data Engineer to build and operate scalable data pipelines on AWS.",
+  "years_of_experience": {
+    "minimum": 4,
+    "maximum": null,
+    "note": "4+ years data engineering experience"
+  },
+  "must_have_skills": [
+    "Python",
+    "SQL",
+    "Apache Spark",
+    "Spark/PySpark",
+    "AWS",
+    "S3",
+    "Glue",
+    "Redshift",
+    "Lambda",
+    "EMR",
+    "Airflow",
+    "dbt",
+    "Kafka"
+  ],
+  "nice_to_have_skills": [
+    "ELT/ETL pipelines",
+    "Athena",
+    "Kinesis",
+    "Docker",
+    "Terraform"
+  ],
+  "responsibilities": [
+    "Design, build, and maintain ETL/ELT pipelines using Python, SQL, Apache Spark, and Airflow.",
+    "Build data lake and warehouse solutions with S3, Glue, Redshift, and Athena.",
+    "Implement streaming pipelines with Kafka and Kinesis.",
+    "Partner with analytics and ML teams to deliver trusted datasets.",
+    "Improve data quality, monitoring, and CI/CD for pipelines using Docker and Terraform."
+  ],
+  "requirements": {
+    "education": "Bachelor's degree or equivalent experience",
+    "experience": "4+ years data engineering experience",
+    "hard_gates": [
+      "4+ years data engineering experience",
+      "Strong Python, SQL, Spark/PySpark",
+      "Hands-on AWS (S3, Glue, Redshift, Lambda, EMR)",
+      "Experience with Airflow, dbt, Kafka",
+      "Bachelor's degree or equivalent experience"
+    ],
+    "work_authorization": "",
+    "other": []
+  },
+  "domain_industry": [],
+  "ats_phrases": [
+    "Data Engineer",
+    "scalable data pipelines",
+    "AWS",
+    "ETL/ELT pipelines",
+    "Python",
+    "SQL",
+    "Apache Spark",
+    "Airflow",
+    "data lake",
+    "warehouse solutions",
+    "streaming pipelines",
+    "Kafka",
+    "CI/CD",
+    "dbt"
+  ],
+  "eligibility": {
+    "us_citizen_required": false,
+    "sponsorship_available": null,
+    "clearance_required": false,
+    "notes": []
+  }
+}

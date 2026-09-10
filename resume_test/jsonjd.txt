@@ -1,0 +1,72 @@
+{
+  "job_information": {
+    "title": "Data Engineer",
+    "company": "",
+    "location": "Remote, USA",
+    "employment_type": "Full-time",
+    "seniority_level": "mid",
+    "work_mode": "remote"
+  },
+  "overview": "We are hiring a Data Engineer to build and operate scalable data pipelines on AWS.",
+  "years_of_experience": {
+    "minimum": 4,
+    "maximum": null,
+    "note": "4+ years data engineering experience"
+  },
+  "must_have_skills": [
+    "Python",
+    "SQL",
+    "Apache Spark",
+    "PySpark",
+    "Airflow",
+    "AWS",
+    "S3",
+    "Glue",
+    "Redshift",
+    "Lambda",
+    "EMR",
+    "dbt",
+    "Kafka"
+  ],
+  "nice_to_have_skills": [
+    "Athena",
+    "Kinesis",
+    "Docker",
+    "Terraform",
+    "CI/CD"
+  ],
+  "ats_phrases": [
+    "ETL/ELT pipelines",
+    "data lake",
+    "streaming pipelines",
+    "data quality"
+  ],
+  "responsibilities": [
+    "Design, build, and maintain ETL/ELT pipelines using Python, SQL, Apache Spark, and Airflow",
+    "Build data lake and warehouse solutions with S3, Glue, Redshift, and Athena",
+    "Implement streaming pipelines with Kafka and Kinesis",
+    "Partner with analytics and ML teams to deliver trusted datasets",
+    "Improve data quality, monitoring, and CI/CD for pipelines using Docker and Terraform"
+  ],
+  "requirements": {
+    "education": "Bachelor's degree or equivalent experience",
+    "experience": "4+ years data engineering experience",
+    "hard_gates": [
+      "Strong Python, SQL, Spark/PySpark",
+      "Hands-on AWS (S3, Glue, Redshift, Lambda, EMR)",
+      "Experience with Airflow, dbt, Kafka"
+    ],
+    "work_authorization": "",
+    "other": []
+  },
+  "domain_industry": [
+    "cloud",
+    "data engineering"
+  ],
+  "eligibility": {
+    "us_citizen_required": false,
+    "sponsorship_available": null,
+    "clearance_required": false,
+    "notes": []
+  }
+}

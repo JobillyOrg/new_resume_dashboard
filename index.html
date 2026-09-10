@@ -396,7 +396,21 @@
     }
     .chart-card h3 { font-size: 13px; font-weight: 750; margin-bottom: 12px; letter-spacing: -0.02em; }
     .bar-chart { display: grid; gap: 9px; }
-    .bar-row { display: grid; grid-template-columns: 140px 1fr 44px; gap: 10px; align-items: center; font-size: 12px; }
+    .bar-row { display: grid; grid-template-columns: minmax(160px, 1.1fr) 1fr 48px; gap: 10px; align-items: center; font-size: 12px; }
+    .bar-row.ai-cat {
+      cursor: pointer;
+      padding: 8px 10px;
+      margin: 0 -6px;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      transition: background .15s ease, border-color .15s ease;
+    }
+    .bar-row.ai-cat:hover { background: #f8fafc; border-color: #e2e8f0; }
+    .bar-row.ai-cat.active {
+      background: var(--brand-light);
+      border-color: #c7d2fe;
+    }
+    .bar-row.ai-cat .ai-cat-label { font-weight: 600; color: var(--ink); line-height: 1.35; }
     .bar-row .track { height: 10px; background: #e2e8f0; border-radius: 999px; overflow: hidden; }
     .bar-row .fill { height: 100%; background: var(--brand); border-radius: 999px; }
     .bar-row .fill.ghost { background: var(--before); }
@@ -409,6 +423,52 @@
     .bar-chart > .bar-row:nth-child(7) .fill:not(.ghost) { background: #0891b2; }
     .bar-chart > .bar-row:nth-child(8) .fill:not(.ghost) { background: #65a30d; }
     .bar-chart > .bar-row:nth-child(9) .fill:not(.ghost) { background: #c026d3; }
+    .ai-cat-detail { display: grid; gap: 14px; min-height: 220px; }
+    .ai-cat-detail .ai-cat-score {
+      display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+    }
+    .ai-cat-detail .ai-cat-score strong { font-size: 28px; color: var(--ink); }
+    .ai-cat-detail .ai-cat-score span { font-size: 13px; color: var(--muted); }
+    .ai-cat-detail .ai-cat-status {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
+      margin-left: auto;
+    }
+    .ai-cat-detail .ai-cat-status.ok { background: #dcfce7; color: #166534; }
+    .ai-cat-detail .ai-cat-status.mid { background: #fef3c7; color: #92400e; }
+    .ai-cat-detail .ai-cat-status.bad { background: #ffe4e6; color: #9f1239; }
+    .ai-cat-detail h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+    .ai-cat-detail .ai-cat-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .ai-cat-detail .ai-cat-chip {
+      font-size: 12px; padding: 5px 9px; border-radius: 999px; border: 1px solid var(--line);
+      background: #fff; color: var(--ink); line-height: 1.35;
+    }
+    .ai-cat-detail .ai-cat-chip.miss { background: #fff1f2; border-color: #fecdd3; color: #9f1239; }
+    .ai-cat-detail .ai-cat-chip.ok { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
+    .ai-cat-detail .ai-cat-chip.find { background: #f1f5f9; border-color: #cbd5e1; color: #334155; }
+    .ai-cat-detail .ai-cat-empty { font-size: 13px; color: #64748b; font-weight: 500; }
+    .ai-cat-detail .ai-cat-tips { margin: 0; padding-left: 18px; color: #334155; font-size: 13px; line-height: 1.55; }
+    .ai-cat-detail .ai-cat-tips li { margin-bottom: 4px; }
+    .ai-cat-blurb { margin: 0; font-size: 14px; color: #334155; line-height: 1.45; }
+    .ai-cat-detail .ai-cat-items {
+      margin: 0; padding: 0; list-style: none;
+      display: grid; gap: 6px;
+    }
+    .ai-cat-detail .ai-cat-items li {
+      font-size: 13px; line-height: 1.45; padding: 8px 10px;
+      border-radius: 10px; background: #f8fafc; border: 1px solid #e2e8f0;
+      color: #334155;
+    }
+    .ai-cat-detail .ai-cat-items li.miss { background: #fff1f2; border-color: #fecdd3; color: #9f1239; }
+    .ai-cat-detail .ai-cat-items li.ok { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
+    .gate-banner {
+      border-radius: 12px; padding: 12px 14px; margin-top: 10px;
+    }
+    .gate-banner strong { display: block; font-size: 13px; margin-bottom: 4px; }
+    .gate-banner p { margin: 0; font-size: 13px; line-height: 1.45; }
+    .gate-fail { background: #fff1f2; border: 1px solid #fecdd3; color: #9f1239; }
+    .gate-review { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; }
+    .ai-cat-hint { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
     .compare-pair .bar-row .fill:not(.ghost) { background: var(--brand); }
     .compare-pair { display: grid; gap: 6px; margin-bottom: 12px; }
     .compare-pair .pair-label { font-size: 12px; color: var(--muted); }
@@ -484,7 +544,19 @@
     .keyword-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
     .kw-tag { font-size: 12px; padding: 4px 10px; border-radius: 999px; font-weight: 600; }
     .kw-match { background: #0d9488; color: #fff; border: 1.5px solid #0d9488; }
+    .kw-skills { background: #fff7ed; color: #c2410c; border: 1.5px solid #fdba74; }
     .kw-miss { background: #fff1f2; color: #9f1239; border: 1.5px solid #fda4af; }
+    .kw-stretch { background: #f5f3ff; color: #5b21b6; border: 1.5px solid #ddd6fe; }
+    .kw-ats { background: #fff; color: #9a3412; border: 1.5px dashed #fb923c; }
+    .kw-ats-on { background: #ffedd5; color: #9a3412; border: 1.5px solid #f97316; }
+    .kw-set-break {
+      flex-basis: 100%;
+      margin: 8px 0 0;
+      font-size: 11px;
+      font-weight: 650;
+      color: #64748b;
+      letter-spacing: 0.02em;
+    }
 
     #outputArea {
       width: 100%; background: #fff; border: 1.5px solid var(--line); border-radius: 16px;
@@ -495,6 +567,64 @@
 
     .progress-bar-wrap { width: 100%; background: #e2e8f0; border-radius: 999px; height: 8px; overflow: hidden; margin: 8px 0; }
     .progress-bar { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #4f46e5, #0d9488); transition: width 0.5s ease; }
+
+    .json-structure-panel { margin-bottom: 20px; }
+    .json-structure-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-top: 12px;
+    }
+    @media (max-width: 900px) {
+      .json-structure-grid { grid-template-columns: 1fr; }
+    }
+    .json-pane {
+      border: 1.5px solid var(--line);
+      border-radius: 14px;
+      background: #0f172a;
+      overflow: hidden;
+      min-height: 280px;
+      display: flex;
+      flex-direction: column;
+    }
+    .json-pane-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 12px;
+      background: #1e293b;
+      color: #e2e8f0;
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .json-pane-head span { color: #94a3b8; font-weight: 500; }
+    .json-pane pre {
+      margin: 0;
+      padding: 12px 14px 16px;
+      overflow: auto;
+      max-height: 520px;
+      color: #e2e8f0;
+      font-size: 12px;
+      line-height: 1.45;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+      flex: 1;
+    }
+    .json-empty { color: #94a3b8; font-style: italic; }
+    .btn-structure {
+      background: #0f172a;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-weight: 650;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .btn-structure:hover { background: #1e293b; }
+    .btn-structure:disabled { opacity: 0.55; cursor: wait; }
 
     .loading-row { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
     body.screen-loading { overflow: hidden; }
@@ -563,6 +693,23 @@
     .detail-analysis-bar .hint { margin: 0; }
     .post-rewrite-score { margin-bottom: 20px; }
     .post-rewrite-score .insight-hero { margin-bottom: 0; }
+    .ba-donuts { display: flex; gap: 18px; align-items: center; justify-content: center; flex-wrap: wrap; }
+    .ba-donut { text-align: center; }
+    .ba-split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .ba-col {
+      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px;
+    }
+    .ba-col-after { background: #f5f3ff; border-color: #ddd6fe; }
+    .ba-col h4 {
+      margin: 0 0 8px; font-size: 11px; font-weight: 750;
+      letter-spacing: 0.06em; text-transform: uppercase; color: #64748b;
+    }
+    .rewrite-cmp { grid-template-columns: minmax(140px, 1.15fr) 1fr 58px !important; }
+    .rewrite-cmp-pts { font-size: 11px; font-weight: 700; text-align: right; line-height: 1.25; }
+    .rewrite-cmp-pts small { display: block; font-weight: 650; color: #64748b; }
+    @media (max-width: 860px) {
+      .ba-split { grid-template-columns: 1fr; }
+    }
     .post-score-delta {
       display: inline-flex; align-items: center; gap: 6px;
       font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
@@ -812,6 +959,44 @@
     .eligibility-item-sub.pass { color: #15803d; font-weight: 650; }
     .eligibility-item-sub.fail { color: #be123c; font-weight: 650; }
 
+    .role-compare {
+      display: grid;
+      grid-template-columns: 1fr 32px 1fr;
+      gap: 8px 12px;
+      align-items: start;
+      margin: 0 0 18px;
+      padding: 16px 18px;
+      border-radius: 14px;
+      border: 1px solid #e2e8f0;
+      background: #f8fafc;
+    }
+    .role-compare.ok { border-color: #bbf7d0; background: #f0fdf4; }
+    .role-compare.diff { border-color: #fed7aa; background: #fff7ed; }
+    .role-compare-col small {
+      display: block; font-size: 11px; font-weight: 800;
+      text-transform: uppercase; letter-spacing: 0.04em;
+      color: #64748b; margin-bottom: 4px;
+    }
+    .role-compare-col strong {
+      display: block; font-size: 17px; font-weight: 800;
+      letter-spacing: -0.03em; line-height: 1.25; color: var(--ink);
+    }
+    .role-compare-recent {
+      display: block; margin-top: 4px; font-size: 12px; color: #64748b; font-weight: 500;
+    }
+    .role-compare-arrow {
+      display: flex; align-items: center; justify-content: center;
+      height: 100%; color: #94a3b8; font-size: 20px; font-weight: 700;
+      padding-top: 18px;
+    }
+    .role-compare-note {
+      grid-column: 1 / -1; margin: 6px 0 0;
+      font-size: 13px; line-height: 1.45; color: #334155;
+    }
+    @media (max-width: 700px) {
+      .role-compare { grid-template-columns: 1fr; }
+      .role-compare-arrow { display: none; }
+    }
     .stack-detect {
       display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px;
       margin-bottom: 12px; padding: 10px 14px;
@@ -888,16 +1073,52 @@
       color: #000; line-height: var(--fs-title, 16.8pt);
     }
     .resume-paper .r-job { width: 100%; border-collapse: collapse; table-layout: fixed; margin: var(--sp-job, 1.85pt) 0 0 0; }
+    .resume-paper .r-job col.r-col-left { width: var(--job-left, 58%); }
+    .resume-paper .r-job col.r-col-right { width: var(--job-right, 42%); }
     .resume-paper .r-job td {
       font-size: var(--fs-role, 13.2pt); font-weight: 700; color: #000; padding: 0; line-height: var(--lh-role, 13.2pt);
       vertical-align: bottom; font-family: Calibri, Arial, sans-serif;
     }
     .resume-paper .r-job td:first-child,
-    .resume-paper .r-job-left { padding-left: 4.55pt; width: 62%; }
-    .resume-paper .r-dates { text-align: right; white-space: nowrap; width: 38%; vertical-align: bottom; }
+    .resume-paper .r-job-left { padding-left: 4.55pt; width: var(--job-left, 58%); }
+    .resume-paper .r-dates {
+      text-align: right !important; white-space: nowrap; width: var(--job-right, 42%);
+      vertical-align: bottom; font-weight: 700;
+    }
+    .resume-paper.one-page .r-dates { font-size: calc(var(--fs-role, 13.2pt) * 0.96); }
+    .resume-paper.two-page .r-dates { font-size: var(--fs-role, 13.2pt); }
+    .resume-paper .r-edu-block {
+      margin: var(--sp-job, 1.85pt) 0 0 4.55pt; padding: 0;
+    }
+    .resume-paper .r-edu-degree {
+      font-size: var(--fs-role, 13.2pt); font-weight: 700; color: #000;
+      margin: 0; padding: 0; line-height: var(--lh-role, 13.2pt); text-align: left;
+      font-family: Calibri, Arial, sans-serif;
+    }
+    .resume-paper .r-edu-school {
+      font-size: var(--fs-body, 12pt); font-weight: 400 !important; color: #000;
+      margin: 0.6pt 0 0 0; padding: 0; line-height: var(--lh-body, 13.8pt); text-align: left;
+      font-family: Calibri, Arial, sans-serif;
+    }
     .resume-paper .r-role {
       font-size: var(--fs-role, 13.2pt); font-weight: 700; color: #000;
       margin: var(--sp-job, 1.85pt) 0 0 4.55pt; line-height: var(--lh-role, 13.2pt);
+    }
+    .resume-paper .r-entry {
+      margin: 0;
+      padding: 0;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .resume-paper .r-entry .r-job,
+    .resume-paper .r-entry .r-role {
+      break-after: avoid;
+      page-break-after: avoid;
+    }
+    .resume-paper .r-entry .r-job + .r-bullet,
+    .resume-paper .r-entry .r-role + .r-bullet {
+      break-before: avoid;
+      page-break-before: avoid;
     }
     .resume-paper .r-role i, .resume-paper .r-job i { font-style: italic; font-weight: 700; }
     .resume-paper .r-section,
@@ -929,7 +1150,9 @@
     .resume-paper b, .resume-paper strong { font-weight: 700; color: #000; }
     .resume-paper a { color: #1a56c4; }
     .resume-paper .r-page-break {
-      display: none;
+      display: block;
+      width: 100%;
+      pointer-events: none;
     }
     .resume-paper .r-page-start {
       break-before: auto;
@@ -1047,8 +1270,8 @@
     </div>
 
     <div class="action-bar">
-      <button class="btn-free" id="freeAtsBtn" onclick="runAtsCheck()">Score this match</button>
-      <button class="btn-primary" id="analyzeBtn" onclick="runAnalysis()">Rewrite for this posting</button>
+      <button class="btn-free" id="freeAtsBtn" onclick="runAtsCheck()">Score (score rule)</button>
+      <button class="btn-primary" id="analyzeBtn" onclick="runAnalysis()">Rewrite resume</button>
       <button class="btn-warning hidden" id="rerunBtn" onclick="resetAndRun()">Start a new draft</button>
       <button class="btn-danger" onclick="clearAll()">Clear posting</button>
       <div id="loadingIndicator" class="loading-row hidden">
@@ -1067,6 +1290,7 @@
     </div>
 
     <div id="freeAtsPanel" class="hidden card" style="margin-bottom:20px;">
+      <div id="roleCompare"></div>
       <div class="insight-hero">
         <div>
           <div class="donut-wrap" id="atsDonut"></div>
@@ -1077,48 +1301,49 @@
           </div>
         </div>
         <div>
-          <div class="card-title">Match report · <span id="scoreSourceLabel">Role</span></div>
-          <div id="roleDetectLine" class="hint" style="margin-bottom:8px;">Paste a posting and click Score this match.</div>
+          <div class="card-title">Match for <span id="scoreSourceLabel">this job</span></div>
+          <div id="roleDetectLine" class="hint hidden" style="margin-bottom:8px;"></div>
           <div id="stackDetectLine" class="stack-detect hidden" role="status" aria-live="polite"></div>
           <div class="kpi-mini">
             <div class="score-card">
-              <div class="score-label">Match score</div>
+              <div class="score-label">Match</div>
               <div class="score-value" id="freeAtsScore">--</div>
-              <div class="score-sub">Aim for 98+ · test in ChatGPT / Claude / Grok</div>
+              <div class="score-sub">How well it fits this job</div>
             </div>
             <div class="score-card">
               <div class="score-label">Skills in work history</div>
               <div class="score-value blue" id="freeKwMatch">--</div>
-              <div class="score-sub" id="freeKwMatchSub">of the locked set</div>
+              <div class="score-sub" id="freeKwMatchSub">of the job’s tools</div>
             </div>
             <div class="score-card">
-              <div class="score-label">Page hygiene</div>
+              <div class="score-label">Layout</div>
               <div class="score-value" id="freeFmtCheck" style="font-size:22px;">--</div>
-              <div class="score-sub">Plain text, no graphics</div>
+              <div class="score-sub">Plain text, easy to read</div>
             </div>
             <div class="score-card">
               <div class="score-label">Measured bullets</div>
               <div class="score-value yellow" id="freeBulletScore" style="font-size:22px;">--</div>
-              <div class="score-sub">numbers in the work history</div>
+              <div class="score-sub">bullets with real numbers</div>
             </div>
           </div>
         </div>
       </div>
 
       <div id="eligibilityPanel" class="eligibility-panel hidden"></div>
+      <p class="hint" id="scoreDisclaimer" style="margin:8px 0 0;">How well this resume matches the job — not a guess of ATS software.</p>
+      <div id="hardKnockoutBanner"></div>
 
       <div class="chart-grid">
         <div class="chart-card">
-          <h3>Where the score comes from</h3>
+          <h3>How this resume matches</h3>
+          <p class="ai-cat-hint">Click a row to see why.</p>
           <div class="bar-chart" id="ruleBars"></div>
         </div>
         <div class="chart-card">
-          <h3>Skills on the page vs missing</h3>
-          <div class="pie-row" id="skillCoverageChart"></div>
-          <div class="progress-bar-wrap" style="height:10px;margin-top:12px;">
-            <div class="progress-bar" id="freeKwBar" style="width:0%"></div>
+          <h3 id="aiCategoryDetailTitle">Why this score</h3>
+          <div class="ai-cat-detail" id="aiCategoryDetail">
+            <p class="hint" style="margin:0;">Click a row on the left to see what that number means.</p>
           </div>
-          <div style="font-size:12px;color:#6b6b6b;margin-top:5px;" id="freeKwBarLabel"></div>
         </div>
       </div>
 
@@ -1141,11 +1366,12 @@
         </div>
       </div>
 
-      <div class="card-title" style="margin-top:16px;">Locked skill set — teal = on the page · pink = missing · purple = market (Stretch only)</div>
+      <div class="card-title" style="margin-top:16px;">JD must-have tools (this is the scored set)</div>
+      <p class="hint" style="margin:0 0 8px;">Teal = in work history · gold = Skills only · pink = missing. Purple = nice-to-have (not scored). Orange = ATS phrases to weave into bullets.</p>
       <div id="freeKwGrid" class="keyword-grid"></div>
 
       <div class="card-title" style="margin-top:16px;">What a rewrite will change</div>
-      <p class="hint" style="margin-bottom:12px;">Skills from the JD and market research — grouped by what the rewrite will weave into your resume.</p>
+<p class="hint" style="margin-bottom:12px;">Any posting: rewrite as that JD role. Skills and experience come from the JD; previous-role work is kept when it already matches.</p>
       <div id="missingReport"></div>
       <div id="tailorCta"></div>
     </div>
@@ -1181,7 +1407,7 @@
             <div class="score-card">
               <div class="score-label">Match score</div>
               <div class="score-value green" id="atsScore">--</div>
-              <div class="score-sub">after the rewrite</div>
+              <div class="score-sub">JD alignment after rewrite</div>
             </div>
             <div class="score-card">
               <div class="score-label">Must-have skills</div>
@@ -1289,7 +1515,7 @@
 </div>
 
 <div id="toast"></div>
-<script src="rag-engine.js?v=chatgpt-calib"></script>
-<script src="app.js?v=loader-no-ai-names"></script>
+<script src="rag-engine.js?v=gemini-json-silent"></script>
+<script src="app.js?v=exp-edu-layout-fix"></script>
 </body>
 </html>

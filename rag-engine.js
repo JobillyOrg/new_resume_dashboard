@@ -167,6 +167,7 @@
     cloud: 'cloud-eng',
     security: 'security',
     qa: 'qa',
+    automation: 'automation',
     swe: 'swe',
     ba: 'ba',
     identity: 'it-support',
@@ -252,6 +253,12 @@
       label: 'QA Engineer',
       core: ['Selenium', 'Jira', 'Git', 'SQL', 'Java'],
       extra: ['Python', 'CI/CD', 'REST API', 'JavaScript'],
+    },
+    'automation': {
+      family: 'automation',
+      label: 'Automation Engineer',
+      core: ['Python', 'SQL', 'Git', 'CI/CD', 'REST API', 'Jenkins'],
+      extra: ['Selenium', 'pytest', 'Docker', 'Jira', 'Airflow', 'REST API'],
     },
     'dba': {
       family: 'data',
@@ -724,6 +731,11 @@
       { id: 'cloud-eng', match: () => /cloud engineer|cloud architect/.test(t) },
       { id: 'security', match: () => /security analyst|soc analyst|cybersecurity|information security|security engineer/.test(t) },
       { id: 'qa', match: () => /\bqa engineer\b|quality assurance|\bsdet\b|test engineer|automation tester/.test(t) },
+      { id: 'automation', match: () => {
+        const titleLow = String(title || '').toLowerCase();
+        return /automation engineer|test automation|qa automation|rpa engineer|process automation/.test(titleLow)
+          || (/\bautomation engineer\b/.test(t) && !/data engineer|data engineering/.test(titleLow));
+      } },
       { id: 'dba', match: () => /database admin|database administrator|\bdba\b/.test(t) },
       { id: 'frontend', match: () => /front.?end engineer|front.?end developer|react developer/.test(t) },
       { id: 'backend', match: () => /back.?end engineer|back.?end developer/.test(t) },
@@ -855,7 +867,8 @@
 
   function expandKeyword(kw) {
     const forms = [kw];
-    const k = kw.trim();
+    const k = String(kw || '').trim();
+    if (!k) return [];
     const stripped = k.replace(/\s+(pipelines?|models?|tools?|frameworks?|systems?|platforms?|technologies?)$/i, '').trim();
     if (stripped !== k && stripped.length > 1) forms.push(stripped);
     const noVendor = k.replace(/^(apache|amazon|google|microsoft)\s+/i, '').trim();
@@ -864,7 +877,16 @@
     const lower = k.toLowerCase();
     if (EXPANSIONS[lower]) forms.push(...EXPANSIONS[lower]);
     if (stripped !== k && EXPANSIONS[stripped.toLowerCase()]) forms.push(...EXPANSIONS[stripped.toLowerCase()]);
-    return forms;
+    // Drop weak/generic expansions that cause false "on the page" hits (e.g. Power, Automate, Flow).
+    const WEAK = /^(power|data|flow|admin|center|process|advisor|automate|automation|path|anywhere|microsoft|google|amazon|apache|studio|designer|cloud|server|service|services|platform|tool|tools|office|suite)$/i;
+    return uniqTerms(forms).filter(f => {
+      const t = String(f || '').trim();
+      if (t.length < 3) return false;
+      if (WEAK.test(t)) return false;
+      // Single-token forms under 4 chars are too ambiguous
+      if (!/\s/.test(t) && t.length < 4) return false;
+      return true;
+    });
   }
 
   function kwOrAliasInText(canonical, text, aliasMap = {}) {
@@ -892,19 +914,21 @@
       : -1;
     const skillsText = skillsStart >= 0
       ? resumeLines.slice(skillsStart, skillsEnd === -1 ? undefined : skillsEnd).join('\n')
-      : resumeText;
+      : '';
 
     const primaryFound = primary.filter(k => kwOrAliasInText(k, resumeText, aliasMap));
     const primaryMissing = primary.filter(k => !kwOrAliasInText(k, resumeText, aliasMap));
     const inExperience = primary.filter(k => kwOrAliasInText(k, experienceText, aliasMap));
-    const inSkillsOnly = primaryFound.filter(k => !kwOrAliasInText(k, experienceText, aliasMap));
-    // ChatGPT-style: only credit keywords proven in experience bullets (skills-only ≈ weak score).
-    const keywordsInExperience = Math.round((inExperience.length / Math.max(primary.length, 1)) * 25);
-    const keywordCredibility = Math.round(Math.max(0, 10 - inSkillsOnly.length * 2.5 - primaryMissing.length));
+    // Skills-only = literally in Skills section AND not in experience.
+    // If there is no Skills header, do NOT treat the whole resume as Skills (avoids false "Skills only").
+    const inSkillsSection = skillsStart >= 0
+      ? primaryFound.filter(k => kwOrAliasInText(k, skillsText, aliasMap))
+      : [];
+    const inSkillsOnly = inSkillsSection.filter(k => !kwOrAliasInText(k, experienceText, aliasMap));
+    const jdSkillsOnly = inSkillsOnly;
 
     const secFound = secondary.filter(k => kwOrAliasInText(k, resumeText, aliasMap));
     const secMissing = secondary.filter(k => !kwOrAliasInText(k, resumeText, aliasMap));
-    const secondaryKeywords = Math.round((secFound.length / Math.max(secondary.length, 1)) * 8);
 
     const bulletLines = resumeLines.filter(l => {
       if (!l || l.length < 10) return false;
@@ -915,23 +939,157 @@
     });
     const bulletsWithNum = bulletLines.filter(l => /\d/.test(l));
     const metricRatio = bulletLines.length ? bulletsWithNum.length / bulletLines.length : 0;
-    // Stricter quantification curve — ChatGPT docks sparse metrics.
-    const quantified = bulletLines.length
-      ? Math.round(Math.min(15, metricRatio * 15 * (metricRatio >= 0.7 ? 1 : 0.85)))
-      : 0;
 
     const weakStarts = /^(responsible for|worked on|assisted with|helped|involved in|participated in)\b/i;
     const strongBullets = bulletLines.filter(l => !weakStarts.test(l.replace(/^[-•\s]+/, '')));
-    const achievementsNotDuties = bulletLines.length ? Math.round((strongBullets.length / bulletLines.length) * 8) : 4;
+    const strongRatio = bulletLines.length ? strongBullets.length / bulletLines.length : 0.5;
 
     const title = extractJdTitle(jd);
     const jdTitle = title.toLowerCase().replace(/[^\w\s]/g, '').trim();
     const summaryArea = resumeLines.filter(Boolean).slice(0, 12).join(' ').toLowerCase();
+    const resumeLower = resumeText.toLowerCase();
+    const jdLower = String(jd || '').toLowerCase();
     const titleWords = jdTitle.split(/\s+/).filter(w => w.length > 3);
-    const titleHits = titleWords.filter(w => summaryArea.includes(w)).length;
-    const summaryPts = titleWords.length === 0 ? 8
-      : titleHits >= titleWords.length ? 12
-      : titleHits >= Math.ceil(titleWords.length * 0.6) ? 8 : 4;
+    const titleHits = titleWords.filter(w => summaryArea.includes(w) || resumeLower.includes(w)).length;
+    const titleMatchRatio = titleWords.length
+      ? titleHits / titleWords.length
+      : (jdTitle && resumeLower.includes(jdTitle) ? 1 : 0.5);
+
+    const jdYearsText = String(jd || '').replace(/[–—]/g, '-');
+    const jdRange = jdYearsText.match(/(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*years?/i);
+    const jdYearsMatch = jdRange || jdYearsText.match(/(\d+(?:\.\d+)?)\s*\+?\s*years?/i);
+    const resumeYearsMatch = summaryArea.match(/(\d+(?:\.\d+)?)\+?\s*years?/) || resumeLower.match(/(\d+(?:\.\d+)?)\+?\s*years?/);
+    const jdYearsMin = jdYearsMatch ? Number(jdYearsMatch[1]) : 0;
+    const jdYearsMax = jdRange ? Number(jdRange[2]) : 0;
+    const resumeYears = resumeYearsMatch ? Number(resumeYearsMatch[1]) : 0;
+    let yearsFit = 0.6;
+    if (jdYearsMin && resumeYears) {
+      if (jdYearsMax && resumeYears >= jdYearsMin - 1 && resumeYears <= jdYearsMax + 0.51) yearsFit = 1;
+      else if (!jdYearsMax && resumeYears >= jdYearsMin) yearsFit = 1;
+      else if (resumeYears >= jdYearsMin - 1) yearsFit = 0.8;
+      else if (resumeYears >= jdYearsMin - 2) yearsFit = 0.55;
+      else yearsFit = 0.3;
+    } else if (resumeYears) {
+      yearsFit = 0.75;
+    }
+
+    const REQUIRED = ['SUMMARY', 'EXPERIENCE', 'SKILLS', 'EDUCATION'];
+    const resumeUpper = resume.toUpperCase();
+    const missingSections = REQUIRED.filter(s => !resumeUpper.includes(s));
+    const hasEducation = !missingSections.includes('EDUCATION');
+
+    const jdWantsDegree = /\b(bachelor|master|b\.?s\.?|m\.?s\.?|mba|phd|degree)\b/i.test(jd);
+    const resumeHasDegree = /\b(bachelor|master|b\.?s\.?|m\.?s\.?|mba|phd|b\.?tech|m\.?tech|degree)\b/i.test(resume);
+
+    const IMPACT = /\b(reduc(?:ed|ing)?|improv(?:ed|ing)?|increas(?:ed|ing)?|automat(?:ed|ing)|eliminat(?:ed|ing)|sav(?:ed|ing)|cut\b|enabled|streamlin(?:ed|ing)|boost(?:ed)?|reliability)\b/i;
+    const OWNER = /\b(own(?:ed|ing|ership)|led\b|architect(?:ed|ure)|design(?:ed|ing)|drove|production|troubleshoot|optimiz(?:ed|ing)|mentor)\b/i;
+    const INDUSTRY = /\b(healthcare|health[- ]care|mortgage|retail|financial[- ]services|fintech|banking|insurance|pharma|biotech)\b/i;
+    const jdRequiresIndustry = INDUSTRY.test(jd) && /\b(require|must|need|experience|background)\b/i.test(jd)
+      && !/\b(leading provider|our mission|we(?:'| a)re hiring)\b/i.test(jd);
+
+    const aGates = [
+      yearsFit >= 0.55,
+      hasEducation || !jdWantsDegree || resumeHasDegree,
+    ];
+    if (jdRequiresIndustry) aGates.push(INDUSTRY.test(resume));
+    let hardQualifications = Math.round((aGates.filter(Boolean).length / aGates.length) * 20);
+
+    const skillCredits = primary.map(k => {
+      if (inExperience.includes(k)) return 1;
+      if (primaryFound.includes(k)) return 0.45;
+      return 0;
+    });
+    let skillsKeywords = Math.round((skillCredits.reduce((a, n) => a + n, 0) / Math.max(primary.length, 1)) * 20);
+
+    const stop = new Set(['with', 'from', 'that', 'this', 'have', 'will', 'your', 'their', 'into', 'using', 'ability', 'strong', 'years', 'experience', 'required', 'preferred', 'including', 'related', 'working', 'team', 'role', 'work', 'must', 'should', 'across', 'other', 'such', 'about', 'which']);
+    const dutyChunk = String(jd || '').split(/\n/).filter(l =>
+      /responsib|duties|you will|what you.?ll|requirements|qualifications|key skills|day.to.day/i.test(l)
+      || (/^[-•*]/.test(l.trim()) && l.length > 40),
+    ).join(' ').slice(0, 4000) || String(jd || '').slice(0, 2500);
+    const dutyTerms = [...new Set(
+      dutyChunk.toLowerCase().replace(/[^a-z0-9+#.\s-]/g, ' ').split(/\s+/)
+        .filter(w => w.length >= 5 && !stop.has(w) && !/^\d+$/.test(w)),
+    )].slice(0, 40);
+    const dutyHits = dutyTerms.filter(t => experienceText.toLowerCase().includes(t) || resumeLower.includes(t)).length;
+    let semanticResponsibilityMatch = dutyTerms.length
+      ? Math.round((dutyHits / dutyTerms.length) * 20)
+      : 10;
+
+    const evidenceCredits = primary.map(k => {
+      if (inExperience.includes(k)) return SCALE_LIKE(k) ? 1 : 0.75;
+      if (primaryFound.includes(k)) return 0.25;
+      return 0;
+    });
+    function SCALE_LIKE(k) {
+      const hits = bulletLines.filter(l => new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(l));
+      return hits.some(l => /\d/.test(l) || IMPACT.test(l));
+    }
+    let skillsEvidenceContext = Math.round((evidenceCredits.reduce((a, n) => a + n, 0) / Math.max(primary.length, 1)) * 10);
+
+    const jdSenior = /\b(senior|lead|principal|staff|manager|architect)\b/i.test(jd);
+    const resumeSenior = /\b(senior|lead|principal|staff|manager|architect|mentor)\b/i.test(resume);
+    const roleCount = resumeLines.filter(l =>
+      /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{4}\b/i.test(l)
+      || /\d{4}\s*[-–—]\s*(\d{4}|present)/i.test(l),
+    ).length;
+    const eGates = [
+      yearsFit >= 0.55,
+      OWNER.test(experienceText),
+      !jdSenior || resumeSenior || OWNER.test(experienceText),
+      roleCount >= 2,
+    ];
+    let experienceSeniorityMatch = Math.round((eGates.filter(Boolean).length / eGates.length) * 10);
+
+    const impactRatio = bulletLines.length ? bulletLines.filter(l => IMPACT.test(l)).length / bulletLines.length : 0;
+    const fGates = [
+      impactRatio >= 0.35,
+      metricRatio >= 0.2 || impactRatio >= 0.5,
+      strongRatio >= 0.5,
+    ];
+    let achievementsImpact = Math.round((fGates.filter(Boolean).length / fGates.length) * 8);
+
+    const sectionHits = 4 - missingSections.length;
+    const tableLike = resumeLines.some(l => l.split('|').length >= 4 && !/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{4}|present)/i.test(l));
+    let resumeParsingStructure = Math.round(((Math.max(0, sectionHits) / 4) * 0.7 + (tableLike ? 0 : 0.3)) * 5);
+
+    const jdFam = (title || '').toLowerCase();
+    const familyHit = !jdFam || /data engineer|data platform|cloud data|big data/.test(jdFam)
+      ? /data engineer|data platform|cloud data|big data|etl|spark/.test(resumeLower)
+      : resumeLower.includes(jdFam.split(/\s+/)[0] || '___');
+    let jobTitleAlignment = familyHit ? 2 : 1;
+
+    const longBullets = bulletLines.filter(l => l.length > 220).length;
+    const iGates = [
+      titleHits > 0 || titleWords.length === 0,
+      bulletLines.length > 0,
+      bulletLines.length ? ((bulletLines.length - longBullets) / bulletLines.length) >= 0.65 : false,
+      /\d+\+?\s*years?/i.test(summaryArea) || yearsFit >= 0.55,
+      primaryFound.length >= Math.min(3, Math.max(primary.length, 1)),
+    ];
+    let recruiterReadability = Math.round((iGates.filter(Boolean).length / iGates.length) * 5);
+
+    hardQualifications = Math.max(0, Math.min(20, hardQualifications));
+    skillsKeywords = Math.max(0, Math.min(20, skillsKeywords));
+    semanticResponsibilityMatch = Math.max(0, Math.min(20, semanticResponsibilityMatch));
+    skillsEvidenceContext = Math.max(0, Math.min(10, skillsEvidenceContext));
+    experienceSeniorityMatch = Math.max(0, Math.min(10, experienceSeniorityMatch));
+    achievementsImpact = Math.max(0, Math.min(8, achievementsImpact));
+    resumeParsingStructure = Math.max(0, Math.min(5, resumeParsingStructure));
+    jobTitleAlignment = Math.max(0, Math.min(2, jobTitleAlignment));
+    recruiterReadability = Math.max(0, Math.min(5, recruiterReadability));
+
+    const ruleScores = {
+      hardQualifications,
+      skillsKeywords,
+      semanticResponsibilityMatch,
+      skillsEvidenceContext,
+      experienceSeniorityMatch,
+      achievementsImpact,
+      resumeParsingStructure,
+      jobTitleAlignment,
+      recruiterReadability,
+    };
+    const atsScore = Math.min(100, Object.values(ruleScores).reduce((a, b) => a + b, 0));
 
     const upperHeaders = resumeLines.filter(l => /^[A-Z][A-Z\s\/&-]{2,44}$/.test(l) && l.trim().length > 2);
     const fmtIssues = [];
@@ -940,30 +1098,6 @@
     if (resumeLines.some(l => l.split('|').length >= 4 && !/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{4}|present)/i.test(l))) {
       fmtIssues.push('Table formatting detected — may confuse ATS parsers');
     }
-    const format = fmtIssues.length === 0 ? 8 : Math.max(0, 8 - fmtIssues.length * 3);
-
-    const REQUIRED = ['SUMMARY', 'EXPERIENCE', 'SKILLS', 'EDUCATION'];
-    const resumeUpper = resume.toUpperCase();
-    const missingSections = REQUIRED.filter(s => !resumeUpper.includes(s));
-    const structure = missingSections.length === 0 ? 6 : Math.max(0, 6 - missingSections.length * 2);
-
-    const longBullets = bulletLines.filter(l => l.length > 220).length;
-    const bulletQuality = bulletLines.length
-      ? Math.round(((bulletLines.length - longBullets) / bulletLines.length) * 8)
-      : 3;
-
-    const ruleScores = {
-      keywordsInExperience,
-      keywordCredibility,
-      secondaryKeywords,
-      quantified,
-      achievementsNotDuties,
-      tenSecond: summaryPts,
-      format,
-      structure,
-      bulletQuality,
-    };
-    const atsScore = Math.min(100, Object.values(ruleScores).reduce((a, b) => a + b, 0));
 
     const tenSecondTest = {
       role: titleHits >= Math.max(1, Math.ceil(titleWords.length * 0.6)),
@@ -977,12 +1111,15 @@
     };
 
     const gaps = [
-      ...primaryMissing.map(k => `Keyword "${k}" from JD not found — add to Skills and weave into an experience bullet.`),
-      ...inSkillsOnly.map(k => `"${k}" is listed in skills but not demonstrated in experience.`),
-      ...secMissing.slice(0, 5).map(k => `Secondary keyword "${k}" not found.`),
+      ...primaryMissing.map(k => `JD must-have "${k}" not found — add to Skills and weave into an experience bullet.`),
+      ...jdSkillsOnly.map(k => `JD must-have "${k}" is in Skills only — prove it in an experience bullet.`),
       ...fmtIssues.map(i => `Format: ${i}`),
       ...missingSections.map(s => `Missing section: ${s}`),
-    ].filter(g => !isCertKeyword(g) && !/certif/i.test(g));
+      hardQualifications < 14 ? 'Hard qualifications weak — years, education, work auth, or an explicit industry gate.' : null,
+      semanticResponsibilityMatch < 12 ? 'Experience bullets do not yet show the type of work the JD is hiring for.' : null,
+      skillsEvidenceContext < 6 ? 'Prove JD tools in experience with action and context — listing them is not enough.' : null,
+      achievementsImpact < 5 ? 'Add real results where they exist — never invent metrics.' : null,
+    ].filter(g => g && !isCertKeyword(g) && !/certif/i.test(g));
 
     return {
       atsScore,
@@ -1007,23 +1144,29 @@
         keywordsMissing: primaryMissing,
         secondaryFound: secFound,
         secondaryMissing: secMissing,
+        jdSkillsOnly,
         bulletsWithMetrics: bulletsWithNum.length,
         bulletsTotal: bulletLines.length,
-        summaryScore: summaryPts,
+        summaryScore: Math.round(
+          (titleWords.length === 0 ? 0.7
+            : titleHits >= titleWords.length ? 1
+            : titleHits >= Math.ceil(titleWords.length * 0.6) ? 0.7 : 0.35) * 12,
+        ),
         formatCheck: fmtIssues.length === 0 ? 'PASS' : 'WARNING',
         formatIssues: fmtIssues,
         sectionCheck: missingSections.length === 0 ? 'PASS' : 'FAIL',
         missingSections,
         confidenceLevel: atsScore >= 85 ? 'High' : atsScore >= 70 ? 'Medium' : 'Low',
         confidenceReason: primaryMissing.length === 0
-          ? 'All major JD keywords addressed'
-          : `${primaryMissing.length} primary keyword(s) still missing`,
+          ? 'JD alignment: major keywords addressed. This is not an ATS vendor prediction.'
+          : `${primaryMissing.length} primary keyword(s) still missing. Score is JD alignment, not an ATS %.`,
         gaps,
         improvementSuggestions: [
-          primaryMissing.length ? `Add missing primary keywords: ${primaryMissing.slice(0, 4).join(', ')}` : null,
-          inSkillsOnly.length ? `Demonstrate these in experience, not only skills: ${inSkillsOnly.slice(0, 3).join(', ')}` : null,
-          bulletsWithNum.length < bulletLines.length ? 'Add metrics to bullets that have no numbers' : null,
-          summaryPts < 10 && title ? `Open the summary with the job title: ${title}` : null,
+          primaryMissing.length ? `Add missing JD must-haves: ${primaryMissing.slice(0, 4).join(', ')}` : null,
+          jdSkillsOnly.length ? `Prove these JD must-haves in experience (not only Skills): ${jdSkillsOnly.slice(0, 3).join(', ')}` : null,
+          bulletsWithNum.length < bulletLines.length * 0.6 ? 'Add metrics to more experience bullets' : null,
+          titleMatchRatio < 0.6 && title ? `Keep past titles honest; you may open the summary with the target role (${title})` : null,
+          semanticResponsibilityMatch < 12 ? 'Mirror JD responsibility verbs/phrases in experience bullets' : null,
         ].filter(Boolean),
         tenSecondTest,
         ruleScores,
