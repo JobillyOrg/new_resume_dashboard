@@ -420,7 +420,7 @@ function formatMandatoryCloseList(unified, mustAdd, atsMustAdd) {
     `2. Skills-only today — rewrite so each of these appears in an EXPERIENCE bullet (not Skills dump): ${skillsOnly.join(', ') || 'none'}`,
     `3. Weave these JD ATS phrases naturally: ${phrases.join(' · ') || 'none'}`,
     `4. Raise these weak score-rule categories with the 20 writing rules: ${weak.join('; ') || 'none weak'}`,
-    '5. SUMMARY opens with the TARGET JD title + years + 8–9 JD must-have tools. The whole paragraph is that JD role.',
+    '5. SUMMARY opens with the TARGET JD title (never a number), then years + 8–9 JD must-have tools. The whole paragraph is that JD role.',
     '6. SKILLS are built from JD must-haves; keep previous-role tools only when they overlap this JD.',
     '7. EXPERIENCE is built from JD responsibilities. Reuse previous-role bullets that already match; reframe or shrink the rest.',
     '8. FORMAT MUST match the Anirudh template exactly (Name / Title / Contact | sections ALL-CAPS / role lines / "- " bullets) — wrong format = failed rewrite.',
@@ -437,6 +437,7 @@ function formatMandatoryTemplateBlock(headline, resumeText) {
   const title = headline
     ? String(headline).split('|')[0].trim()
     : 'exact JD title';
+  const masterForRoles = ($('resumeInput') && $('resumeInput').value) || resumeText;
   return `FORMAT IS MANDATORY (Anirudh Word template) — non-negotiable; wrong layout = failed rewrite:
 Line 1: Full Name in Title Case (never ALL CAPS)
 Line 2: Target job title only — ${title}
@@ -451,9 +452,13 @@ Then ONLY these ALL-CAPS headers (exact spelling):
 SUMMARY = one prose paragraph (no bullets, no metrics).
 ${skillsHeader} = keep master category labels. Put JD must-have skills first on each line; demote off-role master tools.
 PROFESSIONAL EXPERIENCE role lines — exactly one plain-text line per role:
-  Company | Location | Job Title Month YYYY – Month YYYY
-  Example: Netflix | CA | Machine Learning Engineer January 2025 – Present
+  If that master role HAS a location: Company | Location | Job Title Month YYYY – Month YYYY
+  If that master role has NO location: Company | Job Title Month YYYY – Month YYYY
+  Example with location: Netflix | CA | Machine Learning Engineer January 2025 – Present
+  Example without location: Stripe | Software Engineer September 2024 – Present
+  Never invent Remote, a city, a state, or company HQ. Never copy the header city onto a role.
   Never put dates on a second line. Never Company | Title | Location | Dates.
+${formatExperienceLocationLock(masterForRoles)}
 Bullets: start with hyphen-space "- " only (not • * ·). 6–7 bullets per role. Each ends with a period.
 EDUCATION: Qualification / degree on its own line (bold). College, City, ST on the next line (not bold).
 No tables/columns/icons/photos/skill bars in the text output. No markdown. No **bold**.
@@ -570,7 +575,7 @@ function formatExternalAtsBlock(jd, keywords) {
   const atsPhrases = filterExtractedSkills(keywords?.atsKeywords || []);
   return `LAYOUT + KEYWORD ALIGNMENT (supports A–I JD-alignment scoring):
 - Line 2 is the TARGET role for this posting: ${role}. Do NOT rename past job titles to copy the JD.
-- SUMMARY is a ${role} profile: years + 8-9 JD must-have tools in natural prose. No %/$ metrics in SUMMARY. Not a hybrid of a different master career.
+- SUMMARY is a ${role} profile: open with the job title (never a number), then years + 8-9 JD must-have tools in natural prose. No %/$ metrics in SUMMARY. Not a hybrid of a different master career.
 - JD must-have skills lead SKILLS; prove them in EXPERIENCE bullets connected to real work (JD duties first)
 - Use the JD's exact spelling when it is true: ${primary.slice(0, 14).join(', ') || 'see locked set'}
 - Weave ATS phrases naturally (never comma dumps or repeating one keyword ten times): ${atsPhrases.slice(0, 10).join(' · ') || 'n/a'}
@@ -627,6 +632,10 @@ RULES:
 - Prefer evidence and clarity over stuffing
 - Pivot the whole page to the JD role (summary, skills order, experience). Do not keep the master career as the profile.
 - Keep Anirudh format exactly (ALL-CAPS headers, role lines, "- " bullets)
+- Do not add a city/Remote/HQ to a role that had no location on the master
+- SUMMARY years must be the calculated EXPERIENCE tenure, never a JD range like "2-5 years" or "3-4 years"
+
+${formatLockedTenureBlock(($('resumeInput') && $('resumeInput').value) || resume)}
 
 JOB DESCRIPTION:
 ${jd.slice(0, 6500)}
@@ -2650,7 +2659,7 @@ function parseResumeDate(raw, { asEnd = false } = {}) {
   const t = String(raw || '').replace(/[–—]/g, '-').trim();
   if (!t) return null;
   if (/^(present|current|now|today|ongoing)$/i.test(t)) return nowYearMonth();
-  const md = t.match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(\d{4})\b/i);
+  const md = t.match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s*[-./]?\s*(\d{4})\b/i);
   if (md) {
     const month = monthIndexFromName(md[1]);
     const year = Number(md[2]);
@@ -2702,7 +2711,7 @@ function monthsToYears(totalMonths) {
   return Math.round((totalMonths / 12) * 10) / 10;
 }
 
-const EXP_ROLE_DATE_RE = /\b((?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+)?((?:19|20)\d{2})\s*[-–—\/to]+\s*((?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+)?((?:19|20)\d{2}|present|current|now|today|ongoing)\b/i;
+const EXP_ROLE_DATE_RE = /\b((?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s*[-./]?\s*)?((?:19|20)\d{2})\s*[-–—\/to]+\s*((?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s*[-./]?\s*)?((?:19|20)\d{2}|present|current|now|today|ongoing)\b/i;
 
 function rangesFromExperienceJobs(jobs) {
   const ranges = [];
@@ -2748,10 +2757,112 @@ function estimateResumeExperienceYears(resumeText, resumeJson) {
 function formatTenureForSummary(years) {
   if (years == null || !Number.isFinite(Number(years))) return '';
   const n = Number(years);
-  if (n >= 10) return `${Math.round(n)}+ years`;
+  if (n < 0.05) return '';
   const rounded = Math.round(n * 10) / 10;
-  if (Number.isInteger(rounded)) return `${rounded}+ years`;
   return `${rounded} years`;
+}
+
+function formatLockedTenureBlock(resumeText, resumeJson) {
+  const master = ($('resumeInput') && $('resumeInput').value) || resumeText || '';
+  const tenure = estimateResumeExperienceYears(
+    master,
+    resumeJson || (typeof state !== 'undefined' ? state.lastResumeJson : null),
+  );
+  const label = tenure.years != null ? formatTenureForSummary(tenure.years) : '';
+  if (!label) {
+    return `LOCKED SUMMARY YEARS: could not parse job dates. Do not copy a JD years range into SUMMARY (not "2-5 years", "3-4 years", "2-5+ years").`;
+  }
+  return `LOCKED SUMMARY YEARS — calculated from EXPERIENCE job dates only (month+year, gaps not counted, education ignored):
+  ${label} (${tenure.years} years across ${tenure.roleCount} role(s)).
+  Weave this exact tenure after the job title: "Data Analyst with ${label} of experience…".
+  Do NOT start SUMMARY with a number (never "${label} of experience…" as the first words).
+  NEVER write a range: not "2-5 years", "3-4 years", "2-5+ years", "1 to 6 years".
+  NEVER copy the JD years requirement into SUMMARY. NEVER use a different number from the master summary. Do not use college dates.`;
+}
+
+function rewriteSummaryTenureLine(line, label) {
+  let s = String(line || '');
+  s = s.replace(/\b\d+(?:\.\d+)?\s*(?:[-–—]|to)\s*\d+(?:\.\d+)?\s*\+?\s*years?\b/gi, label);
+  s = s.replace(/\b\d+(?:\.\d+)?\s*\+\s*years?\b/gi, label);
+  s = s.replace(/\b\d+(?:\.\d+)?\s*years?\s+of(?:\s+(?:professional|relevant|related))?\s+experience\b/gi, `${label} of experience`);
+  s = s.replace(/\bwith\s+\d+(?:\.\d+)?\s*years?\b/gi, `with ${label}`);
+  s = s.replace(/\b(?:over|about|around|approximately)\s+\d+(?:\.\d+)?\s*years?\b/gi, label);
+  return s.replace(/\s{2,}/g, ' ').trim();
+}
+
+function summaryLeadRoleTitle() {
+  const h = (typeof currentHeadline === 'function' && currentHeadline()) || '';
+  const fromHeadline = String(h).split('|')[0].trim();
+  if (fromHeadline) return fromHeadline;
+  return String((typeof state !== 'undefined' && (state.keywords?.role?.title || state.keywords?.role?.label)) || '').trim();
+}
+
+function fixSummaryLeadingNumber(line, label) {
+  const s = String(line || '').trim();
+  if (!/^\d/.test(s)) return s;
+  const role = summaryLeadRoleTitle();
+  const stripped = s
+    .replace(/^(?:(?:An?|With)\s+)?\d[\d.+–—to\s-]*years?(?:\s+of(?:\s+(?:professional|relevant|related))?\s+experience)?(?:\s+as(?:\s+an?)?)?\s*[–—,-]*\s*/i, '')
+    .replace(/^(?:who|that)\s+/i, '')
+    .trim();
+  if (!stripped) {
+    return role ? `${role} with ${label} of experience.` : s;
+  }
+  const roleRe = role ? new RegExp('^' + role.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i') : null;
+  if (role && roleRe.test(stripped)) {
+    if (/\b\d+(?:\.\d+)?\s*years?\b/i.test(stripped)) return stripped;
+    return stripped.replace(new RegExp('^(' + role.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')\\s*', 'i'), `$1 with ${label} of experience `);
+  }
+  if (role) {
+    if (/\b\d+(?:\.\d+)?\s*years?\b/i.test(stripped)) return `${role} ${stripped}`.replace(/\s{2,}/g, ' ').trim();
+    return `${role} with ${label} of experience ${stripped}`.replace(/\s{2,}/g, ' ').trim();
+  }
+  return `Professional with ${label} of experience ${stripped}`.replace(/\s{2,}/g, ' ').trim();
+}
+
+function injectSummaryTenure(line, label) {
+  const t = String(line || '').trim();
+  if (/\b\d+(?:\.\d+)?\s*years?\b/i.test(t)) return t;
+  if (/\bwith\s+experience\b/i.test(t)) {
+    return t.replace(/\bwith\s+experience\b/i, `with ${label} of experience`);
+  }
+  const withHit = t.match(/^(.{6,90}?)(\s+with\s+)/);
+  if (withHit && !/\d+\s*years/i.test(withHit[1])) {
+    return t.replace(withHit[2], ` with ${label} of experience `).replace(/\s{2,}/g, ' ');
+  }
+  return t.replace(/^((?:An?\s+)?[A-Za-z][A-Za-z0-9 /+&-]{2,55})(\s+)/, `$1 with ${label} of experience `);
+}
+
+function restoreSummaryTenure(text, master) {
+  const tenure = estimateResumeExperienceYears(
+    master || text,
+    typeof state !== 'undefined' ? state.lastResumeJson : null,
+  );
+  if (tenure.years == null || !Number.isFinite(tenure.years)) return text;
+  const label = formatTenureForSummary(tenure.years);
+  if (!label) return text;
+  const lines = String(text || '').split('\n');
+  const bounds = summaryBounds(lines);
+  if (!bounds) return text;
+  let sawYears = false;
+  for (let i = bounds.start + 1; i < bounds.end; i++) {
+    if (!lines[i].trim() || isSectionHeader(lines[i]) || isBulletLine(lines[i])) continue;
+    lines[i] = rewriteSummaryTenureLine(lines[i], label);
+    if (/\b\d+(?:\.\d+)?\s*years?\b/i.test(lines[i])) sawYears = true;
+  }
+  if (!sawYears) {
+    for (let i = bounds.start + 1; i < bounds.end; i++) {
+      if (!lines[i].trim() || isSectionHeader(lines[i]) || isBulletLine(lines[i])) continue;
+      lines[i] = injectSummaryTenure(lines[i], label);
+      break;
+    }
+  }
+  for (let i = bounds.start + 1; i < bounds.end; i++) {
+    if (!lines[i].trim() || isSectionHeader(lines[i]) || isBulletLine(lines[i])) continue;
+    lines[i] = fixSummaryLeadingNumber(lines[i], label);
+    break;
+  }
+  return lines.join('\n');
 }
 
 function parseYearNumber(s) {
@@ -3391,6 +3502,7 @@ Return JSON with exactly this shape:
       "role": "",
       "start_date": "",
       "end_date": "",
+      "location": "",
       "responsibilities": []
     }
   ]
@@ -3402,6 +3514,7 @@ Rules:
 - professional_summary = SUMMARY paragraph only.
 - personal_information.linkedin = the exact linkedin.com/in/slug if present. Never invent linkedin.com/in/username. Empty string if there is no real profile URL.
 - personal_information.location = the candidate's home/current city from the HEADER only (under the name or on the phone/email line). Never use a college, university, or employer city.
+- professional_experience[].location = city/state/Remote ONLY if that role header already has it. Empty string if the role has no location. Never copy the header city, never guess company HQ.
 - Empty string / [] when unknown — never guess.`;
 }
 
@@ -3453,6 +3566,7 @@ function normalizeResumeJson(parsed) {
       role: String(job?.role || '').trim(),
       start_date: String(job?.start_date || '').trim(),
       end_date: String(job?.end_date || '').trim(),
+      location: String(job?.location || '').trim(),
       responsibilities: (Array.isArray(job?.responsibilities) ? job.responsibilities : [])
         .map(b => String(b || '').trim())
         .filter(Boolean),
@@ -3619,20 +3733,20 @@ function parseResumeToJsonLocal(resume) {
     if (dateRe.test(l) || (/\|/.test(l) && !/^[-•]/.test(l) && l.length < 120)) {
       if (cur) out.professional_experience.push(cur);
       const dm = l.match(dateRe);
-      const parts = l.split('|').map(p => p.trim());
+      const parsed = parseRoleLineParts(l);
       cur = {
-        company: parts.length >= 2 ? parts[0] : (parts[0] || ''),
-        role: parts.length >= 2 ? parts[1].replace(dateRe, '').trim() : '',
+        company: parsed.company || '',
+        role: parsed.title || '',
+        location: parsed.location || '',
         start_date: dm ? dm[1] : '',
         end_date: dm ? dm[2] : '',
         responsibilities: [],
       };
-      if (parts.length >= 3 && !cur.role) cur.role = parts[1];
       continue;
     }
     if (/^[-•]/.test(l) || (cur && l.length > 40)) {
       if (!cur) {
-        cur = { company: '', role: '', start_date: '', end_date: '', responsibilities: [] };
+        cur = { company: '', role: '', start_date: '', end_date: '', location: '', responsibilities: [] };
       }
       cur.responsibilities.push(l.replace(/^[-•\s]+/, '').trim());
     }
@@ -4351,8 +4465,6 @@ function buildRewritePrompt(jd, resume, keywords, missingReport, scoreUnified) {
   const secondary = dropEligibilityTerms(keywords.secondary || []);
   const roles = extractRolesFromResume(resume);
   const cf = extractContactFields(resume);
-  const tenure = estimateResumeExperienceYears(resume, state.lastResumeJson);
-  const tenureLabel = tenure.years != null ? formatTenureForSummary(tenure.years) : '';
   const headline = currentHeadline();
   const aggressive = state.mode === 'aggressive';
   const masterSkills = masterSkillsBlock(resume);
@@ -4438,9 +4550,8 @@ LOCKED CONTACT — use exactly these formatted values:
   Location: ${cf.location || '[omit if the master header has no personal city]'}
   Personal city only — do NOT substitute a college city, university city, or employer office city.
 
-EXPERIENCE TENURE — calculated from PROFESSIONAL EXPERIENCE job dates only (month+year, gaps not counted, education ignored):
-  ${tenureLabel ? `${tenureLabel} (${tenure.years} years across ${tenure.roleCount} role(s))` : 'could not parse job dates'}
-  SUMMARY must use this tenure (example: "${tenureLabel || 'X+ years'} of experience"). Do not copy a different years number from the master summary. Do not use college dates.
+EXPERIENCE TENURE / SUMMARY YEARS:
+${formatLockedTenureBlock(resume, state.lastResumeJson)}
 
 ${roles.length ? `MANDATORY ROLES (${roles.length}) — output all of them:\n${roles.map((r, i) => `  ${i + 1}. ${r}`).join('\n')}` : ''}
 
@@ -4473,7 +4584,8 @@ TECHNICAL SKILLS
 (Do NOT invent a new "Technical Skills:" line unless the master already has one.)
 (Do NOT repeat the same skill twice — each tool appears only once across the whole SKILLS section.)
 PROFESSIONAL EXPERIENCE
-Company | Location | Job Title Month YYYY – Month YYYY
+Company | Job Title Month YYYY – Month YYYY
+(or Company | Location | Job Title ... ONLY if that same role already has a location on the master — never invent one)
 - Bullet ending with a period.
 EDUCATION
 Qualification / degree on its own line (bold)
@@ -4485,7 +4597,7 @@ HR SCAN — SUMMARY AND EXPERIENCE (these are what recruiters actually read):
 The SUMMARY is a ${headline ? headline.split('|')[0].trim() : 'TARGET JD'} profile — not a ${inferMasterCareerLabel(resume)} story with a new title.
 SUMMARY must naturally include AT LEAST 8 and AT MOST 9 of these IMPORTANT JD skills, exact spelling:
   ${summaryKw.join(', ') || primary.slice(0, 9).join(', ')}
-Do not dump a comma list. Weave them into one readable paragraph that opens with the JD title and years and names the stack.
+Do not dump a comma list. Weave them into one readable paragraph that opens with the JD title (never a number), then the LOCKED SUMMARY YEARS (example: "Data Analyst with 6 years of experience" — never "6 years of experience…" first, and never a JD range like "2-5 years").
 Write in natural English — a recruiter should hear a career story, not a keyword checklist.
 Do NOT put percentages, dollar amounts, ROI figures, or quantified wins in SUMMARY (no "40%", no "$500K", no "valued at…"). Put metrics only in experience bullets.
 Do NOT mention H1B, H-1B, visa sponsorship, work authorization, citizenship, or any immigration/eligibility language in SUMMARY — those are posting gates, not professional skills.
@@ -4505,10 +4617,12 @@ Spread phrases across roles; do not stack them all in one bullet.
 BOLDING: do not wrap words in ** in the output. The dashboard bolds the important JD skills after you write.
 
 ROLE LINE FORMAT (Anirudh template — mandatory):
-  Display: Company | Job Title on the LEFT; Location | Month YYYY – Present on the RIGHT (same line — never stack location above dates).
-  In plain text write exactly one line: Company | Location | Job Title Month YYYY – Present
-  Example: Netflix | CA | Machine Learning Engineer January 2025 – Present
-  Example: Stripe | Remote | Software Engineer September 2024 – Present
+  Display: Company | Job Title on the LEFT; Location (only if on the master) | Month YYYY – Present on the RIGHT.
+  If the master role HAS a location: Company | Location | Job Title Month YYYY – Present
+  If the master role has NO location: Company | Job Title Month YYYY – Present
+  Example with location: Netflix | CA | Machine Learning Engineer January 2025 – Present
+  Example without location: Stripe | Software Engineer September 2024 – Present
+  Do NOT invent Remote, a city, a state, or company HQ. Do NOT copy the header city onto a role.
   Do NOT put dates on a second line. Do NOT write Company | Title | Location | Dates.
 
 PROJECTS FORMAT (only if the master already has PROJECTS):
@@ -4590,9 +4704,11 @@ Preserve name, contact, companies, PAST titles, dates, education, and every extr
 Keep the master's skill categories. Put JD must-haves first on each line. Do not invent a new Technical Skills line.
 Each role must have 6 or 7 bullets. If a role has fewer than 6, add bullets. If it has more than 7, keep the strongest 7.
 Line 2 = TARGET JD title. Rewrite the page as that role (summary, skills order, experience). Do not 50/50 merge a different master career with the JD role.
-Keep the Anirudh template format exactly (ALL-CAPS headers, Company | Location | Title Dates, "- " bullets).
+Keep the Anirudh template format exactly (ALL-CAPS headers, Company | Title Dates, location only if already on that master role, "- " bullets).
 
 HR SCAN: SUMMARY must contain 8-9 of these important skills (exact spelling) — only stack-aligned tools: ${summaryKw.join(', ') || 'keep current summary stack'}
+SUMMARY must start with the JD title, not a number. Tenure comes after the title (example: "Data Analyst with 6 years of experience").
+${formatLockedTenureBlock(master, state.lastResumeJson)}
 Write naturally — a career story, not a keyword dump. Never mention H1B, visa sponsorship, work authorization, or citizenship in SUMMARY.
 Never put percentages, dollar amounts, or quantified metrics in SUMMARY (no "40%", "$500K", "valued at…"). Keep metrics in experience bullets only.
 Never close SUMMARY with "including AWS, Azure, or GCP" or mix BigQuery with Redshift/S3 in that paragraph. Name one primary cloud in SUMMARY; put other evidenced clouds in SKILLS and separate bullets.
@@ -7930,14 +8046,16 @@ function cleanupResume(text, opts = {}) {
   t = t.replace(/^here is[^\n]*\n+/i, '');
   t = enforceAnirudhTemplate(t);
   t = sanitizeResumeHeadline(t);
+  const master = opts.master || ($('resumeInput') && $('resumeInput').value) || '';
   t = stripEligibilityFromSummary(t);
+  t = restoreSummaryTenure(t, master);
   t = normalizeExperienceRoleLines(t);
   t = t.split('\n').map(repairBrokenBulletMetrics).join('\n');
   t = normalizeContactInResume(t).trim();
-  const master = opts.master || ($('resumeInput') && $('resumeInput').value) || '';
   if (master) {
     t = restoreMasterLinkedIn(t, master);
     t = restoreMasterLocation(t, master);
+    t = restoreMasterExperienceLocations(t, master);
     t = stripFakeLinkedIn(t);
   }
   const kw = opts.keywords || state.keywords || null;
@@ -8371,7 +8489,7 @@ function isRoleLine(l, section) {
   if (/EDUCATION/.test(sec)) return false;
   if (/PROJECT/.test(sec)) return isProjectTitleLine(l);
   if (/^client\s*:/i.test(l)) return true;
-  const hasDate = /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{4}\b/i.test(l)
+  const hasDate = new RegExp(`\\b${ROLE_MONTH_YEAR}\\b`, 'i').test(l)
     || /\b(19|20)\d{2}\s*[–—-]\s*((19|20)\d{2}|present)\b/i.test(l);
   if (l.includes('|') && (hasDate || /EXPERIENCE/.test(sec))) return true;
   if (hasDate && /EXPERIENCE/.test(sec) && l.length < 140) return true;
@@ -8408,10 +8526,22 @@ function formatEduHtml(line) {
   return `<div class="r-edu-block"><div class="r-edu-degree">${escapeHtml(raw)}</div></div>`;
 }
 
-const ROLE_DATE_RE = /((?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{4}\s*[–—\-to]+\s*(?:Present|Current|(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{4}))\s*$/i;
+const ROLE_MONTH = '(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
+const ROLE_MONTH_YEAR = ROLE_MONTH + '\\.?\\s*[-./]?\\s*(?:19|20)\\d{2}';
+const ROLE_DATE_RE = new RegExp(
+  `((?:${ROLE_MONTH_YEAR})\\s*[–—\\-to]+\\s*(?:Present|Current|Now|${ROLE_MONTH_YEAR}))\\s*$`,
+  'i',
+);
+
+function normalizeMonthYearTokens(s) {
+  return String(s || '').replace(
+    new RegExp(`\\b(${ROLE_MONTH})\\.?\\s*[-./]\\s*((?:19|20)\\d{2})\\b`, 'gi'),
+    (_, m, y) => `${m.replace(/\./g, '')} ${y}`,
+  );
+}
 
 function compactMonthDates(dates, compact) {
-  let d = String(dates || '').replace(/\s*[–—-]\s*/g, ' – ').replace(/\s+to\s+/i, ' – ');
+  let d = normalizeMonthYearTokens(String(dates || '')).replace(/\s*[–—-]\s*/g, ' – ').replace(/\s+to\s+/i, ' – ');
   if (!compact) return d;
   return d
     .replace(/\bJanuary\b/gi, 'Jan')
@@ -8445,11 +8575,12 @@ function linkify(text) {
 }
 
 function splitRoleAndDates(line) {
-  const m = String(line || '').match(ROLE_DATE_RE);
-  if (!m) return { left: String(line || '').trim(), dates: '' };
+  const raw = normalizeMonthYearTokens(String(line || ''));
+  const m = raw.match(ROLE_DATE_RE);
+  if (!m) return { left: raw.trim(), dates: '' };
   return {
-    left: String(line || '').slice(0, m.index).replace(/[\s|]+$/, '').trim(),
-    dates: m[1].replace(/\s*[–—-]\s*/g, ' – ').replace(/\s+to\s+/i, ' – '),
+    left: raw.slice(0, m.index).replace(/[\s|]+$/, '').trim(),
+    dates: normalizeMonthYearTokens(m[1]).replace(/\s*[–—-]\s*/g, ' – ').replace(/\s+to\s+/i, ' – '),
   };
 }
 
@@ -8462,6 +8593,16 @@ function looksLikeLocationToken(s) {
   if (/^[A-Za-z .'-]+,\s*(Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wisconsin|Wyoming)$/i.test(t)) return true;
   if (/\b(engineer|analyst|scientist|developer|manager|architect|consultant|specialist|lead|director|associate|intern|officer)\b/i.test(t)) return false;
   return t.length <= 22 && !/\d{4}/.test(t);
+}
+
+function splitCompanyLocation(company) {
+  const t = String(company || '').trim();
+  if (!t) return { company: '', location: '' };
+  const us = t.match(/^(.*?),\s*([A-Za-z .'-]+,\s*[A-Z]{2}(?:\s*,?\s*USA)?)$/);
+  if (us) return { company: us[1].trim(), location: us[2].trim() };
+  const remote = t.match(/^(.*?),\s*(Remote|Hybrid|On[- ]?site)$/i);
+  if (remote) return { company: remote[1].trim(), location: remote[2].trim() };
+  return { company: t, location: '' };
 }
 
 function parseRoleLineParts(line) {
@@ -8479,8 +8620,7 @@ function parseRoleLineParts(line) {
       location = parts[parts.length - 1];
       title = parts.slice(1, -1).join(' ');
     } else {
-      location = parts[1];
-      title = parts.slice(2).join(' ');
+      title = parts.slice(1).join(' ');
     }
   } else if (parts.length === 2) {
     company = parts[0];
@@ -8489,18 +8629,89 @@ function parseRoleLineParts(line) {
   } else {
     company = left;
   }
+  if (!location && company) {
+    const split = splitCompanyLocation(company);
+    if (split.location) {
+      company = split.company;
+      location = split.location;
+    }
+  }
   return { company, location, title, dates };
 }
 
-function normalizeOneRoleLine(line) {
-  const { company, location, title, dates } = parseRoleLineParts(line);
-  if (!company) return String(line || '').trim();
+function formatRoleLineFromParts({ company, location, title, dates }) {
+  if (!company) return '';
   if (location && title) {
     return `${company} | ${location} | ${title}${dates ? ' ' + dates : ''}`.replace(/\s+/g, ' ').trim();
   }
   if (title) return `${company} | ${title}${dates ? ' ' + dates : ''}`.replace(/\s+/g, ' ').trim();
   if (location) return `${company} | ${location}${dates ? ' ' + dates : ''}`.replace(/\s+/g, ' ').trim();
   return `${company}${dates ? ' ' + dates : ''}`.replace(/\s+/g, ' ').trim();
+}
+
+function companyMatchKey(name) {
+  return String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function extractExperienceRoleRecords(resumeText) {
+  const lines = String(resumeText || '').split('\n');
+  const { start, end } = experienceBounds(lines);
+  const records = [];
+  for (let i = start; i < end; i++) {
+    if (!isRoleLine(lines[i], 'EXPERIENCE')) continue;
+    const p = parseRoleLineParts(lines[i]);
+    if (p.company) records.push(p);
+  }
+  if (records.length) return records;
+  return extractRolesFromResume(resumeText || '')
+    .map(line => parseRoleLineParts(line))
+    .filter(p => p.company);
+}
+
+function formatExperienceLocationLock(resumeText) {
+  const roles = extractExperienceRoleRecords(resumeText);
+  if (!roles.length) {
+    return 'LOCKED EXPERIENCE LOCATIONS: copy a city/Remote on a role line ONLY if it already appears on that master role. If a role has no location, write Company | Job Title Month YYYY – Month YYYY. Never invent Remote, a city, a state, or company HQ.';
+  }
+  const lines = roles.map((r, i) => {
+    const title = r.title || 'Job Title';
+    const dates = r.dates || 'Month YYYY – Month YYYY';
+    if (r.location) {
+      return `  ${i + 1}. ${r.company} — KEEP location "${r.location}". Write: ${r.company} | ${r.location} | ${title} ${dates}`.replace(/\s+/g, ' ').trim();
+    }
+    return `  ${i + 1}. ${r.company} — NO location on master. Write: ${r.company} | ${title} ${dates}`.replace(/\s+/g, ' ').trim()
+      + '  Do NOT add Remote, a city, a state, or HQ.';
+  });
+  return `LOCKED EXPERIENCE LOCATIONS (copy from master; never invent):\n${lines.join('\n')}`;
+}
+
+function restoreMasterExperienceLocations(text, master) {
+  const masterRoles = extractExperienceRoleRecords(master);
+  if (!masterRoles.length) return text;
+  const byCompany = masterRoles.map(r => ({
+    key: companyMatchKey(r.company),
+    location: String(r.location || '').trim(),
+  }));
+  const lines = String(text || '').split('\n');
+  const { start, end } = experienceBounds(lines);
+  for (let i = start; i < end; i++) {
+    if (!isRoleLine(lines[i], 'EXPERIENCE')) continue;
+    const p = parseRoleLineParts(lines[i]);
+    if (!p.company) continue;
+    const key = companyMatchKey(p.company);
+    const hit = byCompany.find(m => m.key === key || (key && m.key && (key.includes(m.key) || m.key.includes(key))));
+    if (!hit) continue;
+    p.location = hit.location || '';
+    const next = formatRoleLineFromParts(p);
+    if (next) lines[i] = next;
+  }
+  return lines.join('\n');
+}
+
+function normalizeOneRoleLine(line) {
+  const parsed = parseRoleLineParts(line);
+  if (!parsed.company) return String(line || '').trim();
+  return formatRoleLineFromParts(parsed);
 }
 
 function normalizeExperienceRoleLines(text) {

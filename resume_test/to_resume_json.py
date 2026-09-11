@@ -49,6 +49,7 @@ SCHEMA_HINT = """Return JSON with exactly this shape:
       "role": "",
       "start_date": "",
       "end_date": "",
+      "location": "",
       "responsibilities": []
     }
   ]
@@ -71,6 +72,7 @@ Rules:
 - professional_summary = SUMMARY paragraph only.
 - personal_information.linkedin = the exact linkedin.com/in/slug if present. Never invent linkedin.com/in/username.
 - personal_information.location = header/home city only, never a college or employer city.
+- professional_experience[].location = only if that role header already has a city/Remote; empty otherwise. Never guess HQ or copy the header city.
 - Empty string / [] when unknown — never guess.
 Return JSON only."""
 
