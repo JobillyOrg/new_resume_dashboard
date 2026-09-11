@@ -69,6 +69,8 @@ Rules:
 - Put every skill into the best skills.* bucket; leave unused buckets as [].
 - responsibilities = experience bullets only (no Skills-section dump).
 - professional_summary = SUMMARY paragraph only.
+- personal_information.linkedin = the exact linkedin.com/in/slug if present. Never invent linkedin.com/in/username.
+- personal_information.location = header/home city only, never a college or employer city.
 - Empty string / [] when unknown — never guess.
 Return JSON only."""
 

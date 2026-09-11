@@ -8,7 +8,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from resume_extract import extract_resume_text
+from resume_extract import extract_resume
 
 ROOT = Path(__file__).resolve().parent
 ENV_PATH = ROOT / ".env"
@@ -131,12 +131,19 @@ def handle_extract_resume_request(data: dict) -> tuple[int, dict]:
         return 400, {"ok": False, "error": "data (base64 file content) is required"}
     try:
         raw = base64.b64decode(raw_b64)
-        text = extract_resume_text(file_name, raw)
+        extracted = extract_resume(file_name, raw)
+        text = extracted["text"]
         if len(text.strip()) < 40:
             return 400, {
                 "ok": False,
                 "error": "Very little text was found in that file. Try another export.",
             }
-        return 200, {"ok": True, "text": text, "fileName": file_name, "chars": len(text)}
+        return 200, {
+            "ok": True,
+            "text": text,
+            "fileName": file_name,
+            "chars": len(text),
+            "links": extracted.get("links") or {},
+        }
     except Exception as exc:  # noqa: BLE001
         return 400, {"ok": False, "error": str(exc)}

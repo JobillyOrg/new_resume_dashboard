@@ -415,9 +415,9 @@ function formatMandatoryCloseList(unified, mustAdd, atsMustAdd) {
     }
   }
   const lines = [
-    'MANDATORY CLOSE LIST — every item MUST appear in the rewritten resume. Check off silently before you finish:',
-    `1. Add to SKILLS + prove in ≥1 EXPERIENCE bullet (exact spelling): ${uniqTerms([...add, ...missing]).join(', ') || 'none — already covered'}`,
-    `2. Skills-only today — move into EXPERIENCE bullets (not Skills dump): ${skillsOnly.join(', ') || 'none'}`,
+    'MANDATORY CLOSE LIST — every item MUST appear in the rewritten resume. Leaving a JD must-have missing or Skills-only = failed rewrite:',
+    `1. Missing JD must-haves — add to SKILLS AND prove in ≥1 EXPERIENCE bullet (exact spelling): ${uniqTerms([...add, ...missing]).join(', ') || 'none — already covered'}`,
+    `2. Skills-only today — rewrite so each of these appears in an EXPERIENCE bullet (not Skills dump): ${skillsOnly.join(', ') || 'none'}`,
     `3. Weave these JD ATS phrases naturally: ${phrases.join(' · ') || 'none'}`,
     `4. Raise these weak score-rule categories with the 20 writing rules: ${weak.join('; ') || 'none weak'}`,
     '5. SUMMARY opens with the TARGET JD title + years + 8–9 JD must-have tools. The whole paragraph is that JD role.',
@@ -440,7 +440,7 @@ function formatMandatoryTemplateBlock(headline, resumeText) {
   return `FORMAT IS MANDATORY (Anirudh Word template) — non-negotiable; wrong layout = failed rewrite:
 Line 1: Full Name in Title Case (never ALL CAPS)
 Line 2: Target job title only — ${title}
-Line 3: Phone | Email | LinkedIn | City, ST  (separator " | "; phone starts with +1; LinkedIn = linkedin.com/in/username)
+Line 3: Phone | Email | LinkedIn | City, ST  (separator " | "; phone starts with +1; LinkedIn = the exact linkedin.com/in/slug from the master — never invent "username"; City is the HEADER home city, never a college city)
 Line 4: blank
 Then ONLY these ALL-CAPS headers (exact spelling):
   SUMMARY
@@ -491,13 +491,13 @@ Write like a human: prose summary, real bullets — never comma-dump tools or ta
 
 function formatTwentyRulesRewriteBlock() {
   return `20 US FULL-TIME RESUME RULES (use these to WRITE the resume):
-1. 1-2 pages. 2. Tailor to the JD — technologies must appear in EXPERIENCE, not only Skills. 3. Do not list skills with no evidence. 4. Every bullet answers "so what?" (action → technology → problem → result). 5. Quantify when numbers exist; do not invent. 6. Achievements over responsibilities. 7. Strongest info in the top third. 8. No generic objective. 9-10. Use JD terminology when accurate. 11. No graphics/icons/tables/columns. 12. No sensitive personal data. 13. Concise education. 14. Only relevant projects. 15. Experience is the main section. 16. Short bullets, not paragraphs. 17. Technologies must be interview-defensible. 18. Do not exaggerate ownership if the master said "contributed". 19. Show career progression. 20. The page should look like a targeted JD-role resume — not the master career with extra keywords.`;
+1. 1-2 pages. 2. Tailor to the JD — every JD must-have tool must appear in EXPERIENCE, not only Skills. 3. Skills-only is a fail for that tool: weave it into a real work bullet. Naming a JD service on work you already did (S3 on AWS pipelines, SQL in warehouse/Spark bullets) is required tailoring, not a fake job. Do not invent employers, degrees, or metrics. 4. Every bullet answers "so what?" (action → technology → problem → result). 5. Quantify when numbers exist; do not invent. 6. Achievements over responsibilities. 7. Strongest info in the top third. 8. No generic objective. 9-10. Use JD terminology when accurate. 11. No graphics/icons/tables/columns. 12. No sensitive personal data. 13. Concise education. 14. Only relevant projects. 15. Experience is the main section. 16. Short bullets, not paragraphs. 17. Technologies must be interview-defensible. 18. Do not exaggerate ownership if the master said "contributed". 19. Show career progression. 20. The page should look like a targeted JD-role resume — not the master career with extra keywords.`;
 }
 
 function formatAiRubricRewriteTargets() {
   return `SCORING TARGET — this rewrite will be scored ONLY with the ${SCORE_RULE_NAME} (sum 100). This is JD alignment, not a predicted ATS/Workday %. Write so each category clears:
 A. Required qualifications / hard gates (20) — years vs JD, education, work auth if stated. If the JD explicitly requires industry experience (healthcare, mortgage, retail, financial-services, etc.), evidence it. Do not force industry wording when the JD does not require it.
-B. Skills and keywords (20) — important JD skills appear naturally. Skills-section mentions help; experience bullets that connect the tool to real work are much stronger. Do not stuff the same keyword repeatedly.
+B. Skills and keywords (20) — every JD must-have appears in EXPERIENCE, not Skills only. Skills-section mentions help but do not replace a work bullet. Do not stuff the same keyword repeatedly.
 C. Experience and responsibility match (20) — bullets show the type of work THIS JD is hiring for. Build experience from JD duties. Reuse previous-role bullets when they already match those duties; if the master was a different career, reframe only overlapping work — do not leave the old career’s leftover bullets dominating.
 D. Skill evidence and context (10) — prove important tools with action + context. Listing "Spark" is weak; "Developed Spark pipelines using Scala" is better; scale/result is strongest. Never invent numbers.
 E. Experience level and seniority (10) — show ownership, production systems, technical decisions, troubleshooting/optimization, and collaboration appropriate to the JD level. Do not rename past job titles.
@@ -1287,7 +1287,7 @@ async function handleResumeUpload(file) {
     }
     const data = await fileToBase64(file);
     const payload = await extractResumeOnServer(file.name, data);
-    setBaseResume(payload.text, file.name);
+    setBaseResume(payload.text, file.name, { linkedin: payload.links && payload.links.linkedin });
     stopAiProcessing();
     showToast('Base resume loaded · ' + wordCount(payload.text) + ' words');
   } catch (err) {
@@ -1296,14 +1296,17 @@ async function handleResumeUpload(file) {
   }
 }
 
-function setBaseResume(text, fileName) {
+function setBaseResume(text, fileName, extra = {}) {
   const ext = (fileName || '').split('.').pop().toLowerCase();
-  const normalized = normalizeContactInResume(text || '');
+  const injected = injectLinkedInSlug(text || '', extra.linkedin);
+  const normalized = normalizeContactInResume(injected);
+  const linkedin = shortenLinkedIn(extra.linkedin) || extractContactFields(normalized).linkedin || '';
   state.baseResume = {
     text: normalized,
     fileName: fileName || '',
     fileType: ext || 'txt',
     updatedAt: Date.now(),
+    linkedin,
   };
   applyBaseResumeToUi();
   updateCounts();
@@ -1772,8 +1775,13 @@ function formatPhoneUS(phone) {
 
 function shortenLinkedIn(url) {
   const s = String(url || '').trim();
-  const m = s.match(/(?:https?:\/\/)?(?:www\.)?(linkedin\.com\/in\/[A-Za-z0-9\-_%]+)/i);
-  return m ? m[1].toLowerCase() : s;
+  const m = s.match(/(?:https?:\/\/)?(?:[\w-]+\.)?(linkedin\.com\/(?:mwlite\/)?(?:in|pub)\/[A-Za-z0-9\-_%\.]+)/i)
+    || s.match(/(lnkd\.in\/[A-Za-z0-9_-]+)/i);
+  if (!m) return /linkedin\.com/i.test(s) ? '' : s;
+  const slug = m[1].toLowerCase().replace(/\/$/, '');
+  const handle = slug.split('/').pop();
+  if (/^(username|your-profile|yourname|name|profile)$/i.test(handle || '')) return '';
+  return slug;
 }
 
 function formatContactLine(line) {
@@ -1781,7 +1789,12 @@ function formatContactLine(line) {
   return line.split('|').map(part => {
     const p = part.trim();
     if (!p) return '';
-    if (/linkedin/i.test(p)) return shortenLinkedIn(p);
+    if (/linkedin/i.test(p)) {
+      const slug = shortenLinkedIn(p);
+      if (slug) return slug;
+      if (/^linkedin$/i.test(p)) return p;
+      return p;
+    }
     const phoneMatch = p.match(/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/);
     if (phoneMatch) return formatPhoneUS(phoneMatch[0]);
     return p;
@@ -1807,19 +1820,161 @@ function normalizeContactInResume(text) {
   return lines.join('\n');
 }
 
-function extractContactFields(resumeText) {
+function injectLinkedInSlug(text, slug) {
+  const clean = shortenLinkedIn(slug);
+  if (!clean) return String(text || '');
+  let t = String(text || '');
+  t = t.replace(/(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/(?:username|jane-doe)\b/gi, clean);
+  if (new RegExp(clean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(t)) return t;
+  if (/\bLinkedIn\b/.test(t)) return t.replace(/\bLinkedIn\b/, clean);
+  if (/\blinkedin\b/i.test(t) && !/linkedin\.com\//i.test(t)) {
+    return t.replace(/\blinkedin\b/i, clean);
+  }
+  return t;
+}
+
+function stripFakeLinkedIn(text) {
+  return String(text || '')
+    .replace(/\s*\|\s*(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/(?:username|jane-doe)\b/gi, '')
+    .replace(/(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/(?:username|jane-doe)\b/gi, '');
+}
+
+function restoreMasterLinkedIn(text, master) {
+  const real = extractContactFields(master).linkedin
+    || shortenLinkedIn(state.baseResume && state.baseResume.linkedin);
+  let out = injectLinkedInSlug(text, real);
+  if (!real) out = stripFakeLinkedIn(out);
+  return out;
+}
+
+const US_STATE_ABBR = 'AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY';
+const US_STATE_NAMES = 'Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wisconsin|Wyoming|District of Columbia';
+const PLACE_RE = new RegExp(
+  String.raw`\b([A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+)*),\s*(?:${US_STATE_ABBR}|${US_STATE_NAMES})(?:\s*,\s*(?:USA|US|United States))?\b`,
+  'i',
+);
+
+function isSchoolishLine(line) {
+  return /\b(university|college|institute|school|polytechnic|bachelor|master|b\.?s\.?|m\.?s\.?|mba|ph\.?d|b\.?tech|m\.?tech|sacred heart)\b/i.test(String(line || ''));
+}
+
+function extractPlaceToken(text) {
+  const m = String(text || '').match(PLACE_RE);
+  return m ? m[0].replace(/\s+/g, ' ').trim() : '';
+}
+
+function resumeHeaderLines(text) {
+  const lines = String(text || '').split(/\r?\n/).map(l => l.trim());
+  const out = [];
+  for (const l of lines) {
+    if (!l) continue;
+    if (typeof isSectionHeader === 'function' ? isSectionHeader(l) : /^(SUMMARY|SKILLS|EXPERIENCE|EDUCATION|PROJECTS)\b/i.test(l)) break;
+    out.push(l);
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
+/** Personal city from the name/contact header only — never college or employer cities. */
+function extractPersonalLocation(text, resumeJson) {
+  const header = resumeHeaderLines(text);
+  const standalone = [];
+  for (const l of header) {
+    if (/@/.test(l) || /\d{3}[\s.()-]*\d{3}/.test(l) || /linkedin/i.test(l)) continue;
+    if (isSchoolishLine(l)) continue;
+    const place = extractPlaceToken(l);
+    if (!place) continue;
+    const rest = l.replace(place, '').replace(/[|•,.\s-]+/g, '');
+    if (rest.length <= 4) standalone.push(place);
+  }
+  if (standalone.length) return standalone[0];
+
+  for (const l of header) {
+    if (!(/@/.test(l) || /\d{3}/.test(l) || /linkedin/i.test(l))) continue;
+    for (const p of l.split(/[|•]/).map(s => s.trim())) {
+      if (/@/.test(p) || /\d{3}/.test(p) || /linkedin/i.test(p) || isSchoolishLine(p)) continue;
+      const place = extractPlaceToken(p);
+      if (place) return place;
+    }
+  }
+
+  const jsonLoc = String(resumeJson?.personal_information?.location || '').trim();
+  const jsonPlace = extractPlaceToken(jsonLoc) || jsonLoc;
+  const eduLocs = (resumeJson?.education || [])
+    .map(e => String(e.location || '').trim().toLowerCase())
+    .filter(Boolean);
+  if (jsonPlace && !isSchoolishLine(jsonPlace)) {
+    const hitEdu = eduLocs.some(e => e && (jsonPlace.toLowerCase() === e || e.includes(jsonPlace.toLowerCase()) || jsonPlace.toLowerCase().includes(e)));
+    if (!hitEdu) return jsonPlace;
+  }
+
+  for (const l of header) {
+    if (isSchoolishLine(l)) continue;
+    const place = extractPlaceToken(l);
+    if (place) return place;
+  }
+  return '';
+}
+
+function applyPersonalLocationFromHeader(resumeJson, text) {
+  const rj = resumeJson || emptyResumeJson();
+  const headerLoc = extractPersonalLocation(text, null);
+  if (headerLoc) {
+    rj.personal_information.location = headerLoc;
+    return rj;
+  }
+  const jsonLoc = String(rj.personal_information?.location || '').trim();
+  const eduLocs = (rj.education || []).map(e => String(e.location || '').trim().toLowerCase()).filter(Boolean);
+  if (jsonLoc && eduLocs.some(e => e && (jsonLoc.toLowerCase() === e || jsonLoc.toLowerCase().includes(e)))) {
+    rj.personal_information.location = '';
+  }
+  return rj;
+}
+
+function restoreMasterLocation(text, master) {
+  const loc = extractContactFields(master).location;
+  if (!loc) return String(text || '');
+  const lines = String(text || '').split('\n');
+  let seenName = false;
+  for (let i = 0; i < Math.min(lines.length, 8); i++) {
+    const l = lines[i].trim();
+    if (!l) continue;
+    if (!seenName) {
+      seenName = true;
+      continue;
+    }
+    if (typeof isSectionHeader === 'function' && isSectionHeader(l)) break;
+    if (/@/.test(l) || /\d{3}[\s.()-]*\d{3}/.test(l) || /linkedin/i.test(l)) {
+      const parts = l.split('|').map(p => p.trim()).filter(Boolean);
+      let replaced = false;
+      const next = parts.map(p => {
+        if (/@/.test(p) || /\d{3}/.test(p) || /linkedin/i.test(p)) return p;
+        if (extractPlaceToken(p)) {
+          replaced = true;
+          return loc;
+        }
+        return p;
+      });
+      if (!replaced) next.push(loc);
+      lines[i] = next.join(' | ');
+      break;
+    }
+  }
+  return lines.join('\n');
+}
+
+function extractContactFields(resumeText, resumeJson = null) {
   const text = resumeText || '';
   const email = (text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i) || [])[0] || '';
   const rawPhone = (text.match(/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/) || [])[0] || '';
-  const rawLinkedin = (text.match(/(https?:\/\/)?(www\.)?linkedin\.com\/in\/[A-Za-z0-9\-_%]+\/?/i) || [])[0] || '';
-  const locLine = text.split('\n').slice(0, 8).find(l =>
-    /\b([A-Z][a-z]+,\s*[A-Z]{2}|Remote|USA|United States)\b/.test(l) && !l.includes('@')
-  );
+  const rawLinkedin = (text.match(/(https?:\/\/)?([\w-]+\.)?linkedin\.com\/(?:in|pub)\/[A-Za-z0-9\-_%]+\/?/i) || [])[0]
+    || (text.match(/lnkd\.in\/[A-Za-z0-9_-]+/i) || [])[0]
+    || '';
   return {
     email,
     phone: formatPhoneUS(rawPhone),
-    linkedin: shortenLinkedIn(rawLinkedin),
-    location: locLine ? locLine.trim() : '',
+    linkedin: shortenLinkedIn(rawLinkedin) || shortenLinkedIn(state.baseResume && state.baseResume.linkedin),
+    location: extractPersonalLocation(text, resumeJson),
   };
 }
 
@@ -3163,6 +3318,8 @@ Rules:
 - Put every skill into the best skills.* bucket; leave unused buckets as [].
 - responsibilities = experience bullets only (no Skills-section dump).
 - professional_summary = SUMMARY paragraph only.
+- personal_information.linkedin = the exact linkedin.com/in/slug if present. Never invent linkedin.com/in/username. Empty string if there is no real profile URL.
+- personal_information.location = the candidate's home/current city from the HEADER only (under the name or on the phone/email line). Never use a college, university, or employer city.
 - Empty string / [] when unknown — never guess.`;
 }
 
@@ -3343,13 +3500,13 @@ function parseResumeToJsonLocal(resume) {
       const m = l.match(/\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/);
       if (m) out.personal_information.phone = m[0];
     }
-    if (/linkedin\.com/i.test(l) && !out.personal_information.linkedin) {
-      out.personal_information.linkedin = l.match(/https?:\/\/\S*linkedin\S*/i)?.[0] || 'LinkedIn';
-    }
-    if (/,/.test(l) && /(CA|NY|TX|WA|IL|GA|FL|NJ|MA|CT|VA|NC|USA|India)/i.test(l) && !out.personal_information.location) {
-      out.personal_information.location = l.replace(/[|•].*$/, '').trim();
+    if (/linkedin/i.test(l) && !out.personal_information.linkedin) {
+      const slug = shortenLinkedIn(l) || (l.match(/(https?:\/\/)?([\w-]+\.)?linkedin\.com\/\S+/i) || [])[0] || '';
+      if (slug && !/^linkedin$/i.test(slug)) out.personal_information.linkedin = shortenLinkedIn(slug) || slug;
     }
   }
+  const headerLoc = extractPersonalLocation(text, null);
+  if (headerLoc) out.personal_information.location = headerLoc;
 
   const sumLines = sliceSection(/^(SUMMARY|PROFESSIONAL SUMMARY|OBJECTIVE)\b/i);
   out.professional_summary = sumLines.filter(l => !/^[-•]/.test(l)).join(' ').trim();
@@ -3414,7 +3571,7 @@ function parseResumeToJsonLocal(resume) {
       });
     }
   }
-  return normalizeResumeJson(out);
+  return applyPersonalLocationFromHeader(normalizeResumeJson(out), text);
 }
 
 async function parseResumeToJson(resume) {
@@ -3425,7 +3582,7 @@ async function parseResumeToJson(resume) {
     const hasSignal = parsed.personal_information.name
       || parsed.professional_experience.length
       || skillsFromResumeJson(parsed).length;
-    if (hasSignal) return parsed;
+    if (hasSignal) return applyPersonalLocationFromHeader(parsed, text);
   } catch (err) {
     console.warn('Resume JSON parse (Gemini) failed:', err);
   }
@@ -4156,9 +4313,11 @@ ${mustAdd.filter(s => stretchGaps.some(g => String(g).toLowerCase() === String(s
 ${stretchBan}`
     : `STAY TRUTHFUL MODE:
 - SUCCESS METRIC: ${SCORE_RULE_NAME} score must be ${SCORE_THRESHOLD}+ / 100.
-- ADD JD must-have (primary) skills into SKILLS + experience bullets (exact JD spelling).
-- MUST ADD THESE JD SKILLS: ${mustAdd.join(', ') || 'none — already covered'}
+- ADD every JD must-have (primary) into SKILLS + EXPERIENCE bullets (exact JD spelling). Skills-only is not enough.
+- MUST ADD THESE JD SKILLS (missing entirely — put in Skills AND a work bullet): ${mustAdd.join(', ') || 'none — already covered'}
 - MUST WEAVE THESE JD ATS PHRASES naturally: ${atsMustAdd.filter(p => !stretchGaps.some(s => String(s).toLowerCase() === String(p).toLowerCase())).join(' · ') || 'none — already covered'}
+- If AWS (or another evidenced cloud) is already on the master, name the JD services on that cloud (e.g. S3) in those bullets. That is tailoring, not a new employer.
+- If a must-have is already in Skills (SQL, GCP, …), it MUST also appear in a work bullet.
 - Do NOT add Stretch-only / preferred / secondary / market skills unless Stretch mode is selected.
 - Do NOT add clearances, DOD Secret, citizenship, or eligibility into SKILLS or SUMMARY.
 - Do NOT add certifications. Do not invent employers, degrees, or fake job history.
@@ -4191,8 +4350,9 @@ ${formatExternalAtsBlock(jd, keywords)}
 LOCKED CONTACT — use exactly these formatted values:
   Email: ${cf.email || '[copy from original]'}
   Phone: ${cf.phone || '[copy from original — must include +1 country code]'}
-  LinkedIn: ${cf.linkedin || '[omit if none — use short form linkedin.com/in/username, no https/www]'}
-  Location: ${cf.location || '[city/state only if present — never full street address]'}
+  LinkedIn: ${cf.linkedin || '[omit this field entirely if the master has no LinkedIn URL — never invent a slug]'}
+  Location: ${cf.location || '[omit if the master header has no personal city]'}
+  Personal city only — do NOT substitute a college city, university city, or employer office city.
 
 ${roles.length ? `MANDATORY ROLES (${roles.length}) — output all of them:\n${roles.map((r, i) => `  ${i + 1}. ${r}`).join('\n')}` : ''}
 
@@ -4214,7 +4374,7 @@ OUTPUT LAYOUT — match the Anirudh Word template exactly (this is how the downl
 
 Line 1: Full Name in Title Case (not ALL CAPS)
 Line 2: Target job title only — ${headline ? headline.split('|')[0].trim() : 'exact JD title'}. Never append JD section headings such as "Primary Responsibilities", "Why [Company]?", "Job Description", "Requirements", or "Duties".
-Line 3: Phone | Email | LinkedIn | City, ST   (omit any missing field; separator is " | "; phone must start with +1; LinkedIn as linkedin.com/in/username only)
+Line 3: Phone | Email | LinkedIn | City, ST   (omit any missing field; separator is " | "; phone must start with +1; LinkedIn MUST be copied exactly from LOCKED CONTACT; never invent a profile slug; City MUST be the LOCKED CONTACT personal city — never a college/university city; omit LinkedIn if LOCKED CONTACT has none)
 Line 4: blank
 SUMMARY
 <one paragraph, 4-6 lines, no bullets. Written for an HR 6-second scan.>
@@ -6252,8 +6412,8 @@ function buildAiCategoryDetails(unified) {
         .filter(s => !skillsOnly.some(x => String(x).toLowerCase() === String(s).toLowerCase()))
         .slice(0, 8),
       improvements: uniqTerms([
-        ...skillsOnly.slice(0, 5).map(s => `Show ${s} in a work bullet, not only in Skills.`),
-        ...missP.slice(0, 5).map(s => `Add ${s} only if you have used it.`),
+        ...skillsOnly.slice(0, 5).map(s => `Put ${s} in a work bullet — Skills only does not count.`),
+        ...missP.slice(0, 5).map(s => `Add ${s} to Skills and a work bullet (JD must-have).`),
         !missP.length && !skillsOnly.length ? 'Keep the important tools visible in both Skills and work history.' : null,
       ].filter(Boolean)).slice(0, 6),
     },
@@ -6277,8 +6437,8 @@ function buildAiCategoryDetails(unified) {
         ? passedOf('skillsEvidenceContext')
         : [],
       improvements: uniqTerms([
-        ...skillsOnly.slice(0, 5).map(s => `Describe how you used ${s} — do not invent numbers.`),
-        ...missP.slice(0, 3).map(s => `Do not add ${s} unless it is already on your source resume.`),
+        ...skillsOnly.slice(0, 5).map(s => `Describe how you used ${s} in a work bullet — do not invent numbers.`),
+        ...missP.slice(0, 3).map(s => `Add ${s} into an existing stack-aligned bullet (JD must-have).`),
       ].filter(Boolean)).slice(0, 6),
     },
     experienceSeniorityMatch: {
@@ -7687,6 +7847,11 @@ function cleanupResume(text, opts = {}) {
   t = t.split('\n').map(repairBrokenBulletMetrics).join('\n');
   t = normalizeContactInResume(t).trim();
   const master = opts.master || ($('resumeInput') && $('resumeInput').value) || '';
+  if (master) {
+    t = restoreMasterLinkedIn(t, master);
+    t = restoreMasterLocation(t, master);
+    t = stripFakeLinkedIn(t);
+  }
   const kw = opts.keywords || state.keywords || null;
   if (state.mode !== 'aggressive' && master && kw) {
     t = scrubSkillsNotOnMaster(t, master, kw);
@@ -8176,7 +8341,7 @@ function compactMonthDates(dates, compact) {
 
 function linkify(text) {
   const line = formatContactLine(text);
-  const re = /(https?:\/\/[^\s|]+|linkedin\.com\/in\/[^\s|]+)/gi;
+  const re = /(https?:\/\/[^\s|]+|linkedin\.com\/(?:in|pub)\/[^\s|]+|lnkd\.in\/[^\s|]+)/gi;
   let out = '';
   let last = 0;
   let m;
@@ -8206,6 +8371,7 @@ function looksLikeLocationToken(s) {
   if (/^(remote|hybrid|onsite|on-site|usa|u\.s\.a\.|united states|india|uk|u\.k\.)$/i.test(t)) return true;
   if (/^[A-Z]{2}$/.test(t)) return true;
   if (/^[A-Za-z .'-]+,\s*[A-Z]{2}$/.test(t)) return true;
+  if (/^[A-Za-z .'-]+,\s*(Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wisconsin|Wyoming)$/i.test(t)) return true;
   if (/\b(engineer|analyst|scientist|developer|manager|architect|consultant|specialist|lead|director|associate|intern|officer)\b/i.test(t)) return false;
   return t.length <= 22 && !/\d{4}/.test(t);
 }
