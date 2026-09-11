@@ -901,6 +901,51 @@
     );
   }
 
+  function estimateYearsFromExperienceSection(resumeLines) {
+    const start = resumeLines.findIndex(l => /^(PROFESSIONAL )?EXPERIENCE$|^WORK (EXPERIENCE|HISTORY)$/i.test(String(l).trim()));
+    if (start < 0) return 0;
+    let end = resumeLines.length;
+    for (let i = start + 1; i < resumeLines.length; i++) {
+      const t = String(resumeLines[i] || '').trim();
+      if (/^(EDUCATION|PROJECTS?|CERTIFICATIONS?|SKILLS|SUMMARY|AWARDS?)\b/i.test(t) && t.length < 60) {
+        end = i;
+        break;
+      }
+    }
+    const monthMap = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11 };
+    const now = new Date();
+    const nowM = now.getFullYear() * 12 + now.getMonth();
+    const re = /\b((?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+)?((?:19|20)\d{2})\s*[-–—/to]+\s*((?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+)?((?:19|20)\d{2}|present|current|now)\b/i;
+    const ranges = [];
+    for (let i = start; i < end; i++) {
+      const line = String(resumeLines[i] || '');
+      if (/^[-•*]/.test(line.trim())) continue;
+      if (/\b(university|college|bachelor|master)\b/i.test(line)) continue;
+      const m = line.match(re);
+      if (!m) continue;
+      const sm = m[1] ? monthMap[m[1].toLowerCase().replace(/\./g, '').trim().slice(0, 3)] : 0;
+      const sy = Number(m[2]);
+      const present = /present|current|now/i.test(m[4]);
+      const em = present ? now.getMonth() : (m[3] ? monthMap[m[3].toLowerCase().replace(/\./g, '').trim().slice(0, 3)] : 11);
+      const ey = present ? now.getFullYear() : Number(m[4]);
+      if (!Number.isFinite(sy) || !Number.isFinite(ey)) continue;
+      const a = sy * 12 + (Number.isFinite(sm) ? sm : 0);
+      const b = present ? nowM : (ey * 12 + (Number.isFinite(em) ? em : 11));
+      if (b >= a) ranges.push({ start: a, end: b });
+    }
+    if (!ranges.length) return 0;
+    ranges.sort((a, b) => a.start - b.start);
+    const merged = [{ ...ranges[0] }];
+    for (let i = 1; i < ranges.length; i++) {
+      const r = ranges[i];
+      const last = merged[merged.length - 1];
+      if (r.start <= last.end + 1) last.end = Math.max(last.end, r.end);
+      else merged.push({ ...r });
+    }
+    const months = merged.reduce((s, r) => s + (r.end - r.start + 1), 0);
+    return Math.round((months / 12) * 10) / 10;
+  }
+
   function computeAtsScore(jd, resume, primary, secondary, aliasMap = {}) {
     primary = (primary || []).filter(k => !isCertKeyword(k));
     secondary = (secondary || []).filter(k => !isCertKeyword(k));
@@ -958,10 +1003,10 @@
     const jdYearsText = String(jd || '').replace(/[–—]/g, '-');
     const jdRange = jdYearsText.match(/(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*years?/i);
     const jdYearsMatch = jdRange || jdYearsText.match(/(\d+(?:\.\d+)?)\s*\+?\s*years?/i);
-    const resumeYearsMatch = summaryArea.match(/(\d+(?:\.\d+)?)\+?\s*years?/) || resumeLower.match(/(\d+(?:\.\d+)?)\+?\s*years?/);
     const jdYearsMin = jdYearsMatch ? Number(jdYearsMatch[1]) : 0;
     const jdYearsMax = jdRange ? Number(jdRange[2]) : 0;
-    const resumeYears = resumeYearsMatch ? Number(resumeYearsMatch[1]) : 0;
+    const resumeYears = estimateYearsFromExperienceSection(resumeLines)
+      || (summaryArea.match(/(\d+(?:\.\d+)?)\+?\s*years?/) ? Number(summaryArea.match(/(\d+(?:\.\d+)?)\+?\s*years?/)[1]) : 0);
     let yearsFit = 0.6;
     if (jdYearsMin && resumeYears) {
       if (jdYearsMax && resumeYears >= jdYearsMin - 1 && resumeYears <= jdYearsMax + 0.51) yearsFit = 1;

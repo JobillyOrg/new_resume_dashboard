@@ -2627,42 +2627,131 @@ function mergeEligibility(aiElig, localElig) {
   };
 }
 
-function estimateResumeExperienceYears(resumeText) {
-  const roles = extractRolesFromResume(resumeText);
+const MONTH_INDEX = {
+  jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3,
+  may: 4, jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7,
+  sep: 8, sept: 8, september: 8, oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11,
+};
+
+function monthIndexFromName(name) {
+  const k = String(name || '').toLowerCase().replace(/\./g, '').trim();
+  if (MONTH_INDEX[k] != null) return MONTH_INDEX[k];
+  const short = k.slice(0, 3);
+  return MONTH_INDEX[short] != null ? MONTH_INDEX[short] : null;
+}
+
+function nowYearMonth() {
   const now = new Date();
-  const nowMonths = now.getFullYear() * 12 + now.getMonth();
+  return { year: now.getFullYear(), month: now.getMonth(), present: true };
+}
+
+/** Parse a resume date like February 2025, Feb 2025, 2025, Present. */
+function parseResumeDate(raw, { asEnd = false } = {}) {
+  const t = String(raw || '').replace(/[–—]/g, '-').trim();
+  if (!t) return null;
+  if (/^(present|current|now|today|ongoing)$/i.test(t)) return nowYearMonth();
+  const md = t.match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(\d{4})\b/i);
+  if (md) {
+    const month = monthIndexFromName(md[1]);
+    const year = Number(md[2]);
+    if (month == null || !Number.isFinite(year)) return null;
+    return { year, month, present: false };
+  }
+  const iso = t.match(/\b((?:19|20)\d{2})[-/](\d{1,2})\b/);
+  if (iso) {
+    const year = Number(iso[1]);
+    const month = Math.max(0, Math.min(11, Number(iso[2]) - 1));
+    return { year, month, present: false };
+  }
+  const y = t.match(/\b((?:19|20)\d{2})\b/);
+  if (y) {
+    const year = Number(y[1]);
+    return { year, month: asEnd ? 11 : 0, present: false };
+  }
+  return null;
+}
+
+function dateToMonths(d) {
+  return d.year * 12 + d.month;
+}
+
+function parseExperienceDateRange(startRaw, endRaw) {
+  const start = parseResumeDate(startRaw, { asEnd: false });
+  if (!start) return null;
+  const end = parseResumeDate(endRaw, { asEnd: true }) || nowYearMonth();
+  const a = dateToMonths(start);
+  const b = dateToMonths(end);
+  if (b < a) return null;
+  return { start: a, end: b };
+}
+
+function mergeMonthRanges(ranges) {
+  if (!ranges.length) return [];
+  const sorted = [...ranges].sort((a, b) => a.start - b.start);
+  const merged = [{ ...sorted[0] }];
+  for (let i = 1; i < sorted.length; i++) {
+    const r = sorted[i];
+    const last = merged[merged.length - 1];
+    if (r.start <= last.end + 1) last.end = Math.max(last.end, r.end);
+    else merged.push({ ...r });
+  }
+  return merged;
+}
+
+function monthsToYears(totalMonths) {
+  return Math.round((totalMonths / 12) * 10) / 10;
+}
+
+const EXP_ROLE_DATE_RE = /\b((?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+)?((?:19|20)\d{2})\s*[-–—\/to]+\s*((?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+)?((?:19|20)\d{2}|present|current|now|today|ongoing)\b/i;
+
+function rangesFromExperienceJobs(jobs) {
   const ranges = [];
-  const addRange = (startYear, endYear, present) => {
-    const start = startYear * 12;
-    const end = present ? nowMonths : (endYear * 12 + 11);
-    if (end >= start) ranges.push({ start, end });
-  };
+  for (const job of jobs || []) {
+    const r = parseExperienceDateRange(job.start_date, job.end_date);
+    if (r) ranges.push(r);
+  }
+  return ranges;
+}
+
+function rangesFromExperienceSection(resumeText) {
+  const roles = extractRolesFromResume(resumeText || '');
+  const ranges = [];
   for (const role of roles) {
-    const present = /\b(present|current|now|today|ongoing)\b/i.test(role);
-    const years = [...role.matchAll(/\b((?:19|20)\d{2})\b/g)].map(m => Number(m[1]));
-    if (years.length >= 2) addRange(Math.min(...years), present ? now.getFullYear() : Math.max(...years), present);
-    else if (years.length === 1) addRange(years[0], years[0], present);
+    if (/\b(university|college|bachelor|master|b\.?s\.?|m\.?s\.?|ph\.?d|polytechnic)\b/i.test(role)) continue;
+    const m = String(role).match(EXP_ROLE_DATE_RE);
+    if (!m) continue;
+    const startRaw = `${m[1] || ''} ${m[2]}`.trim();
+    const endRaw = /present|current|now|today|ongoing/i.test(m[4]) ? 'Present' : `${m[3] || ''} ${m[4]}`.trim();
+    const r = parseExperienceDateRange(startRaw, endRaw);
+    if (r) ranges.push(r);
   }
+  return ranges;
+}
+
+function estimateResumeExperienceYears(resumeText, resumeJson) {
+  const rj = resumeJson || (typeof state !== 'undefined' ? state.lastResumeJson : null);
+  let ranges = rangesFromExperienceJobs(rj?.professional_experience);
+  if (!ranges.length) ranges = rangesFromExperienceSection(resumeText || (rj ? resumeJsonToScoreText(rj) : '') || '');
   if (!ranges.length) {
-    const exp = String(resumeText || '').split('\n');
-    const expIdx = exp.findIndex(l => /^(PROFESSIONAL )?EXPERIENCE$|^WORK (EXPERIENCE|HISTORY)$/i.test(l.trim()));
-    const block = expIdx >= 0 ? exp.slice(expIdx, expIdx + 80).join('\n') : resumeText;
-    const years = [...block.matchAll(/\b((?:19|20)\d{2})\b/g)].map(m => Number(m[1]));
-    if (years.length >= 2) addRange(Math.min(...years), Math.max(...years), /\b(present|current)\b/i.test(block));
+    return { years: null, roleCount: (rj?.professional_experience || []).length, note: 'Could not parse experience dates from the EXPERIENCE section' };
   }
-  if (!ranges.length) return { years: null, roleCount: roles.length, note: 'Could not parse experience dates from resume' };
-  ranges.sort((a, b) => a.start - b.start);
-  const merged = [];
-  for (const r of ranges) {
-    if (!merged.length || r.start > merged[merged.length - 1].end + 1) merged.push({ ...r });
-    else merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, r.end);
-  }
+  const merged = mergeMonthRanges(ranges);
   const totalMonths = merged.reduce((sum, r) => sum + (r.end - r.start + 1), 0);
+  const jobs = (rj?.professional_experience || []).length;
   return {
-    years: Math.round((totalMonths / 12) * 10) / 10,
-    roleCount: roles.length || merged.length,
+    years: monthsToYears(totalMonths),
+    roleCount: jobs || ranges.length,
     note: '',
   };
+}
+
+function formatTenureForSummary(years) {
+  if (years == null || !Number.isFinite(Number(years))) return '';
+  const n = Number(years);
+  if (n >= 10) return `${Math.round(n)}+ years`;
+  const rounded = Math.round(n * 10) / 10;
+  if (Number.isInteger(rounded)) return `${rounded}+ years`;
+  return `${rounded} years`;
 }
 
 function parseYearNumber(s) {
@@ -2724,14 +2813,7 @@ function yearsRequirementSatisfied(req, candidateYears) {
 }
 
 function resumeYearsForAlignment(rj, resumeText) {
-  const summary = String(rj?.professional_summary || '');
-  const corpus = rj ? corpusFromResumeJson(rj) : String(resumeText || '');
-  const m = summary.match(/(\d+(?:\.\d+)?)\+?\s*years?/) || String(corpus).match(/(\d+(?:\.\d+)?)\+?\s*years?/);
-  if (m) {
-    const n = Number(m[1]);
-    if (Number.isFinite(n) && n > 0 && n < 60) return n;
-  }
-  const est = estimateResumeExperienceYears(resumeText || (rj ? resumeJsonToScoreText(rj) : '') || '');
+  const est = estimateResumeExperienceYears(resumeText || '', rj);
   return est.years;
 }
 
@@ -2892,7 +2974,7 @@ function buildCitizenshipEligibility(citizenshipJd, wa) {
 function buildEligibilityReport(eligibility, resumeText) {
   const NOT_FOUND = 'Not found';
   const wa = eligibility?.workAuthorization || {};
-  const exp = estimateResumeExperienceYears(resumeText);
+  const exp = estimateResumeExperienceYears(resumeText, state.lastResumeJson);
 
   let yearsJd = (eligibility?.yearsNote || '').trim();
   let yearsReq = getJdYearsRequirement(eligibility);
@@ -4269,6 +4351,8 @@ function buildRewritePrompt(jd, resume, keywords, missingReport, scoreUnified) {
   const secondary = dropEligibilityTerms(keywords.secondary || []);
   const roles = extractRolesFromResume(resume);
   const cf = extractContactFields(resume);
+  const tenure = estimateResumeExperienceYears(resume, state.lastResumeJson);
+  const tenureLabel = tenure.years != null ? formatTenureForSummary(tenure.years) : '';
   const headline = currentHeadline();
   const aggressive = state.mode === 'aggressive';
   const masterSkills = masterSkillsBlock(resume);
@@ -4353,6 +4437,10 @@ LOCKED CONTACT — use exactly these formatted values:
   LinkedIn: ${cf.linkedin || '[omit this field entirely if the master has no LinkedIn URL — never invent a slug]'}
   Location: ${cf.location || '[omit if the master header has no personal city]'}
   Personal city only — do NOT substitute a college city, university city, or employer office city.
+
+EXPERIENCE TENURE — calculated from PROFESSIONAL EXPERIENCE job dates only (month+year, gaps not counted, education ignored):
+  ${tenureLabel ? `${tenureLabel} (${tenure.years} years across ${tenure.roleCount} role(s))` : 'could not parse job dates'}
+  SUMMARY must use this tenure (example: "${tenureLabel || 'X+ years'} of experience"). Do not copy a different years number from the master summary. Do not use college dates.
 
 ${roles.length ? `MANDATORY ROLES (${roles.length}) — output all of them:\n${roles.map((r, i) => `  ${i + 1}. ${r}`).join('\n')}` : ''}
 
