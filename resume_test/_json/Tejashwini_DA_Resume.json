@@ -1,0 +1,131 @@
+{
+  "personal_information": {
+    "name": "Tejaswini Pallepati",
+    "location": "MO",
+    "phone": "+1 3144506367",
+    "email": "pallepatitejaswini12@gmail.com",
+    "linkedin": "LinkedIn"
+  },
+  "professional_summary": "Data Analyst with around 4 years of experience leveraging SQL, Python, R, and BI tools to drive data-driven decision-making across finance, consulting, and supply chain sectors. Skilled in designing scalable ETL pipelines, managing cloud infrastructure (AWS S3, Redshift, Lambda, Azure), and building interactive dashboards with Power BI and Tableau. Proven ability to conduct statistical and predictive analysis, implement machine learning models (TensorFlow, Scala), and collaborate cross-functionally in Agile environments using tools like Databricks, Airflow, Jira, and Confluence. Adept at improving reporting efficiency, optimizing data workflows, ensuring compliance, and delivering actionable insights that enhance performance, retention, and ROI.",
+  "education": [
+    {
+      "degree": "Master's in Health data science",
+      "start_date": "",
+      "end_date": "",
+      "institution": "Saint louis University",
+      "location": "MO, USA"
+    },
+    {
+      "degree": "Bachelor's in Sciences",
+      "start_date": "",
+      "end_date": "",
+      "institution": "Gokaraju Rangaraju college of pharmacy",
+      "location": "India"
+    }
+  ],
+  "skills": {
+    "languages": [
+      "Python",
+      "R",
+      "SQL",
+      "Restful API",
+      "Spark",
+      "Scala",
+      "SSIS",
+      "SAS",
+      "SPSS"
+    ],
+    "frameworks_and_tools": [
+      "NLP",
+      "NumPy",
+      "A/B Testing and Experimentation",
+      "Pandas",
+      "Matplotlib",
+      "SciPy",
+      "ggplot2",
+      "Alteryx",
+      "Seaborn",
+      "Salesforce",
+      "Pardot",
+      "Marketo",
+      "Adobe Analytics",
+      "ArcGIS",
+      "QGIS",
+      "Story Map",
+      "UltraEdit",
+      "Navicat 15",
+      "MS Excel",
+      "Google Workspace",
+      "Microsoft Project",
+      "Informatica Power Center",
+      "RStudio",
+      "MS Access",
+      "LiveRamp",
+      "JIRA",
+      "Confluence",
+      "Airflow",
+      "Databricks"
+    ],
+    "databases": [
+      "MySQL",
+      "SQL Server",
+      "Oracle",
+      "Snowflake",
+      "Teradata"
+    ],
+    "cloud_platforms": [
+      "AWS S3",
+      "Redshift",
+      "Lambda",
+      "Azure",
+      "Google Big Query"
+    ],
+    "visualization": [
+      "Tableau",
+      "Power BI",
+      "Google Analytics",
+      "QlikView",
+      "Looker"
+    ],
+    "ai_ml": [
+      "TensorFlow",
+      "Keras"
+    ],
+    "version_control_and_devops": [
+      "ETL"
+    ],
+    "certifications": []
+  },
+  "professional_experience": [
+    {
+      "company": "BlueCross BlueShield",
+      "role": "Clinical Data Analyst",
+      "start_date": "June 2024",
+      "end_date": "Present",
+      "responsibilities": [
+        "Validated, codified, and normalized clinical data across multiple EHR/vendor platforms (Epic, Athena, AllScripts, NextGen), developing optimized SQL queries and stored procedures that reduced report generation time by 30% and improved data accessibility for clinical teams.",
+        "Constructed, built, and quality-tested clinical quality measures via SQL, coordinating with IT to move validated measures from development to production while ensuring 99% data accuracy across regular production job runs.",
+        "Analyzed data integrity issues and validated practice-level measures via SQL across hundreds of practices, identifying coding patterns causing measure discrepancies and partnering with project coaches to resolve root causes—reducing data inconsistencies by 20%.",
+        "Served as key project member coordinating measure definitions and reporting across cross-functional and clinical teams, establishing KPIs and data requirements that streamlined integration and strengthened stakeholder confidence in reported measures.",
+        "Managed clinical data within CareCentral/BIC UI and scalable AWS S3 data lakes, executing end-to-end ETL pipelines and rigorous data cleaning to support accurate, timely analytics and consistent adherence to project reporting deadlines.",
+        "Delivered ad-hoc and recurring reports/dashboards using Power BI, Excel, and Python-based statistical analysis, uncovering actionable insights and cost-saving opportunities valued at $500K while supporting predictive analytics initiatives."
+      ]
+    },
+    {
+      "company": "Cargill",
+      "role": "Data Analyst",
+      "start_date": "January 2022",
+      "end_date": "July 2023",
+      "responsibilities": [
+        "Executed advanced analytics and workflow automation on supply chain and production datasets with Python and MySQL, resulting in a 25% decrease in manual operations.",
+        "Leveraged Azure Synapse Analytics to perform large-scale data analysis, reducing query processing times by 30%.",
+        "Implemented Scrum methodologies to optimize project workflows, while applying strong time management practices to meet tight deadlines, increasing team productivity by 30%.",
+        "Reduced processing time by 20% by using Python libraries for data analysis and manipulation, such as pandas and NumPy.",
+        "Assembled and streamlined ETL pipelines for integrating multi-source data from procurement, logistics, and manufacturing, improving overall data integrity and reducing latency in analytics delivery.",
+        "Designed, implemented, and managed Power BI dashboards and executive reports, empowering stakeholders to track KPIs and make data-backed decisions, increasing reporting efficiency by 30%.",
+        "Used Excel's advanced formulas and functions (e.g., VLOOKUP, SUMIFS) to perform data cleansing, validation, and manipulation tasks efficiently.",
+        "Synchronized efforts with cross-functional teams to uphold data governance standards and regulatory adherence, issuing regular compliance updates to bolster audit transparency and risk mitigation."
+      ]
+    }
+  ]
+}
