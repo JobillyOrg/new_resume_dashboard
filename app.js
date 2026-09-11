@@ -441,7 +441,7 @@ function formatMandatoryTemplateBlock(headline, resumeText) {
   return `FORMAT IS MANDATORY (Anirudh Word template) — non-negotiable; wrong layout = failed rewrite:
 Line 1: Full Name in Title Case (never ALL CAPS)
 Line 2: Target job title only — ${title}
-Line 3: Phone | Email | LinkedIn | City, ST  (separator " | "; phone starts with +1; LinkedIn = the exact linkedin.com/in/slug from the master — never invent "username"; City is the HEADER home city, never a college city)
+${formatContactLineInstruction(resumeText)}
 Line 4: blank
 Then ONLY these ALL-CAPS headers (exact spelling):
   SUMMARY
@@ -1776,7 +1776,8 @@ function markGemini() {
 
 function formatPhoneUS(phone) {
   if (!phone) return '';
-  const p = phone.trim();
+  const p = String(phone).trim();
+  if (!/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/.test(p)) return '';
   if (/^\+1(?:\s|[(.-]|\d)/.test(p)) return p;
   if (/^1[\s(.-]\d{3}/.test(p)) return '+' + p;
   return '+1 ' + p.replace(/^\+?/, '');
@@ -1784,12 +1785,13 @@ function formatPhoneUS(phone) {
 
 function shortenLinkedIn(url) {
   const s = String(url || '').trim();
+  if (!s || /^(linkedin|linked\s*in|profile)$/i.test(s)) return '';
   const m = s.match(/(?:https?:\/\/)?(?:[\w-]+\.)?(linkedin\.com\/(?:mwlite\/)?(?:in|pub)\/[A-Za-z0-9\-_%\.]+)/i)
     || s.match(/(lnkd\.in\/[A-Za-z0-9_-]+)/i);
-  if (!m) return /linkedin\.com/i.test(s) ? '' : s;
+  if (!m) return '';
   const slug = m[1].toLowerCase().replace(/\/$/, '');
   const handle = slug.split('/').pop();
-  if (/^(username|your-profile|yourname|name|profile)$/i.test(handle || '')) return '';
+  if (/^(username|your-profile|yourname|name|profile|jane-doe)$/i.test(handle || '')) return '';
   return slug;
 }
 
@@ -1843,9 +1845,19 @@ function injectLinkedInSlug(text, slug) {
 }
 
 function stripFakeLinkedIn(text) {
-  return String(text || '')
+  const real = extractContactFields(($('resumeInput') && $('resumeInput').value) || '').linkedin
+    || shortenLinkedIn(state.baseResume && state.baseResume.linkedin);
+  let out = String(text || '')
     .replace(/\s*\|\s*(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/(?:username|jane-doe)\b/gi, '')
     .replace(/(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/(?:username|jane-doe)\b/gi, '');
+  if (!real) {
+    out = out
+      .replace(/\s*\|\s*(?:https?:\/\/)?(?:www\.)?linkedin\.com\/(?:in|pub)\/[A-Za-z0-9\-_%]+\b/gi, '')
+      .replace(/(?:https?:\/\/)?(?:www\.)?linkedin\.com\/(?:in|pub)\/[A-Za-z0-9\-_%]+\b/gi, '')
+      .replace(/\s*\|\s*lnkd\.in\/[A-Za-z0-9_-]+/gi, '')
+      .replace(/\s*\|\s*LinkedIn\b/gi, '');
+  }
+  return out;
 }
 
 function restoreMasterLinkedIn(text, master) {
@@ -1930,13 +1942,17 @@ function applyPersonalLocationFromHeader(resumeJson, text) {
   const headerLoc = extractPersonalLocation(text, null);
   if (headerLoc) {
     rj.personal_information.location = headerLoc;
-    return rj;
+  } else {
+    const jsonLoc = String(rj.personal_information?.location || '').trim();
+    const eduLocs = (rj.education || []).map(e => String(e.location || '').trim().toLowerCase()).filter(Boolean);
+    if (jsonLoc && eduLocs.some(e => e && (jsonLoc.toLowerCase() === e || jsonLoc.toLowerCase().includes(e)))) {
+      rj.personal_information.location = '';
+    }
   }
-  const jsonLoc = String(rj.personal_information?.location || '').trim();
-  const eduLocs = (rj.education || []).map(e => String(e.location || '').trim().toLowerCase()).filter(Boolean);
-  if (jsonLoc && eduLocs.some(e => e && (jsonLoc.toLowerCase() === e || jsonLoc.toLowerCase().includes(e)))) {
-    rj.personal_information.location = '';
-  }
+  const cf = extractContactFields(text, rj);
+  rj.personal_information.phone = cf.phone || '';
+  rj.personal_information.email = cf.email || '';
+  rj.personal_information.linkedin = cf.linkedin || '';
   return rj;
 }
 
@@ -1972,19 +1988,105 @@ function restoreMasterLocation(text, master) {
   return lines.join('\n');
 }
 
+function extractGithubHandle(text) {
+  const m = String(text || '').match(/(?:https?:\/\/)?(?:www\.)?github\.com\/([A-Za-z0-9_-]+)/i);
+  if (!m) return '';
+  if (/^(username|yourname|profile)$/i.test(m[1])) return '';
+  return `github.com/${m[1]}`;
+}
+
 function extractContactFields(resumeText, resumeJson = null) {
-  const text = resumeText || '';
-  const email = (text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i) || [])[0] || '';
-  const rawPhone = (text.match(/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/) || [])[0] || '';
-  const rawLinkedin = (text.match(/(https?:\/\/)?([\w-]+\.)?linkedin\.com\/(?:in|pub)\/[A-Za-z0-9\-_%]+\/?/i) || [])[0]
-    || (text.match(/lnkd\.in\/[A-Za-z0-9_-]+/i) || [])[0]
+  const header = resumeHeaderLines(resumeText || '').join('\n');
+  const email = (header.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i) || [])[0] || '';
+  const rawPhone = (header.match(/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/) || [])[0] || '';
+  const rawLinkedin = (header.match(/(https?:\/\/)?([\w-]+\.)?linkedin\.com\/(?:in|pub)\/[A-Za-z0-9\-_%]+\/?/i) || [])[0]
+    || (header.match(/lnkd\.in\/[A-Za-z0-9_-]+/i) || [])[0]
     || '';
   return {
     email,
     phone: formatPhoneUS(rawPhone),
     linkedin: shortenLinkedIn(rawLinkedin) || shortenLinkedIn(state.baseResume && state.baseResume.linkedin),
-    location: extractPersonalLocation(text, resumeJson),
+    github: extractGithubHandle(header),
+    location: extractPersonalLocation(resumeText, resumeJson),
   };
+}
+
+function buildLockedContactLine(cf) {
+  return [cf?.phone, cf?.email, cf?.linkedin, cf?.github, cf?.location].filter(Boolean).join(' | ');
+}
+
+function formatContactLineInstruction(resumeText) {
+  const master = ($('resumeInput') && $('resumeInput').value) || resumeText || '';
+  const line = buildLockedContactLine(extractContactFields(master));
+  if (!line) {
+    return 'Line 3: omit — the master has no phone, email, LinkedIn, GitHub, or city. Do NOT invent any of them.';
+  }
+  return `Line 3: ${line}  (copy exactly; include ONLY these master fields; never invent a phone, LinkedIn slug, GitHub, email, or city)`;
+}
+
+function formatLockedContactBlock(resumeText) {
+  const master = ($('resumeInput') && $('resumeInput').value) || resumeText || '';
+  const cf = extractContactFields(master);
+  const line = buildLockedContactLine(cf);
+  return `LOCKED CONTACT — copy only what is on the master header. Never invent a phone, email, LinkedIn slug, GitHub, or city.
+  Email: ${cf.email || 'OMIT — master has no email'}
+  Phone: ${cf.phone || 'OMIT — master has no phone number'}
+  LinkedIn: ${cf.linkedin || 'OMIT — master has no LinkedIn URL (the word "LinkedIn" alone is not a URL)'}
+  GitHub: ${cf.github || 'OMIT — master has no GitHub'}
+  Location: ${cf.location || 'OMIT — master header has no personal city'}
+  Line 3 must be exactly: ${line || '[no contact fields — omit them]'}
+  Personal city only — do NOT substitute a college city, university city, or employer office city.`;
+}
+
+function isHeaderContactLine(l) {
+  const t = String(l || '').trim();
+  if (!t || (typeof isSectionHeader === 'function' && isSectionHeader(t))) return false;
+  if (/@/.test(t)) return true;
+  if (/linkedin/i.test(t) || /github\.com/i.test(t) || /lnkd\.in/i.test(t)) return true;
+  if (/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/.test(t)) return true;
+  return false;
+}
+
+function restoreMasterContact(text, master) {
+  const cf = extractContactFields(master);
+  const locked = buildLockedContactLine(cf);
+  const lines = String(text || '').split('\n');
+  let seenName = false;
+  let idx = -1;
+  for (let i = 0; i < Math.min(lines.length, 10); i++) {
+    const l = lines[i].trim();
+    if (!l) continue;
+    if (!seenName) {
+      seenName = true;
+      continue;
+    }
+    if (typeof isSectionHeader === 'function' && isSectionHeader(l)) break;
+    if (isHeaderContactLine(l)) {
+      idx = i;
+      break;
+    }
+  }
+  if (idx < 0) {
+    if (!locked) return lines.join('\n');
+    let seen = 0;
+    let insertAt = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (!String(lines[i] || '').trim()) continue;
+      if (typeof isSectionHeader === 'function' && isSectionHeader(lines[i])) {
+        insertAt = i;
+        break;
+      }
+      seen += 1;
+      if (seen === 2) {
+        insertAt = i + 1;
+        break;
+      }
+    }
+    if (insertAt >= 0) lines.splice(insertAt, 0, locked);
+    return lines.join('\n');
+  }
+  lines[idx] = locked;
+  return lines.join('\n');
 }
 
 function extractRolesFromResume(resumeText) {
@@ -2758,8 +2860,11 @@ function formatTenureForSummary(years) {
   if (years == null || !Number.isFinite(Number(years))) return '';
   const n = Number(years);
   if (n < 0.05) return '';
-  const rounded = Math.round(n * 10) / 10;
-  return `${rounded} years`;
+  if (n < 1) return '1 year';
+  const whole = Math.floor(n);
+  const hasMonths = (n - whole) >= 0.05;
+  if (hasMonths) return `${whole}+ years`;
+  return `${whole} years`;
 }
 
 function formatLockedTenureBlock(resumeText, resumeJson) {
@@ -2773,7 +2878,8 @@ function formatLockedTenureBlock(resumeText, resumeJson) {
     return `LOCKED SUMMARY YEARS: could not parse job dates. Do not copy a JD years range into SUMMARY (not "2-5 years", "3-4 years", "2-5+ years").`;
   }
   return `LOCKED SUMMARY YEARS — calculated from EXPERIENCE job dates only (month+year, gaps not counted, education ignored):
-  ${label} (${tenure.years} years across ${tenure.roleCount} role(s)).
+  ${label} (exact ${tenure.years} years across ${tenure.roleCount} role(s)).
+  If leftover months exist, write the whole years with a plus (7.2 → "7+ years"). Never write a decimal like "7.2 years".
   Weave this exact tenure after the job title: "Data Analyst with ${label} of experience…".
   Do NOT start SUMMARY with a number (never "${label} of experience…" as the first words).
   NEVER write a range: not "2-5 years", "3-4 years", "2-5+ years", "1 to 6 years".
@@ -4464,7 +4570,6 @@ function buildRewritePrompt(jd, resume, keywords, missingReport, scoreUnified) {
   const primary = dropEligibilityTerms(keywords.primary || []);
   const secondary = dropEligibilityTerms(keywords.secondary || []);
   const roles = extractRolesFromResume(resume);
-  const cf = extractContactFields(resume);
   const headline = currentHeadline();
   const aggressive = state.mode === 'aggressive';
   const masterSkills = masterSkillsBlock(resume);
@@ -4544,11 +4649,7 @@ ${profileBlock}
 ${formatExternalAtsBlock(jd, keywords)}
 
 LOCKED CONTACT — use exactly these formatted values:
-  Email: ${cf.email || '[copy from original]'}
-  Phone: ${cf.phone || '[copy from original — must include +1 country code]'}
-  LinkedIn: ${cf.linkedin || '[omit this field entirely if the master has no LinkedIn URL — never invent a slug]'}
-  Location: ${cf.location || '[omit if the master header has no personal city]'}
-  Personal city only — do NOT substitute a college city, university city, or employer office city.
+${formatLockedContactBlock(resume)}
 
 EXPERIENCE TENURE / SUMMARY YEARS:
 ${formatLockedTenureBlock(resume, state.lastResumeJson)}
@@ -4573,7 +4674,7 @@ OUTPUT LAYOUT — match the Anirudh Word template exactly (this is how the downl
 
 Line 1: Full Name in Title Case (not ALL CAPS)
 Line 2: Target job title only — ${headline ? headline.split('|')[0].trim() : 'exact JD title'}. Never append JD section headings such as "Primary Responsibilities", "Why [Company]?", "Job Description", "Requirements", or "Duties".
-Line 3: Phone | Email | LinkedIn | City, ST   (omit any missing field; separator is " | "; phone must start with +1; LinkedIn MUST be copied exactly from LOCKED CONTACT; never invent a profile slug; City MUST be the LOCKED CONTACT personal city — never a college/university city; omit LinkedIn if LOCKED CONTACT has none)
+${formatContactLineInstruction(resume)}
 Line 4: blank
 SUMMARY
 <one paragraph, 4-6 lines, no bullets. Written for an HR 6-second scan.>
@@ -4597,7 +4698,7 @@ HR SCAN — SUMMARY AND EXPERIENCE (these are what recruiters actually read):
 The SUMMARY is a ${headline ? headline.split('|')[0].trim() : 'TARGET JD'} profile — not a ${inferMasterCareerLabel(resume)} story with a new title.
 SUMMARY must naturally include AT LEAST 8 and AT MOST 9 of these IMPORTANT JD skills, exact spelling:
   ${summaryKw.join(', ') || primary.slice(0, 9).join(', ')}
-Do not dump a comma list. Weave them into one readable paragraph that opens with the JD title (never a number), then the LOCKED SUMMARY YEARS (example: "Data Analyst with 6 years of experience" — never "6 years of experience…" first, and never a JD range like "2-5 years").
+Do not dump a comma list. Weave them into one readable paragraph that opens with the JD title (never a number), then the LOCKED SUMMARY YEARS (example: "Data Analyst with 7+ years of experience" when tenure is 7.2 — never "7.2 years", never "6 years of experience…" first, and never a JD range like "2-5 years").
 Write in natural English — a recruiter should hear a career story, not a keyword checklist.
 Do NOT put percentages, dollar amounts, ROI figures, or quantified wins in SUMMARY (no "40%", no "$500K", no "valued at…"). Put metrics only in experience bullets.
 Do NOT mention H1B, H-1B, visa sponsorship, work authorization, citizenship, or any immigration/eligibility language in SUMMARY — those are posting gates, not professional skills.
@@ -4707,7 +4808,7 @@ Line 2 = TARGET JD title. Rewrite the page as that role (summary, skills order, 
 Keep the Anirudh template format exactly (ALL-CAPS headers, Company | Title Dates, location only if already on that master role, "- " bullets).
 
 HR SCAN: SUMMARY must contain 8-9 of these important skills (exact spelling) — only stack-aligned tools: ${summaryKw.join(', ') || 'keep current summary stack'}
-SUMMARY must start with the JD title, not a number. Tenure comes after the title (example: "Data Analyst with 6 years of experience").
+SUMMARY must start with the JD title, not a number. Tenure comes after the title (example: "Data Analyst with 7+ years of experience" if calculated tenure is 7.2 — never "7.2 years").
 ${formatLockedTenureBlock(master, state.lastResumeJson)}
 Write naturally — a career story, not a keyword dump. Never mention H1B, visa sponsorship, work authorization, or citizenship in SUMMARY.
 Never put percentages, dollar amounts, or quantified metrics in SUMMARY (no "40%", "$500K", "valued at…"). Keep metrics in experience bullets only.
@@ -8053,8 +8154,7 @@ function cleanupResume(text, opts = {}) {
   t = t.split('\n').map(repairBrokenBulletMetrics).join('\n');
   t = normalizeContactInResume(t).trim();
   if (master) {
-    t = restoreMasterLinkedIn(t, master);
-    t = restoreMasterLocation(t, master);
+    t = restoreMasterContact(t, master);
     t = restoreMasterExperienceLocations(t, master);
     t = stripFakeLinkedIn(t);
   }
