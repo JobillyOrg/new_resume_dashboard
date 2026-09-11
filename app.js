@@ -646,6 +646,54 @@ ${resume}
 OUTPUT: complete resume only, starting with the candidate name.`;
 }
 
+function buildProofreadPrompt(jd, master, draft) {
+  const title = currentHeadline() || 'keep Line 2 as the JD title';
+  return `You are a final proofreader. Read the TAILORED resume once against the MASTER. Fix only copy mistakes. Do not retailor for the job. Do not add skills.
+
+MASTER (source of truth for contact, companies, dates, role locations, what exists):
+${String(master || '').slice(0, 9000)}
+
+TAILORED DRAFT (fix this and output the full resume):
+${String(draft || '').slice(0, 12000)}
+
+Line 2 must stay: ${title}
+
+${formatLockedContactBlock(master)}
+
+${formatLockedTenureBlock(master)}
+
+${formatExperienceLocationLock(master)}
+
+FIX IF PRESENT:
+- Duplicate tenure in SUMMARY (e.g. "with 3+ years of experience 3+ years of experience") — keep it ONCE after the job title
+- Repeated words or doubled phrases
+- Decimal years like 7.2 → write 7+ years. Never a JD range like 2-5 years
+- SUMMARY starting with a number — open with the job title, then tenure
+- Phone, email, LinkedIn, GitHub, or city that is NOT on the master header — delete it. If the master has LinkedIn (a URL or the word LinkedIn), KEEP it on Line 3 — do not omit it. Do not invent a slug unless the master already has one
+- A city/Remote/HQ on an experience role that the master role did not have — delete it
+- Doubled section headings or a second PROJECTS block
+
+DO NOT:
+- Add skills, companies, jobs, degrees, or metrics
+- Change past job titles, dates, or company names
+- Rewrite bullets for keywords unless a sentence is broken from a duplicate
+- Invent contact details
+- Delete JD must-have tools already in SKILLS or EXPERIENCE — keep them woven in
+
+JOB DESCRIPTION (context only — do not stuff new JD text):
+${String(jd || '').slice(0, 2500)}
+
+OUTPUT the complete corrected resume only, starting with the candidate name.`;
+}
+
+async function proofreadTailoredResume(jd, draft) {
+  const master = ($('resumeInput') && $('resumeInput').value) || '';
+  const raw = await callGemini(buildProofreadPrompt(jd, master, draft), { maxTokens: 7000 });
+  const cleaned = cleanupResume(raw, { master, keywords: state.keywords });
+  if (!cleaned || cleaned.length < 200) return draft;
+  return cleaned;
+}
+
 function formatCandidateStackLine(profile) {
   if (!profile) {
     return {
@@ -1845,26 +1893,30 @@ function injectLinkedInSlug(text, slug) {
 }
 
 function stripFakeLinkedIn(text) {
-  const real = extractContactFields(($('resumeInput') && $('resumeInput').value) || '').linkedin
+  const master = ($('resumeInput') && $('resumeInput').value) || '';
+  const token = extractContactFields(master).linkedin
     || shortenLinkedIn(state.baseResume && state.baseResume.linkedin);
+  const slug = shortenLinkedIn(token);
+  const keepLabel = Boolean(slug) || /\blinkedin\b/i.test(String(token || ''))
+    || /\blinkedin\b/i.test(resumeHeaderLines(master).join('\n'));
   let out = String(text || '')
-    .replace(/\s*\|\s*(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/(?:username|jane-doe)\b/gi, '')
-    .replace(/(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/(?:username|jane-doe)\b/gi, '');
-  if (!real) {
-    out = out
-      .replace(/\s*\|\s*(?:https?:\/\/)?(?:www\.)?linkedin\.com\/(?:in|pub)\/[A-Za-z0-9\-_%]+\b/gi, '')
-      .replace(/(?:https?:\/\/)?(?:www\.)?linkedin\.com\/(?:in|pub)\/[A-Za-z0-9\-_%]+\b/gi, '')
-      .replace(/\s*\|\s*lnkd\.in\/[A-Za-z0-9_-]+/gi, '')
-      .replace(/\s*\|\s*LinkedIn\b/gi, '');
-  }
+    .replace(/\s*\|\s*(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/(?:username|jane-doe)\b/gi, keepLabel && !slug ? ' | LinkedIn' : '')
+    .replace(/(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/(?:username|jane-doe)\b/gi, keepLabel && !slug ? 'LinkedIn' : '');
+  if (slug) return injectLinkedInSlug(out, slug);
+  out = out
+    .replace(/\s*\|\s*(?:https?:\/\/)?(?:www\.)?linkedin\.com\/(?:in|pub)\/[A-Za-z0-9\-_%]+\b/gi, keepLabel ? ' | LinkedIn' : '')
+    .replace(/(?:https?:\/\/)?(?:www\.)?linkedin\.com\/(?:in|pub)\/[A-Za-z0-9\-_%]+\b/gi, keepLabel ? 'LinkedIn' : '')
+    .replace(/\s*\|\s*lnkd\.in\/[A-Za-z0-9_-]+/gi, keepLabel ? ' | LinkedIn' : '');
+  if (!keepLabel) out = out.replace(/\s*\|\s*LinkedIn\b/gi, '');
   return out;
 }
 
 function restoreMasterLinkedIn(text, master) {
-  const real = extractContactFields(master).linkedin
+  const token = extractContactFields(master).linkedin
     || shortenLinkedIn(state.baseResume && state.baseResume.linkedin);
-  let out = injectLinkedInSlug(text, real);
-  if (!real) out = stripFakeLinkedIn(out);
+  const slug = shortenLinkedIn(token);
+  let out = slug ? injectLinkedInSlug(text, slug) : String(text || '');
+  if (!token) out = stripFakeLinkedIn(out);
   return out;
 }
 
@@ -1995,17 +2047,25 @@ function extractGithubHandle(text) {
   return `github.com/${m[1]}`;
 }
 
+function linkedinFromHeader(header) {
+  const raw = (String(header || '').match(/(https?:\/\/)?([\w-]+\.)?linkedin\.com\/(?:in|pub)\/[A-Za-z0-9\-_%]+\/?/i) || [])[0]
+    || (String(header || '').match(/lnkd\.in\/[A-Za-z0-9_-]+/i) || [])[0]
+    || '';
+  const slug = shortenLinkedIn(raw)
+    || shortenLinkedIn(state.baseResume && state.baseResume.linkedin);
+  if (slug) return slug;
+  if (/\blinkedin\b/i.test(header)) return 'LinkedIn';
+  return '';
+}
+
 function extractContactFields(resumeText, resumeJson = null) {
   const header = resumeHeaderLines(resumeText || '').join('\n');
   const email = (header.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i) || [])[0] || '';
   const rawPhone = (header.match(/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/) || [])[0] || '';
-  const rawLinkedin = (header.match(/(https?:\/\/)?([\w-]+\.)?linkedin\.com\/(?:in|pub)\/[A-Za-z0-9\-_%]+\/?/i) || [])[0]
-    || (header.match(/lnkd\.in\/[A-Za-z0-9_-]+/i) || [])[0]
-    || '';
   return {
     email,
     phone: formatPhoneUS(rawPhone),
-    linkedin: shortenLinkedIn(rawLinkedin) || shortenLinkedIn(state.baseResume && state.baseResume.linkedin),
+    linkedin: linkedinFromHeader(header),
     github: extractGithubHandle(header),
     location: extractPersonalLocation(resumeText, resumeJson),
   };
@@ -2021,20 +2081,24 @@ function formatContactLineInstruction(resumeText) {
   if (!line) {
     return 'Line 3: omit — the master has no phone, email, LinkedIn, GitHub, or city. Do NOT invent any of them.';
   }
-  return `Line 3: ${line}  (copy exactly; include ONLY these master fields; never invent a phone, LinkedIn slug, GitHub, email, or city)`;
+  return `Line 3: ${line}  (copy exactly; include ONLY these master fields; if LinkedIn is on the master keep it; never invent a phone, LinkedIn slug, GitHub, email, or city)`;
 }
 
 function formatLockedContactBlock(resumeText) {
   const master = ($('resumeInput') && $('resumeInput').value) || resumeText || '';
   const cf = extractContactFields(master);
   const line = buildLockedContactLine(cf);
+  const li = cf.linkedin
+    ? (shortenLinkedIn(cf.linkedin) ? cf.linkedin : 'LinkedIn — KEEP this word on Line 3. Do not omit it. Do not invent a slug.')
+    : 'OMIT — master has no LinkedIn';
   return `LOCKED CONTACT — copy only what is on the master header. Never invent a phone, email, LinkedIn slug, GitHub, or city.
   Email: ${cf.email || 'OMIT — master has no email'}
   Phone: ${cf.phone || 'OMIT — master has no phone number'}
-  LinkedIn: ${cf.linkedin || 'OMIT — master has no LinkedIn URL (the word "LinkedIn" alone is not a URL)'}
+  LinkedIn: ${li}
   GitHub: ${cf.github || 'OMIT — master has no GitHub'}
   Location: ${cf.location || 'OMIT — master header has no personal city'}
   Line 3 must be exactly: ${line || '[no contact fields — omit them]'}
+  If LinkedIn is on the master (URL or the word LinkedIn), it MUST stay on Line 3.
   Personal city only — do NOT substitute a college city, university city, or employer office city.`;
 }
 
@@ -2867,6 +2931,15 @@ function formatTenureForSummary(years) {
   return `${whole} years`;
 }
 
+const YEARS_CLAIM_RE = /\b\d+(?:\.\d+)?\s*\+?\s*years?\b/i;
+
+function collapseDuplicateTenure(s) {
+  let out = String(s || '');
+  out = out.replace(/\b(\d+\+?\s*years(?:\s+of(?:\s+(?:professional|relevant|related))?\s+experience)?)\s+\1\b/gi, '$1');
+  out = out.replace(/\bwith\s+(\d+\+?\s*years(?:\s+of experience)?)\s+\1\b/gi, 'with $1');
+  return out.replace(/\s{2,}/g, ' ').trim();
+}
+
 function formatLockedTenureBlock(resumeText, resumeJson) {
   const master = ($('resumeInput') && $('resumeInput').value) || resumeText || '';
   const tenure = estimateResumeExperienceYears(
@@ -2890,10 +2963,10 @@ function rewriteSummaryTenureLine(line, label) {
   let s = String(line || '');
   s = s.replace(/\b\d+(?:\.\d+)?\s*(?:[-–—]|to)\s*\d+(?:\.\d+)?\s*\+?\s*years?\b/gi, label);
   s = s.replace(/\b\d+(?:\.\d+)?\s*\+\s*years?\b/gi, label);
-  s = s.replace(/\b\d+(?:\.\d+)?\s*years?\s+of(?:\s+(?:professional|relevant|related))?\s+experience\b/gi, `${label} of experience`);
-  s = s.replace(/\bwith\s+\d+(?:\.\d+)?\s*years?\b/gi, `with ${label}`);
-  s = s.replace(/\b(?:over|about|around|approximately)\s+\d+(?:\.\d+)?\s*years?\b/gi, label);
-  return s.replace(/\s{2,}/g, ' ').trim();
+  s = s.replace(/\b\d+(?:\.\d+)?\s*\+?\s*years?\s+of(?:\s+(?:professional|relevant|related))?\s+experience\b/gi, `${label} of experience`);
+  s = s.replace(/\bwith\s+\d+(?:\.\d+)?\s*\+?\s*years?\b/gi, `with ${label}`);
+  s = s.replace(/\b(?:over|about|around|approximately)\s+\d+(?:\.\d+)?\s*\+?\s*years?\b/gi, label);
+  return collapseDuplicateTenure(s);
 }
 
 function summaryLeadRoleTitle() {
@@ -2916,11 +2989,11 @@ function fixSummaryLeadingNumber(line, label) {
   }
   const roleRe = role ? new RegExp('^' + role.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i') : null;
   if (role && roleRe.test(stripped)) {
-    if (/\b\d+(?:\.\d+)?\s*years?\b/i.test(stripped)) return stripped;
+    if (/\b\d+(?:\.\d+)?\s*\+?\s*years?\b/i.test(stripped)) return stripped;
     return stripped.replace(new RegExp('^(' + role.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')\\s*', 'i'), `$1 with ${label} of experience `);
   }
   if (role) {
-    if (/\b\d+(?:\.\d+)?\s*years?\b/i.test(stripped)) return `${role} ${stripped}`.replace(/\s{2,}/g, ' ').trim();
+    if (/\b\d+(?:\.\d+)?\s*\+?\s*years?\b/i.test(stripped)) return `${role} ${stripped}`.replace(/\s{2,}/g, ' ').trim();
     return `${role} with ${label} of experience ${stripped}`.replace(/\s{2,}/g, ' ').trim();
   }
   return `Professional with ${label} of experience ${stripped}`.replace(/\s{2,}/g, ' ').trim();
@@ -2928,12 +3001,14 @@ function fixSummaryLeadingNumber(line, label) {
 
 function injectSummaryTenure(line, label) {
   const t = String(line || '').trim();
-  if (/\b\d+(?:\.\d+)?\s*years?\b/i.test(t)) return t;
+  if (YEARS_CLAIM_RE.test(t)) return t;
   if (/\bwith\s+experience\b/i.test(t)) {
     return t.replace(/\bwith\s+experience\b/i, `with ${label} of experience`);
   }
   const withHit = t.match(/^(.{6,90}?)(\s+with\s+)/);
-  if (withHit && !/\d+\s*years/i.test(withHit[1])) {
+  if (withHit) {
+    const after = t.slice(withHit.index + withHit[0].length);
+    if (YEARS_CLAIM_RE.test(after)) return t;
     return t.replace(withHit[2], ` with ${label} of experience `).replace(/\s{2,}/g, ' ');
   }
   return t.replace(/^((?:An?\s+)?[A-Za-z][A-Za-z0-9 /+&-]{2,55})(\s+)/, `$1 with ${label} of experience `);
@@ -2954,7 +3029,7 @@ function restoreSummaryTenure(text, master) {
   for (let i = bounds.start + 1; i < bounds.end; i++) {
     if (!lines[i].trim() || isSectionHeader(lines[i]) || isBulletLine(lines[i])) continue;
     lines[i] = rewriteSummaryTenureLine(lines[i], label);
-    if (/\b\d+(?:\.\d+)?\s*years?\b/i.test(lines[i])) sawYears = true;
+    if (YEARS_CLAIM_RE.test(lines[i])) sawYears = true;
   }
   if (!sawYears) {
     for (let i = bounds.start + 1; i < bounds.end; i++) {
@@ -2965,7 +3040,7 @@ function restoreSummaryTenure(text, master) {
   }
   for (let i = bounds.start + 1; i < bounds.end; i++) {
     if (!lines[i].trim() || isSectionHeader(lines[i]) || isBulletLine(lines[i])) continue;
-    lines[i] = fixSummaryLeadingNumber(lines[i], label);
+    lines[i] = collapseDuplicateTenure(fixSummaryLeadingNumber(lines[i], label));
     break;
   }
   return lines.join('\n');
@@ -4574,7 +4649,11 @@ function buildRewritePrompt(jd, resume, keywords, missingReport, scoreUnified) {
   const aggressive = state.mode === 'aggressive';
   const masterSkills = masterSkillsBlock(resume);
   const candidateProfile = detectCandidateProfile(resume);
-  const mustAdd = skillsToInject(missingReport, resume);
+  const scoreUnifiedSafe = scoreUnified || state.lastAtsUnified;
+  const mustAdd = uniqTerms([
+    ...skillsToInject(missingReport, resume),
+    ...primarySkillsOnly(scoreUnifiedSafe),
+  ]);
   const stretchGaps = stretchOnlyGaps(keywords, resume, missingReport);
   const atsMustAdd = filterAtsPhrasesForCandidate(
     atsPhrasesToInject(missingReport),
@@ -4588,7 +4667,6 @@ function buildRewritePrompt(jd, resume, keywords, missingReport, scoreUnified) {
   const rolePlan = planExperienceKeywords(resume, keywords);
   const extraBlock = extraSectionsPromptBlock(resume);
   const profileBlock = formatCandidateProfileBlock(candidateProfile);
-  const scoreUnifiedSafe = scoreUnified || state.lastAtsUnified;
   const scoreReport = formatScoreRuleGapReport(scoreUnifiedSafe);
   const rolePivot = formatRolePivotBlock(jd, resume, keywords);
   const jdContract = formatJdProfileContract(jd, resume, keywords);
@@ -4604,7 +4682,7 @@ ${mustAdd.filter(s => stretchGaps.some(g => String(g).toLowerCase() === String(s
 
   const integrityBlock = aggressive
     ? `STRETCH FOR THE POSTING MODE:
-- SUCCESS METRIC: ${SCORE_RULE_NAME} score must be ${SCORE_THRESHOLD}+ / 100.
+- SUCCESS METRIC: ${SCORE_RULE_NAME} score must be ${SCORE_THRESHOLD}+ / 100. Every missing JD must-have must appear in SKILLS AND at least one EXPERIENCE bullet.
 - ADD JD must-have skills AND Stretch-only gaps that fit the candidate stack.
 - MUST ADD THESE SKILLS (stack-aligned): ${mustAdd.join(', ') || 'none — already covered'}
 - MUST WEAVE THESE JD ATS PHRASES naturally (only if they fit the candidate stack): ${atsMustAdd.join(' · ') || 'none — already covered'}
@@ -4613,7 +4691,7 @@ ${mustAdd.filter(s => stretchGaps.some(g => String(g).toLowerCase() === String(s
 - Do not invent employers, degrees, or job titles.
 ${stretchBan}`
     : `STAY TRUTHFUL MODE:
-- SUCCESS METRIC: ${SCORE_RULE_NAME} score must be ${SCORE_THRESHOLD}+ / 100.
+- SUCCESS METRIC: ${SCORE_RULE_NAME} score must be ${SCORE_THRESHOLD}+ / 100. Every missing JD must-have must appear in SKILLS AND at least one EXPERIENCE bullet.
 - ADD every JD must-have (primary) into SKILLS + EXPERIENCE bullets (exact JD spelling). Skills-only is not enough.
 - MUST ADD THESE JD SKILLS (missing entirely — put in Skills AND a work bullet): ${mustAdd.join(', ') || 'none — already covered'}
 - MUST WEAVE THESE JD ATS PHRASES naturally: ${atsMustAdd.filter(p => !stretchGaps.some(s => String(s).toLowerCase() === String(p).toLowerCase())).join(' · ') || 'none — already covered'}
@@ -5396,22 +5474,16 @@ function weaveTermIntoBullet(line, term, profile) {
   let { mark, core, punct } = parts;
   const dump = isTrailingKeywordDump(core, [kw], {});
   if (dump) core = dump.main;
-  if (/\b(using|with|via|through|utilizing|employing)\s+[A-Za-z]/.test(core)) return line;
 
   const tryWeave = () => {
     const weaveVerbs = ['using', 'with', 'via', 'through'];
     const pick = weaveVerbs[Math.floor(Math.random() * weaveVerbs.length)];
-    const split = core.split(/,\s+/);
-    if (split.length >= 2 && split[0].length > 20) {
-      return null;
-    }
-
     const toHit = core.match(/^(.+?)(\s+to\s+(?:boost|reduce|improve|enhance|drive|enable|deliver|streamline|cut|increase|support|accelerate|optimize).+)$/i);
     if (toHit && toHit[1].length > 12 && !hasQuantifiedResult(toHit[2])) {
       return `${toHit[1]} with ${kw}${toHit[2]}`;
     }
 
-    const actionHit = core.match(/^((?:Developed|Built|Engineered|Implemented|Designed|Optimized|Automated|Created|Led|Managed|Performed|Deployed|Integrated|Streamlined|Enhanced|Delivered|Established|Utilized|Leveraged|Architected|Automated)\w*)[^,]{0,90}?(?=\s+(?:to|by|through|across|for)\s+)/i);
+    const actionHit = core.match(/^((?:Developed|Built|Engineered|Implemented|Designed|Optimized|Automated|Created|Led|Managed|Performed|Deployed|Integrated|Streamlined|Enhanced|Delivered|Established|Utilized|Leveraged|Architected)\w*)[^,]{0,90}?(?=\s+(?:to|by|through|across|for)\s+)/i);
     if (actionHit) {
       const idx = actionHit.index + actionHit[0].length;
       const before = core.slice(0, idx).trim();
@@ -5426,13 +5498,18 @@ function weaveTermIntoBullet(line, term, profile) {
         return words.join(' ');
       }
     }
-
     return null;
   };
 
   const woven = tryWeave();
-  if (!woven || /\s+using\s+.+\s+by\s+\d{1,2}$/i.test(woven)) return line;
-  return `${mark}${woven}${punct}`;
+  if (woven && !/\s+using\s+.+\s+by\s+\d{1,2}$/i.test(woven)) {
+    return `${mark}${woven}${punct}`;
+  }
+  const coreNoEnd = core.replace(/[.]+$/, '');
+  if (/\b(using|with|via|through)\s+\S+/i.test(coreNoEnd)) {
+    return `${mark}${coreNoEnd} and ${kw}${punct || '.'}`;
+  }
+  return `${mark}${coreNoEnd} using ${kw}${punct || '.'}`;
 }
 
 function cleanTrailingKeywordDumps(lines, keywords) {
@@ -7880,6 +7957,29 @@ async function runAtsCheck() {
   }
 }
 
+function primarySkillsOnly(unified) {
+  const invented = new Set(
+    listOrEmpty(unified?.scorecard?.inventedSkills).map(s => String(s).toLowerCase()),
+  );
+  const skillsOnly = listOrEmpty(unified?.scorecard?.jdSkillsOnly)
+    .filter(s => !invented.has(String(s).toLowerCase()));
+  if (state.mode === 'aggressive') return skillsOnly;
+  const primary = new Set(
+    (state.keywords?.primary || state.keywords?.jdPrimary || []).map(s => String(s).toLowerCase()),
+  );
+  return skillsOnly.filter(s => primary.has(String(s).toLowerCase()));
+}
+
+function missingAndUnwoven(unified, resumeText) {
+  const miss = missingSkillReport(state.keywords || {}, resumeText || '');
+  return uniqTerms([...(miss.important || []), ...primarySkillsOnly(unified)]);
+}
+
+function rewriteStillNeedsWork(unified, resumeText) {
+  if (Number(unified?.atsScore || 0) < SCORE_THRESHOLD) return true;
+  return missingAndUnwoven(unified, resumeText).length > 0;
+}
+
 async function runAnalysis() {
   const inputs = getInputs();
   if (!inputs) return;
@@ -7922,7 +8022,7 @@ async function runAnalysis() {
 
     const missingReport = missingSkillReport(state.keywords, resume);
     state.lastMissingReport = missingReport;
-    updateAiProcessing('Rewriting as the JD role — summary, skills, and experience…');
+    updateAiProcessing('Rewriting as the JD role — adding missing skills and weaving them into experience…');
 
     // 1) Rewrite with 20 rules + score-rule failure report
     const tailored = cleanupResume(await callGemini(
@@ -7940,16 +8040,20 @@ async function runAnalysis() {
     state.tailoredResume = scored.resume;
     $('outputArea').textContent = scored.resume;
 
-    // 2) Loop: 20-rule boost → score rule until 90+
+    // 2) Loop: weave missing must-haves and close gaps until 90+
     let pass = 0;
-    while (unified.atsScore < SCORE_THRESHOLD && pass < MAX_BOOST_PASSES) {
+    while (rewriteStillNeedsWork(unified, state.tailoredResume) && pass < MAX_BOOST_PASSES) {
       pass += 1;
-      updateAiProcessing(`Closing remaining gaps — pass ${pass} of ${MAX_BOOST_PASSES} (now ${unified.atsScore})…`);
+      const liveMissing = missingSkillReport(state.keywords || {}, state.tailoredResume);
+      const mustWeave = missingAndUnwoven(unified, state.tailoredResume);
+      state.lastMissingReport = liveMissing;
+      updateAiProcessing(`Closing remaining gaps — pass ${pass} of ${MAX_BOOST_PASSES} (now ${unified.atsScore}; adding missing skills)…`);
       const boosted = cleanupResume(await callGemini(
         buildBoostPrompt(jd, state.tailoredResume, {
           ...unified.scorecard,
           atsScore: unified.atsScore,
           ruleScores: unified.ruleScores,
+          keywordsMissing: mustWeave,
         }, state.keywords || {}),
         { maxTokens: 7000 },
       ));
@@ -7963,15 +8067,57 @@ async function runAnalysis() {
     }
 
     // 3) Extra polish if still under threshold
-    if (unified.atsScore < SCORE_THRESHOLD) {
-      updateAiProcessing('Final score-rule polish…');
+    if (rewriteStillNeedsWork(unified, state.tailoredResume)) {
+      updateAiProcessing('Final score-rule polish — adding remaining missing skills…');
+      const liveMissing = missingSkillReport(state.keywords || {}, state.tailoredResume);
+      liveMissing.important = missingAndUnwoven(unified, state.tailoredResume);
+      state.lastMissingReport = liveMissing;
       const externalPass = cleanupResume(await callGemini(
-        buildExternalAtsPassPrompt(jd, state.tailoredResume, state.keywords, missingReport),
+        buildExternalAtsPassPrompt(jd, state.tailoredResume, state.keywords, liveMissing),
         { maxTokens: 7000 },
       ));
       if (externalPass && externalPass.length > 200) {
         state.tailoredResume = externalPass;
         $('outputArea').textContent = externalPass;
+      }
+      scored = await scoreDraftWithScoreRule(jd, state.tailoredResume, { structureWithGemini: true });
+      unified = scored.unified;
+      state.tailoredResume = scored.resume;
+      state.scorecard = unified.scorecard;
+      state.lastAtsUnified = unified;
+      $('outputArea').textContent = scored.resume;
+    }
+
+    updateAiProcessing('Reading the tailored resume once more…');
+    const proofed = await proofreadTailoredResume(jd, state.tailoredResume);
+    if (proofed && proofed.length > 200) {
+      state.tailoredResume = proofed;
+      $('outputArea').textContent = proofed;
+    }
+    scored = await scoreDraftWithScoreRule(jd, state.tailoredResume, { structureWithGemini: true });
+    unified = scored.unified;
+    state.tailoredResume = scored.resume;
+    state.scorecard = unified.scorecard;
+    state.lastAtsUnified = unified;
+    $('outputArea').textContent = scored.resume;
+
+    if (rewriteStillNeedsWork(unified, state.tailoredResume)) {
+      updateAiProcessing('Weaving remaining missing skills to reach 90+…');
+      const liveMissing = missingSkillReport(state.keywords || {}, state.tailoredResume);
+      const mustWeave = missingAndUnwoven(unified, state.tailoredResume);
+      state.lastMissingReport = liveMissing;
+      const lastBoost = cleanupResume(await callGemini(
+        buildBoostPrompt(jd, state.tailoredResume, {
+          ...unified.scorecard,
+          atsScore: unified.atsScore,
+          ruleScores: unified.ruleScores,
+          keywordsMissing: mustWeave,
+        }, state.keywords || {}),
+        { maxTokens: 7000 },
+      ));
+      if (lastBoost && lastBoost.length > 200) {
+        state.tailoredResume = lastBoost;
+        $('outputArea').textContent = lastBoost;
       }
       scored = await scoreDraftWithScoreRule(jd, state.tailoredResume, { structureWithGemini: true });
       unified = scored.unified;
@@ -8056,6 +8202,21 @@ async function boostScore() {
       $('outputArea').textContent = scored.resume;
       if (unified.atsScore >= SCORE_TARGET) break;
     }
+    updateAiProcessing('Reading the tailored resume once more…');
+    const proofed = await proofreadTailoredResume(inputs.jd, state.tailoredResume);
+    if (proofed && proofed.length > 200) {
+      state.tailoredResume = proofed;
+      $('outputArea').textContent = proofed;
+    }
+    {
+      const scored = await scoreDraftWithScoreRule(inputs.jd, state.tailoredResume, { structureWithGemini: true });
+      state.tailoredResume = scored.resume;
+      unified = scored.unified;
+      state.scorecard = unified.scorecard;
+      state.lastAtsUnified = unified;
+      $('outputArea').textContent = scored.resume;
+    }
+
     updateAiProcessing('Finalizing emphasis…');
     await finalizeBolding(inputs.jd, state.tailoredResume);
     renderResults(unified, state.tailoredResume);
@@ -8159,6 +8320,9 @@ function cleanupResume(text, opts = {}) {
     t = stripFakeLinkedIn(t);
   }
   const kw = opts.keywords || state.keywords || null;
+  if (kw) {
+    t = polishResumeForAts(t, kw, master || t);
+  }
   if (state.mode !== 'aggressive' && master && kw) {
     t = scrubSkillsNotOnMaster(t, master, kw);
   }
