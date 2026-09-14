@@ -36,9 +36,15 @@
       ]
     },
     {
+      "source": "/(.*)\\.html",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, must-revalidate" }
+      ]
+    },
+    {
       "source": "/(.*)\\.(js|css|png|jpg|jpeg|webp|ico|woff2)",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=3600" }
+        { "key": "Cache-Control", "value": "public, max-age=60, must-revalidate" }
       ]
     }
   ]

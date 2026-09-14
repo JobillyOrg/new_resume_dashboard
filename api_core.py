@@ -17,8 +17,6 @@ MODELS = [
     os.environ.get("GEMINI_MODEL", "").strip(),
     "gemini-2.5-flash-lite",
     "gemini-flash-lite-latest",
-    "gemini-2.0-flash",
-    "gemini-2.5-flash",
 ]
 
 
@@ -70,44 +68,46 @@ def gemini_generate(prompt: str, as_json: bool, max_tokens: int) -> dict:
     models = [m for m in models if not (m in seen or seen.add(m))]
 
     for model in models:
-        body = {
-            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "maxOutputTokens": max_tokens,
-                "temperature": 0.0,
-                "topP": 1.0,
-                "topK": 1,
-            },
-        }
-        if as_json:
-            body["generationConfig"]["responseMimeType"] = "application/json"
+        mime_tries = (True, False) if as_json else (False,)
+        for use_json_mime in mime_tries:
+            body = {
+                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "maxOutputTokens": max_tokens,
+                    "temperature": 0.0,
+                    "topP": 1.0,
+                    "topK": 1,
+                },
+            }
+            if as_json and use_json_mime:
+                body["generationConfig"]["responseMimeType"] = "application/json"
 
-        req = urllib.request.Request(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-            data=json.dumps(body).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "x-goog-api-key": key,
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                payload = json.loads(resp.read().decode("utf-8"))
-            text = extract_gemini_text(payload)
-            if not text.strip():
-                last_error = f"{model} returned empty text"
+            req = urllib.request.Request(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                data=json.dumps(body).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": key,
+                },
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=50) as resp:
+                    payload = json.loads(resp.read().decode("utf-8"))
+                text = extract_gemini_text(payload)
+                if not text.strip():
+                    last_error = f"{model} returned empty text"
+                    continue
+                return {"ok": True, "model": model, "text": text, "raw": payload}
+            except urllib.error.HTTPError as exc:
+                detail = exc.read().decode("utf-8", errors="replace")[:800]
+                last_error = f"{model} HTTP {exc.code}: {detail}"
+                if exc.code in (404, 400):
+                    continue
+                raise RuntimeError(last_error) from exc
+            except Exception as exc:  # noqa: BLE001
+                last_error = f"{model}: {exc}"
                 continue
-            return {"ok": True, "model": model, "text": text, "raw": payload}
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")[:800]
-            last_error = f"{model} HTTP {exc.code}: {detail}"
-            if exc.code in (404, 400):
-                continue
-            raise RuntimeError(last_error) from exc
-        except Exception as exc:  # noqa: BLE001
-            last_error = f"{model}: {exc}"
-            continue
     raise RuntimeError(last_error or "All Gemini models failed")
 
 

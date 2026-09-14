@@ -1,9 +1,10 @@
 /* Jobilly.AI Resume Dashboard */
+const APP_VERSION = '20260914c';
 const SCORE_THRESHOLD = 90;
 const SCORE_TARGET = 95;
 const SCORE_MAX = 100;
 const MAX_BOOST_PASSES = 6;
-const SKILLSET_CACHE = 'ats_skillset_v9_';
+const SKILLSET_CACHE = 'ats_skillset_v10_';
 const CERT_TERM_RE = /certif(?:y|ied|ication|ications)?|\baws certified\b|\bazure certified\b|\bgoogle cloud certified\b|\bsnowflake certified\b|\bdatabricks certified\b|\bpmp\b|\bcissp\b|\bcspo\b|\bcsm\b|\bcka\b|\bckad\b|\bcomptia\b|\bscrum master\b|\bprofessional cloud architect\b|\bsolutions architect associate\b|\bdata engineer associate\b/i;
 const JUNK_SKILL_RE = /\b(retirement|401k|401\(k\)|benefits?|insurance|dental|vision|compensation|how to apply|cover letter|submit your resume|employer-paid|disability insurance|employee assistance)\b/i;
 const ELIGIBILITY_SKILL_RE = /\b(h-?1b|h1b|visa sponsorship|work authorization|work authorisation|authorized to work|authorised to work|eligible to work|right to work|without sponsorship|no sponsorship|will not sponsor|unable to sponsor|green card|us citizen|u\.s\. citizen|united states citizen|citizenship required|employment authorization|ead\b|tn visa|i-?140)\b/i;
@@ -5698,8 +5699,6 @@ function weaveTermIntoBullet(line, term, profile) {
   if (dump) core = dump.main;
 
   const tryWeave = () => {
-    const weaveVerbs = ['using', 'with', 'via', 'through'];
-    const pick = weaveVerbs[Math.floor(Math.random() * weaveVerbs.length)];
     const toHit = core.match(/^(.+?)(\s+to\s+(?:boost|reduce|improve|enhance|drive|enable|deliver|streamline|cut|increase|support|accelerate|optimize).+)$/i);
     if (toHit && toHit[1].length > 12 && !hasQuantifiedResult(toHit[2])) {
       return `${toHit[1]} with ${kw}${toHit[2]}`;
@@ -6764,21 +6763,6 @@ async function lockKeywordsFromJd(jd) {
     }
     return state.keywords;
   }
-  try {
-    const raw = localStorage.getItem(cacheKey);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed.primary && parsed.primary.length && parsed._mode === state.mode) {
-        ensureAliasMap(parsed);
-        if (!parsed.eligibility) {
-          parsed.eligibility = mergeEligibility(null, extractLocalEligibilityFromJd(jd));
-        }
-        state.keywords = parsed;
-        state.kwHash = h;
-        return state.keywords;
-      }
-    }
-  } catch { /* ignore */ }
   const built = await analyzeJdWithAiRag(jd);
   cacheKeywords(jd, built, cacheKey);
   return state.keywords;
@@ -10312,10 +10296,25 @@ async function pingHealth() {
   if ($('uploadHint')) $('uploadHint').classList.add('hidden');
 }
 
+function purgeStaleBrowserCaches() {
+  try {
+    document.documentElement.dataset.appVersion = APP_VERSION;
+    const drop = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (k.startsWith('ats_skillset_') && !k.startsWith(SKILLSET_CACHE)) drop.push(k);
+      if (k.startsWith('ats_gemini_')) drop.push(k);
+    }
+    drop.forEach(k => localStorage.removeItem(k));
+  } catch { /* ignore */ }
+}
+
 async function bootstrapApp() {
   screenLoadingDepth = 1;
   document.body.classList.add('screen-loading');
   try {
+    purgeStaleBrowserCaches();
     loadWorkspace();
     applyBaseResumeToUi();
     syncUiFromActiveSession();
