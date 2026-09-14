@@ -24,11 +24,96 @@ _LINKEDIN_SLUG_RE = re.compile(
 _LNKD_RE = re.compile(r"lnkd\.in/[A-Za-z0-9_-]+", re.I)
 
 
+_MONTH_GLUE = re.compile(
+    r"(?<=[a-z])(?=(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|"
+    r"Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|"
+    r"Nov(?:ember)?|Dec(?:ember)?)\s*\d{4})",
+    re.I,
+)
+_CITY_GLUE = re.compile(
+    r"(?<=[a-z])(?=(?:Los Angeles|New York|San Francisco|San Jose|San Diego|"
+    r"Chicago|Houston|Dallas|Austin|Seattle|Boston|Denver|Atlanta|Miami|"
+    r"Phoenix|Portland|Philadelphia|Hyderabad|Bangalore|Bengaluru|Chennai|"
+    r"Pune|Mumbai|Delhi|Noida|Gurgaon|Gurugram|Glassboro)\b)"
+)
+_COUNTRY_GLUE = re.compile(r"(?<=[a-z])(?=(?:India|USA|UK|Canada|Germany|Singapore)\b)")
+_MAILTO_RE = re.compile(r"mailto:([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})", re.I)
+_MID_BULLET_RE = re.compile(r"(?<=\S)\s*[•·●\u2022\u2023\u25E6\u2043\u2219]\s*(?=\S)")
+
+
 def _clean_text(text: str) -> str:
+    text = str(text or "").replace("\ufeff", "")
     text = text.replace("\r\n", "\n").replace("\r", "\n")
-    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = text.replace("\t", " ").replace("\xa0", " ").replace("\u200b", "")
+    text = text.replace("\x7f", "•")
+    # Only turn mid-line bullets into pipes on contact lines (email / phone / LinkedIn).
+    lines_out = []
+    for line in text.split("\n"):
+        if "@" in line or "linkedin" in line.lower() or re.search(r"\d{3}[\s.()-]*\d{3}", line):
+            line = _MID_BULLET_RE.sub(" | ", line)
+        lines_out.append(line)
+    text = "\n".join(lines_out)
+    text = re.sub(r"(?m)^[•·●\u2022\u2023\u25E6\uf0b7▪▸►]\s*", "- ", text)
+    text = _MONTH_GLUE.sub(" ", text)
+    text = re.sub(r"(?<=[a-z])(?=Graduated:?)", " ", text, flags=re.I)
+    text = _CITY_GLUE.sub(" ", text)
+    text = _COUNTRY_GLUE.sub(" ", text)
+    text = "\n".join(ln.strip() for ln in text.split("\n"))
+    text = re.sub(r"(?m)^\s*\|\s*", "", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"(?:\s*\|\s*){2,}", " | ", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
     return text.strip()
+
+
+def _emails_from_urls(urls: list[str] | None) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for url in urls or []:
+        m = _MAILTO_RE.search(str(url or ""))
+        if not m:
+            continue
+        email = m.group(1).strip()
+        key = email.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(email)
+    return out
+
+
+def _inject_emails(text: str, urls: list[str] | None) -> str:
+    emails = _emails_from_urls(urls)
+    if not emails:
+        return text
+    missing = [e for e in emails if e.lower() not in text.lower()]
+    if not missing:
+        return text
+    lines = text.split("\n")
+    insert_at = 0
+    seen = 0
+    for i, line in enumerate(lines):
+        if not line.strip():
+            continue
+        seen += 1
+        if seen >= 2:
+            insert_at = i
+            break
+        insert_at = i + 1
+    extra = " | ".join(missing)
+    if insert_at < len(lines) and ("@" in lines[insert_at] or "linkedin" in lines[insert_at].lower()):
+        lines[insert_at] = extra + " | " + lines[insert_at]
+    else:
+        lines.insert(insert_at, extra)
+    return "\n".join(lines)
+
+
+def _finalize_extract(text: str, urls: list[str] | None) -> tuple[str, list[str]]:
+    urls = list(urls or [])
+    blob = _clean_text(text)
+    blob = _inject_linkedin(blob, urls)
+    blob = _inject_emails(blob, urls)
+    return blob, urls
 
 
 def linkedin_slug(url: str) -> str:
@@ -174,6 +259,15 @@ def _para_text_and_urls(para: ET.Element, rels: dict[str, str]) -> tuple[str, li
     def walk(node: ET.Element) -> None:
         nonlocal skip_linkedin_label
         tag = node.tag
+        if tag == f"{W_NS}tab" or tag.endswith("}tab"):
+            # Word uses tabs between title/company and city/dates. Dropping them
+            # glued NetflixLos Angeles and CertificationNov 2024.
+            if not parts or not str(parts[-1]).endswith((" ", "\n", "|")):
+                parts.append(" ")
+            return
+        if tag in (f"{W_NS}br", f"{W_NS}cr") or tag.endswith("}br") or tag.endswith("}cr"):
+            parts.append("\n")
+            return
         if tag == f"{W_NS}hyperlink" or tag.endswith("}hlinkClick") or tag.endswith("}hlinkHover"):
             rid = _attr_rid(node)
             url = rels.get(rid)
@@ -227,9 +321,9 @@ def extract_docx_with_links(data: bytes) -> tuple[str, list[str]]:
                 line, found = _para_text_and_urls(para, rels)
                 urls.extend(found)
                 if line.strip():
-                    lines.append(line)
+                    lines.append(line.strip())
     text = _inject_linkedin(_clean_text("\n".join(lines)), urls)
-    return text, urls
+    return _finalize_extract(text, urls)
 
 
 def _strip_html(data: bytes) -> str:
@@ -238,7 +332,7 @@ def _strip_html(data: bytes) -> str:
 
 
 def _strip_html_with_links(data: bytes) -> tuple[str, list[str]]:
-    raw = data.decode("utf-8", errors="replace")
+    raw = data.decode("utf-8", errors="replace").lstrip("\ufeff")
     urls: list[str] = []
 
     def repl(match: re.Match[str]) -> str:
@@ -254,16 +348,21 @@ def _strip_html_with_links(data: bytes) -> tuple[str, list[str]]:
             return inner
         if href:
             urls.append(href)
+        if href.lower().startswith("mailto:"):
+            return inner or href.split(":", 1)[-1]
         return inner or href
 
+    raw = re.sub(r"(?is)<!--.*?-->", " ", raw)
+    raw = re.sub(r"(?is)<head[^>]*>.*?</head>", " ", raw)
     raw = re.sub(r'(?is)<a\s[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', repl, raw)
     raw = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", raw)
     raw = re.sub(r"(?i)<br\s*/?>", "\n", raw)
     raw = re.sub(r"(?i)</p\s*>", "\n", raw)
     raw = re.sub(r"(?i)</div\s*>", "\n", raw)
     raw = re.sub(r"(?i)</tr\s*>", "\n", raw)
+    raw = re.sub(r"(?i)</h[1-6]\s*>", "\n", raw)
     raw = re.sub(r"<[^>]+>", " ", raw)
-    return _inject_linkedin(_clean_text(unescape(raw)), urls), urls
+    return _finalize_extract(unescape(raw), urls)
 
 
 def extract_doc(data: bytes) -> str:
@@ -271,27 +370,36 @@ def extract_doc(data: bytes) -> str:
     return text
 
 
+def _is_html_payload(data: bytes) -> bool:
+    head = data.lstrip(b"\xef\xbb\xbf")[:9000].lower()
+    return b"<html" in head or b"<!doctype" in head
+
+
 def extract_doc_with_links(data: bytes) -> tuple[str, list[str]]:
-    head = data[:16]
-    if head.startswith(b"PK"):
+    if data[:4] == b"PK\x03\x04" or data[:2] == b"PK":
         return extract_docx_with_links(data)
-    if b"<html" in data[:8000].lower() or b"<!doctype html" in data[:8000].lower():
+    if _is_html_payload(data):
         return _strip_html_with_links(data)
     chunks: list[str] = []
     for match in re.finditer(rb"[\x20-\x7e\r\n\t]{8,}", data):
         piece = match.group(0).decode("ascii", errors="ignore").strip()
-        if len(piece) >= 8 and not piece.startswith("<?xml"):
-            chunks.append(piece)
+        if len(piece) < 8 or piece.startswith("<?xml") or piece.startswith("{"):
+            continue
+        if re.match(r"(?i)print\s+\d+$", piece):
+            continue
+        if re.search(r"(?i)\.(doc|docx|pdf)$", piece) and len(piece) < 120:
+            continue
+        chunks.append(piece)
     if chunks:
-        blob = _clean_text("\n".join(chunks))
+        blob = "\n".join(chunks)
         urls = _LINKEDIN_SLUG_RE.findall(blob) + _LNKD_RE.findall(blob) + _scan_bytes_for_linkedin(data)
-        return _inject_linkedin(blob, urls), urls
+        return _finalize_extract(blob, urls)
     utf16 = re.findall(rb"(?:[\x20-\x7e]\x00){6,}", data)
     if utf16:
-        text = _clean_text(b"".join(utf16).decode("utf-16-le", errors="ignore"))
-        urls = _LINKEDIN_SLUG_RE.findall(text)
-        return _inject_linkedin(text, urls), urls
-    raise ValueError("Could not read this .doc file. Save as .docx or .txt and try again.")
+        text = b"".join(utf16).decode("utf-16-le", errors="ignore")
+        urls = _LINKEDIN_SLUG_RE.findall(text) + _scan_bytes_for_linkedin(data)
+        return _finalize_extract(text, urls)
+    raise ValueError("Could not read this .doc file. Save as .docx or .pdf and try again.")
 
 
 def _scan_bytes_for_linkedin(data: bytes) -> list[str]:
@@ -359,11 +467,11 @@ def extract_pdf_with_links(data: bytes) -> tuple[str, list[str]]:
             mod = __import__(mod_name, fromlist=[reader_name])
             reader_cls = getattr(mod, reader_name)
             reader = reader_cls(io.BytesIO(data))
-            pages = [page.extract_text() or "" for page in reader.pages]
-            text = _clean_text("\n\n".join(pages))
+            pages = [(page.extract_text() or "") for page in reader.pages]
+            text = "\n\n".join(pages)
             urls = _pdf_link_urls(reader) + _scan_bytes_for_linkedin(data)
             if text or urls:
-                return _inject_linkedin(text, urls), urls
+                return _finalize_extract(text, urls)
         except Exception as exc:  # noqa: BLE001
             last_error = exc
             continue
@@ -377,16 +485,14 @@ def extract_resume(filename: str, data: bytes) -> dict:
     if not data:
         raise ValueError("File is empty")
     ext = Path(filename or "").suffix.lower()
-    if ext == ".txt":
-        text, urls = extract_txt(data), []
-    elif ext == ".docx":
+    if ext == ".docx":
         text, urls = extract_docx_with_links(data)
     elif ext == ".doc":
         text, urls = extract_doc_with_links(data)
     elif ext == ".pdf":
         text, urls = extract_pdf_with_links(data)
     else:
-        raise ValueError(f"Unsupported file type: {ext or 'unknown'}. Use PDF, DOC, DOCX, or TXT.")
+        raise ValueError(f"Unsupported file type: {ext or 'unknown'}. Upload a PDF, DOC, or DOCX.")
     slug = first_linkedin_slug(text, urls)
     return {"text": text, "links": {"linkedin": slug}, "urls": urls}
 

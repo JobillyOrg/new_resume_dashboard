@@ -1234,19 +1234,19 @@
     <div class="grid-2" id="inputSection">
       <div class="card">
         <div class="card-title">Base resume</div>
-        <p class="hint" style="margin-bottom:10px;">Your master resume — reused for every posting. Upload PDF, DOC, DOCX, or TXT; text is extracted for scoring and rewrite.</p>
+        <p class="hint" style="margin-bottom:10px;">Your master resume — reused for every posting. Upload a PDF, DOC, or DOCX; we extract the text for scoring and rewrite.</p>
         <div class="base-resume-meta">
-          <span><strong id="baseResumeName">No file loaded — paste or upload</strong></span>
+          <span><strong id="baseResumeName">No file loaded — upload a PDF, DOC, or DOCX</strong></span>
           <div class="base-resume-actions">
             <button type="button" class="btn-mini" onclick="triggerReplaceResume()">Replace resume</button>
           </div>
         </div>
-        <input type="file" id="resumeFileInput" accept=".pdf,.doc,.docx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" hidden>
+        <input type="file" id="resumeFileInput" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
         <div class="upload-zone" id="resumeUploadZone">
           <p>Drop resume here or click to upload</p>
-          <small>PDF · DOC · DOCX · TXT</small>
+          <small>PDF · DOC · DOCX</small>
         </div>
-        <textarea id="resumeInput" placeholder="Paste your base resume as plain text.&#10;&#10;Keep every real role, metric, and tool you can defend in an interview."></textarea>
+        <textarea id="resumeInput" placeholder="Upload a PDF, DOC, or DOCX. Extracted text appears here — edit only if a field looks wrong."></textarea>
         <div class="char-count"><span id="resumeCount">0</span> characters · <span id="resumeWords">0</span> words</div>
         <div class="hint">Source of truth for every posting — drafts are rewritten from this text only.</div>
       </div>
@@ -1515,7 +1515,7 @@
 </div>
 
 <div id="toast"></div>
-<script src="rag-engine.js?v=20260914c"></script>
-<script src="app.js?v=20260914c"></script>
+<script src="rag-engine.js?v=20260914g"></script>
+<script src="app.js?v=20260914g"></script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 /* Jobilly.AI Resume Dashboard */
-const APP_VERSION = '20260914c';
+const APP_VERSION = '20260914g';
 const SCORE_THRESHOLD = 90;
 const SCORE_TARGET = 95;
 const SCORE_MAX = 100;
@@ -583,12 +583,13 @@ Then ONLY these ALL-CAPS headers (exact spelling):
 SUMMARY = one prose paragraph (no bullets, no metrics).
 ${skillsHeader} = keep master category labels. Put JD must-have skills first on each line; demote off-role master tools.
 PROFESSIONAL EXPERIENCE role lines — exactly one plain-text line per role:
-  If that master role HAS a location: Company | Location | Job Title Month YYYY – Month YYYY
-  If that master role has NO location: Company | Job Title Month YYYY – Month YYYY
-  Example with location: Netflix | CA | Machine Learning Engineer January 2025 – Present
+  If that master role HAS a location: Company | Location | <exact master title> Month YYYY – Month YYYY
+  If that master role has NO location: Company | <exact master title> Month YYYY – Month YYYY
+  Example with location: Netflix | Los Angeles, CA | Machine Learning Engineer June 2024 – Present
   Example without location: Stripe | Software Engineer September 2024 – Present
   Never invent Remote, a city, a state, or company HQ. Never copy the header city onto a role.
   Never put dates on a second line. Never Company | Title | Location | Dates.
+  Never write the placeholder words "Job Title" or "Month YYYY" — copy the real title and dates.
 ${formatExperienceLocationLock(masterForRoles)}
 Bullets: start with hyphen-space "- " only (not • * ·). 6–7 bullets per role. Each ends with a period.
 EDUCATION: Qualification / degree on its own line (bold). College, City, ST on the next line (not bold).
@@ -813,7 +814,7 @@ SCAN TOP TO BOTTOM. Fix every hit. Then re-read once to confirm the page makes s
 1. HEADER
 - Line 1: name in Title Case, not ALL CAPS, not doubled
 - Line 2: job title only. Bad: "${title} St. Louis," or "${title}, ${city || 'City'}". Good: "${title}"
-- Line 3: one contact line, fields that exist on the master, pipe-separated, no invented phone/email/LinkedIn/GitHub/city. Keep LinkedIn/GitHub if they are on the master (URL or the word). Do not invent slugs
+- Line 3: copy EVERY contact field that is on the master (phone, email, LinkedIn, GitHub, city). If the master has a phone and email they MUST appear — do not drop them and keep only LinkedIn
 - One blank line, then SUMMARY. No extra blank lines, no markdown, no **bold**
 
 2. SUMMARY
@@ -829,7 +830,8 @@ SCAN TOP TO BOTTOM. Fix every hit. Then re-read once to confirm the page makes s
 
 4. PROFESSIONAL EXPERIENCE
 - Heading once, ALL-CAPS
-- Each role is ONE line: Company | Title Dates  OR  Company | Location | Title Dates — location ONLY if that same master role had it. Never copy the header city onto a role. Never dates on a second line. Never Title glued to a city (EngineerCA, Analyst St. Louis)
+- Each role is ONE line: Company | Location | Real Job Title Month YYYY – Month YYYY when that master role has a location. Never write the words "Job Title"
+- Display intent: company and real title on the left; location (if on master) and dates on the right. Fix glued names (NetflixLos Angeles → Netflix | Los Angeles, CA; AccentureIndia → Accenture | India)
 - Keep company names, past titles, and dates as on the master
 - 6–7 bullets per role, each "- " (hyphen space), each a complete sentence ending with a period
 - Every bullet must read: action → work → result. Fix fragments, doubled phrases, "and Tableau" dumps, missing verbs, glued words
@@ -837,8 +839,10 @@ SCAN TOP TO BOTTOM. Fix every hit. Then re-read once to confirm the page makes s
 
 5. EDUCATION
 - Heading once
-- Degree on its own line; school / city on the next line
+- Degree + field on its own line (Master of Science, Data Science). Do not glue "Graduated" onto the degree
+- School / city on the next line
 - Do not invent a school, degree, or date. Do not merge education into experience
+- Certifications: put a space before the month (Certification Nov 2024, not CertificationNov 2024)
 
 6. EXTRA SECTIONS (Projects, Awards, Volunteer, Languages, …)
 - Keep every extra section that is on the master, same heading, same order, once
@@ -1316,7 +1320,7 @@ function applyBaseResumeToUi() {
   if ($('resumeInput')) $('resumeInput').value = text;
   if ($('baseResumeName')) {
     const name = state.baseResume?.fileName;
-    $('baseResumeName').textContent = name || (text.trim() ? 'Pasted text (no file)' : 'No file loaded — paste or upload');
+    $('baseResumeName').textContent = name || (text.trim() ? 'Uploaded resume' : 'No file loaded — upload a PDF, DOC, or DOCX');
   }
 }
 
@@ -1510,21 +1514,12 @@ async function extractResumeOnServer(fileName, data) {
 
 async function handleResumeUpload(file) {
   if (!file) return;
-  if (!/\.(pdf|doc|docx|txt)$/i.test(file.name)) {
-    showToast('Use PDF, DOC, DOCX, or TXT', '#e11d48');
+  if (!/\.(pdf|doc|docx)$/i.test(file.name)) {
+    showToast('Upload a PDF, DOC, or DOCX resume', '#e11d48');
     return;
   }
   showAiProcessing('Reading your resume file…', 'Extracting text from ' + file.name + '…');
   try {
-    const ext = (file.name.split('.').pop() || '').toLowerCase();
-    if (ext === 'txt') {
-      const text = (await file.text()).trim();
-      if (text.length < 40) throw new Error('Very little text was found in that file. Try another export.');
-      setBaseResume(text, file.name);
-      stopAiProcessing();
-      showToast('Base resume loaded · ' + wordCount(text) + ' words');
-      return;
-    }
     const data = await fileToBase64(file);
     const payload = await extractResumeOnServer(file.name, data);
     setBaseResume(payload.text, file.name, { linkedin: payload.links && payload.links.linkedin });
@@ -1536,10 +1531,19 @@ async function handleResumeUpload(file) {
   }
 }
 
+function normalizeMasterResumeText(text, extra = {}) {
+  let t = unstickGluedResumeText(text || '');
+  t = injectLinkedInSlug(t, extra.linkedin);
+  t = normalizeContactInResume(t);
+  const locked = buildLockedContactLine(extractContactFields(t));
+  if (locked) t = restoreMasterContact(t, t);
+  if (typeof normalizeExperienceRoleLines === 'function') t = normalizeExperienceRoleLines(t);
+  return t.replace(/\n{3,}/g, '\n\n').trim();
+}
+
 function setBaseResume(text, fileName, extra = {}) {
   const ext = (fileName || '').split('.').pop().toLowerCase();
-  const injected = injectLinkedInSlug(text || '', extra.linkedin);
-  const normalized = normalizeContactInResume(injected);
+  const normalized = normalizeMasterResumeText(text || '', extra);
   const linkedin = shortenLinkedIn(extra.linkedin) || extractContactFields(normalized).linkedin || '';
   state.baseResume = {
     text: normalized,
@@ -1555,6 +1559,23 @@ function setBaseResume(text, fileName, extra = {}) {
   state.masterResumeJson = null;
   clearManualScoreGate();
   saveWorkspace();
+}
+
+function sanitizeMasterInEditor() {
+  const el = $('resumeInput');
+  const raw = el ? el.value : ((state.baseResume && state.baseResume.text) || '');
+  const extra = { linkedin: state.baseResume && state.baseResume.linkedin };
+  const next = normalizeMasterResumeText(raw, extra);
+  if (el && next && next !== raw) {
+    el.value = next;
+    if (state.baseResume) {
+      state.baseResume.text = next;
+      state.baseResume.updatedAt = Date.now();
+    }
+    saveWorkspace();
+    updateCounts();
+  }
+  return next;
 }
 
 function triggerReplaceResume() {
@@ -2008,7 +2029,7 @@ function markGemini() {
 
 function formatPhoneUS(phone) {
   if (!phone) return '';
-  const p = String(phone).trim();
+  const p = String(phone).trim().replace(/[–—]/g, '-');
   if (!/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/.test(p)) return '';
   if (/^\+1(?:\s|[(.-]|\d)/.test(p)) return p;
   if (/^1[\s(.-]\d{3}/.test(p)) return '+' + p;
@@ -2029,25 +2050,54 @@ function shortenLinkedIn(url) {
 
 function formatContactLine(line) {
   if (!line) return '';
-  return line.split('|').map(part => {
-    const p = part.trim();
-    if (!p) return '';
-    if (/linkedin/i.test(p)) {
-      const slug = shortenLinkedIn(p);
-      if (slug) return slug;
-      if (/^linkedin$/i.test(p)) return p;
-      return p;
-    }
-    if (/\bgithub\b/i.test(p)) {
-      const gh = extractGithubHandle(p);
-      if (gh) return gh;
-      if (/^github$/i.test(p)) return p;
-      return p;
+  const raw = typeof normalizeContactSeparators === 'function'
+    ? normalizeContactSeparators(line)
+    : String(line);
+  const seen = new Set();
+  const out = [];
+  const push = (v) => {
+    const t = String(v || '').trim();
+    if (!t) return;
+    const key = t.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(t);
+  };
+  for (let part of raw.split('|')) {
+    let p = String(part || '').trim();
+    if (!p) continue;
+    const email = (p.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i) || [])[0];
+    if (email) {
+      push(email);
+      p = p.replace(email, ' ').trim();
     }
     const phoneMatch = p.match(/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/);
-    if (phoneMatch) return formatPhoneUS(phoneMatch[0]);
-    return p;
-  }).filter(Boolean).join(' | ');
+    if (phoneMatch) {
+      push(formatPhoneUS(phoneMatch[0]));
+      p = p.replace(phoneMatch[0], ' ').trim();
+    }
+    const slug = shortenLinkedIn(p);
+    if (slug) {
+      push(slug);
+      p = p.replace(/(?:https?:\/\/)?(?:[\w-]+\.)?(linkedin\.com\/(?:mwlite\/)?(?:in|pub)\/[A-Za-z0-9\-_%\.]+)/i, ' ')
+        .replace(/(lnkd\.in\/[A-Za-z0-9_-]+)/i, ' ')
+        .trim();
+    } else if (/^linkedin$/i.test(p)) {
+      push(p);
+      p = '';
+    }
+    const gh = typeof extractGithubHandle === 'function' ? extractGithubHandle(p) : '';
+    if (gh) {
+      push(gh);
+      p = p.replace(gh, ' ').replace(/\bgithub\.com\/[A-Za-z0-9_-]+\b/i, ' ').trim();
+    } else if (/^github$/i.test(p)) {
+      push(p);
+      p = '';
+    }
+    p = p.replace(/^[\s|,•·-]+|[\s|,•·-]+$/g, '').trim();
+    if (p && !/^(linkedin|github|email|phone|mobile)$/i.test(p)) push(p);
+  }
+  return out.join(' | ');
 }
 
 function normalizeContactInResume(text) {
@@ -2082,8 +2132,8 @@ function injectLinkedInSlug(text, slug) {
   return t;
 }
 
-function stripFakeLinkedIn(text) {
-  const master = ($('resumeInput') && $('resumeInput').value) || '';
+function stripFakeLinkedIn(text, masterText) {
+  const master = String(masterText || ($('resumeInput') && $('resumeInput').value) || (state.baseResume && state.baseResume.text) || '');
   const token = extractContactFields(master).linkedin
     || shortenLinkedIn(state.baseResume && state.baseResume.linkedin);
   const slug = shortenLinkedIn(token);
@@ -2244,8 +2294,8 @@ function githubFromHeader(header) {
   return '';
 }
 
-function stripFakeGitHub(text) {
-  const master = ($('resumeInput') && $('resumeInput').value) || '';
+function stripFakeGitHub(text, masterText) {
+  const master = String(masterText || ($('resumeInput') && $('resumeInput').value) || (state.baseResume && state.baseResume.text) || '');
   const token = extractContactFields(master).github;
   const url = extractGithubHandle(token) || extractGithubHandle(master);
   const keepLabel = Boolean(url)
@@ -2282,16 +2332,79 @@ function linkedinFromHeader(header) {
   return '';
 }
 
+const GLUED_CITY_RE = 'Los Angeles|New York|San Francisco|San Jose|San Diego|Chicago|Houston|Dallas|Austin|Seattle|Boston|Denver|Atlanta|Miami|Phoenix|Portland|Philadelphia|Hyderabad|Bangalore|Bengaluru|Chennai|Pune|Mumbai|Delhi|Noida|Gurgaon|Gurugram|Glassboro';
+
+function normalizeContactSeparators(s) {
+  return String(s || '')
+    .replace(/[\u2022\u2023\u25E6\u2043\u2219•·●]/g, ' | ')
+    .replace(/[–—]/g, '–');
+}
+
+function unstickGluedResumeText(text) {
+  let s = String(text || '').replace(/^\uFEFF/, '').replace(/\u00a0/g, ' ').replace(/\t/g, ' ');
+  s = s.replace(/\x7f/g, '•');
+  s = s.replace(/[–—]/g, '–');
+  s = s.split('\n').map(line => {
+    if (/@/i.test(line) || /linkedin/i.test(line) || /\d{3}[\s.()-]*\d{3}/.test(line)) {
+      return line.replace(/[\u2022\u2023\u25E6\u2043\u2219•·●]/g, ' | ').replace(/(?<=\S)\s*\|\s*(?=\S)/g, ' | ');
+    }
+    return line;
+  }).join('\n');
+  s = s.replace(/^[•·●]\s*/gm, '- ');
+  s = s.replace(new RegExp('([a-z])(' + GLUED_CITY_RE + ')\\b', 'g'), '$1 $2');
+  s = s.replace(/([a-z])(India|USA|UK|Canada|Germany|Singapore)\b/g, '$1 $2');
+  s = s.replace(/([a-z])((?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s*\d{4})/gi, '$1 $2');
+  s = s.replace(/([a-z])(Graduated:?)/gi, '$1 $2');
+  s = s.replace(/\s*\|\s*Job Title\b/gi, '');
+  s = s.replace(/(^|\s|\|)Job Title(\s|\||$)/gi, '$1$2');
+  s = s.replace(/(?:\|\s*){2,}/g, '| ');
+  s = s.replace(/[ \t]+\|[ \t]+/g, ' | ');
+  s = s.split('\n').map(l => l.trim()).join('\n');
+  return s;
+}
+
+function unstickCompanyPlace(raw) {
+  const t = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!t) return { company: '', location: '' };
+  const cityState = t.match(new RegExp('^(.*?)\\s+(' + GLUED_CITY_RE + ')(,\\s*[A-Z]{2}(?:\\s*,?\\s*USA)?)?$', 'i'));
+  if (cityState && cityState[1] && cityState[1].length >= 2 && !looksLikeJobTitleToken(cityState[1])) {
+    return {
+      company: cityState[1].trim(),
+      location: (cityState[2] + (cityState[3] || '')).replace(/^,\s*/, '').trim(),
+    };
+  }
+  const gluedCity = t.match(new RegExp('^(.*[a-z])(' + GLUED_CITY_RE + ')(,\\s*[A-Z]{2})?$', 'i'));
+  if (gluedCity && gluedCity[1].length >= 2) {
+    return {
+      company: gluedCity[1].trim(),
+      location: (gluedCity[2] + (gluedCity[3] || '')).trim(),
+    };
+  }
+  const country = t.match(/^(.*[a-z])(India|USA|UK|Canada|Germany|Singapore)$/i);
+  if (country && country[1].length >= 3 && !looksLikeJobTitleToken(country[1])) {
+    return { company: country[1].trim(), location: country[2] };
+  }
+  const countrySpaced = t.match(/^(.*?)\s+(India|USA|UK|Canada|Germany|Singapore)$/i);
+  if (countrySpaced && countrySpaced[1].length >= 2 && !looksLikeJobTitleToken(countrySpaced[1])) {
+    return { company: countrySpaced[1].trim(), location: countrySpaced[2] };
+  }
+  const split = typeof splitCompanyLocation === 'function' ? splitCompanyLocation(t) : { company: t, location: '' };
+  if (split.location) return split;
+  return { company: t, location: '' };
+}
+
 function extractContactFields(resumeText, resumeJson = null) {
-  const header = resumeHeaderLines(resumeText || '').join('\n');
-  const email = (header.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i) || [])[0] || '';
-  const rawPhone = (header.match(/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/) || [])[0] || '';
+  const raw = unstickGluedResumeText(resumeText || '');
+  const header = resumeHeaderLines(raw).join('\n');
+  const blob = [header, raw.split('\n').slice(0, 12).join('\n')].join('\n');
+  const email = (blob.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i) || [])[0] || '';
+  const rawPhone = (blob.match(/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/) || [])[0] || '';
   return {
     email,
     phone: formatPhoneUS(rawPhone),
-    linkedin: linkedinFromHeader(header),
-    github: githubFromHeader(header),
-    location: extractPersonalLocation(resumeText, resumeJson),
+    linkedin: linkedinFromHeader(header) || linkedinFromHeader(blob),
+    github: githubFromHeader(header) || githubFromHeader(blob),
+    location: extractPersonalLocation(raw, resumeJson),
   };
 }
 
@@ -5003,12 +5116,12 @@ TECHNICAL SKILLS
 (Do NOT invent a new "Technical Skills:" line unless the master already has one.)
 (Do NOT repeat the same skill twice — each tool appears only once across the whole SKILLS section.)
 PROFESSIONAL EXPERIENCE
-Company | Job Title Month YYYY – Month YYYY
-(or Company | Location | Job Title ... ONLY if that same role already has a location on the master — never invent one)
+Company | <exact master title> Month YYYY – Month YYYY
+(or Company | Location | <exact master title> ... ONLY if that same role already has a location on the master — never invent one)
 - Bullet ending with a period.
 EDUCATION
-Qualification / degree on its own line (bold)
-College, City, ST on the next line (not bold)
+Degree + field on one line (Master of Science, Data Science). School, City, ST on the next line.
+Do not split "Master of Science" and "Data Science" onto two lines. Do not glue Graduated onto the field.
 Then keep every extra master section in the same place it already sits (before or after these cores). Headings stay ALL CAPS.
 If the master has PROJECTS, output that section once: project name, then hyphen bullets only — no dates, no location/role line. Keep the same projects and facts. Do not add another PROJECTS heading. If the master has no PROJECTS section, do not create one.
 
@@ -5036,13 +5149,14 @@ Spread phrases across roles; do not stack them all in one bullet.
 BOLDING: do not wrap words in ** in the output. The dashboard bolds the important JD skills after you write.
 
 ROLE LINE FORMAT (Anirudh template — mandatory):
-  Display: Company | Job Title on the LEFT; Location (only if on the master) | Month YYYY – Present on the RIGHT.
-  If the master role HAS a location: Company | Location | Job Title Month YYYY – Present
-  If the master role has NO location: Company | Job Title Month YYYY – Present
-  Example with location: Netflix | CA | Machine Learning Engineer January 2025 – Present
+  Display: Company | real title on the LEFT; Location (only if on the master) | Month YYYY – Present on the RIGHT.
+  If the master role HAS a location: Company | Location | <exact master title> Month YYYY – Present
+  If the master role has NO location: Company | <exact master title> Month YYYY – Present
+  Example with location: Netflix | Los Angeles, CA | Machine Learning Engineer June 2024 – Present
   Example without location: Stripe | Software Engineer September 2024 – Present
   Do NOT invent Remote, a city, a state, or company HQ. Do NOT copy the header city onto a role.
   Do NOT put dates on a second line. Do NOT write Company | Title | Location | Dates.
+  Never output the placeholder words "Job Title" or "Month YYYY" — use the real title and dates from the master.
 
 PROJECTS FORMAT (only if the master already has PROJECTS):
   Heading, then each project name on its own line, then "- " bullets. No dates, no location, no role line.
@@ -7974,9 +8088,9 @@ function renderRuleHtml(scores) {
 
 function getInputs() {
   const jd = $('jdInput').value.trim();
-  const resume = $('resumeInput').value.trim();
+  const resume = sanitizeMasterInEditor().trim();
   if (!jd) { showToast('Paste the posting first', '#e11d48'); return null; }
-  if (!resume) { showToast('Add your base resume — upload or paste text', '#e11d48'); return null; }
+  if (!resume) { showToast('Upload your base resume as PDF, DOC, or DOCX', '#e11d48'); return null; }
   return { jd, resume };
 }
 
@@ -8510,6 +8624,7 @@ function stripEligibilityFromSummary(text) {
 
 function cleanupResume(text, opts = {}) {
   let t = (text || '').replace(/```(?:text|markdown)?/gi, '').trim();
+  t = unstickGluedResumeText(t);
   t = t.replace(/^here is[^\n]*\n+/i, '');
   t = enforceAnirudhTemplate(t);
   t = sanitizeResumeHeadline(t);
@@ -8524,8 +8639,10 @@ function cleanupResume(text, opts = {}) {
   if (master) {
     t = restoreMasterContact(t, master);
     t = restoreMasterExperienceLocations(t, master);
-    t = stripFakeLinkedIn(t);
-    t = stripFakeGitHub(t);
+    t = restoreMasterEducation(t, master);
+    t = restoreMasterCertifications(t, master);
+    t = stripFakeLinkedIn(t, master);
+    t = stripFakeGitHub(t, master);
   }
   const kw = opts.keywords || state.keywords || null;
   if (kw) {
@@ -9061,7 +9178,8 @@ function isEducationLine(l, section) {
 }
 
 function formatEduHtml(line) {
-  const raw = String(line || '').trim();
+  let raw = unstickGluedResumeText(String(line || '').trim());
+  raw = raw.replace(/\s*Graduated:?\s*/i, ', ').replace(/,\s*,/g, ',').trim();
   if (!raw) return '';
   const parts = raw.split('|').map(s => s.trim()).filter(Boolean);
   if (parts.length >= 2) {
@@ -9072,12 +9190,14 @@ function formatEduHtml(line) {
       + `<div class="r-edu-school">${school}</div>`
       + `</div>`;
   }
-  // Single line — try "Degree, School..." or just show as degree
   const comma = raw.indexOf(',');
-  if (comma > 12 && /\b(bachelor|master|b\.?\s?s|m\.?\s?s|mba|ph\.?d|b\.?\s?tech|m\.?\s?tech|associate|diploma)\b/i.test(raw.slice(0, comma))) {
+  const after = comma > 0 ? raw.slice(comma + 1).trim() : '';
+  if (comma > 12
+    && /\b(bachelor|master|b\.?\s?s|m\.?\s?s|mba|ph\.?d|b\.?\s?tech|m\.?\s?tech|associate|diploma)\b/i.test(raw.slice(0, comma))
+    && /\b(university|college|institute|school|polytechnic)\b/i.test(after)) {
     return `<div class="r-edu-block">`
       + `<div class="r-edu-degree">${escapeHtml(raw.slice(0, comma).trim())}</div>`
-      + `<div class="r-edu-school">${escapeHtml(raw.slice(comma + 1).trim())}</div>`
+      + `<div class="r-edu-school">${escapeHtml(after)}</div>`
       + `</div>`;
   }
   return `<div class="r-edu-block"><div class="r-edu-degree">${escapeHtml(raw)}</div></div>`;
@@ -9148,18 +9268,19 @@ function looksLikeJobTitleToken(s) {
 function looksLikeLocationToken(s, opts = {}) {
   const t = String(s || '').trim();
   if (!t || t.length > 48) return false;
+  if (/^(job title|job|title|company|location|month|yyyy|present|current|dates?)$/i.test(t)) return false;
   if (looksLikeJobTitleToken(t)) return false;
   if (/^(full[- ]?time|part[- ]?time|contract|permanent|temporary|freelance|w2|c2c)$/i.test(t)) return false;
   if (/^(inc|llc|ltd|corp|corporation|technologies|systems|labs|group|services)$/i.test(t)) return false;
   if (/^(remote|hybrid|onsite|on-site)(?:\s*[–—,-]\s*(usa|us|india|uk|united states))?$/i.test(t)) return true;
   if (/^(india|usa|us|united states|uk|united kingdom|canada|germany|singapore|uae|australia)$/i.test(t)) return true;
   if (new RegExp(`^(?:${US_STATE_ABBR})$`, 'i').test(t)) return true;
-  if (typeof PLACE_RE !== 'undefined' && PLACE_RE.test(t)) return true;
+  if (typeof PLACE_RE !== 'undefined' && PLACE_RE.test(t) && !/[A-Z][a-z]+[A-Z]/.test(t.replace(/\s/g, ''))) {
+    const onlyPlace = t.replace(PLACE_RE, '').replace(/[\s,]/g, '');
+    if (!onlyPlace || onlyPlace.length < 3) return true;
+  }
   if (/^[A-Za-z .'-]+,\s*(?:[A-Z]{2}|USA|US|United States|India|UK|UAE|Canada)$/i.test(t)) return true;
-  if (opts.strong) return false;
-  if (t.length <= 2) return false;
-  if (/\b(software|data|business|machine|learning|intelligence|product|project|program|quality|assurance|information|technology|technical|senior|junior|staff|principal|cloud|platform|security|network|support|operations|research|science|engineering|development|application|systems?)\b/i.test(t)) return false;
-  return /^[A-Z][a-zA-Z.'-]+(?:[\s-][A-Z][a-zA-Z.'-]+){0,2}$/.test(t) && t.length <= 28 && !/\d/.test(t);
+  return false;
 }
 
 function splitCompanyLocation(company) {
@@ -9200,8 +9321,9 @@ function unstickTitleLocation(title) {
   return { title: t, location: '' };
 }
 function parseRoleLineParts(line) {
-  const { left, dates } = splitRoleAndDates(line);
-  const parts = left.split('|').map(s => s.trim()).filter(Boolean);
+  const cleaned = unstickGluedResumeText(String(line || ''));
+  const { left, dates } = splitRoleAndDates(cleaned);
+  const parts = left.split('|').map(s => s.trim()).filter(p => p && !/^(job title|month yyyy)$/i.test(p));
   let company = '';
   let location = '';
   let title = '';
@@ -9210,23 +9332,47 @@ function parseRoleLineParts(line) {
     if (looksLikeLocationToken(parts[1]) && !looksLikeLocationToken(parts[2])) {
       location = parts[1];
       title = parts.slice(2).join(' ');
-    } else if (looksLikeLocationToken(parts[parts.length - 1], { strong: true })
-      || looksLikeLocationToken(parts[parts.length - 1])) {
+    } else if (looksLikeLocationToken(parts[parts.length - 1])) {
       location = parts[parts.length - 1];
       title = parts.slice(1, -1).join(' ');
     } else {
       title = parts.slice(1).join(' ');
     }
   } else if (parts.length === 2) {
-    company = parts[0];
-    if (looksLikeLocationToken(parts[1], { strong: true })) location = parts[1];
-    else title = parts[1];
+    const second = unstickCompanyPlace(parts[1]);
+    if (looksLikeJobTitleToken(parts[0]) && second.company && second.location) {
+      title = parts[0];
+      company = second.company;
+      location = second.location;
+    } else if (looksLikeJobTitleToken(parts[0]) && !looksLikeJobTitleToken(parts[1]) && !looksLikeLocationToken(parts[1])) {
+      title = parts[0];
+      company = second.company || parts[1];
+      location = second.location || '';
+    } else {
+      company = parts[0];
+      if (second.location && second.company !== parts[1]) {
+        company = parts[0];
+        const leftCo = unstickCompanyPlace(parts[0]);
+        if (looksLikeJobTitleToken(parts[0])) {
+          title = parts[0];
+          company = second.company;
+          location = second.location;
+        } else {
+          location = second.location;
+          title = '';
+        }
+      } else if (looksLikeLocationToken(parts[1], { strong: true })) {
+        location = parts[1];
+      } else {
+        title = parts[1];
+      }
+    }
   } else {
     company = left;
   }
   if (!location && company) {
-    const split = splitCompanyLocation(company);
-    if (split.location) {
+    const split = unstickCompanyPlace(company);
+    if (split.location && split.company && split.company !== company) {
       company = split.company;
       location = split.location;
     }
@@ -9236,15 +9382,33 @@ function parseRoleLineParts(line) {
     if (u.location) {
       title = u.title;
       location = u.location;
+    } else {
+      const c = unstickCompanyPlace(title);
+      if (c.location && c.company) {
+        if (looksLikeJobTitleToken(company)) {
+          title = company;
+          company = c.company;
+        }
+        location = c.location;
+      }
     }
   }
-  if (!title && company) {
-    const u = unstickTitleLocation(company);
-    if (u.location && u.title) {
-      company = u.title;
-      location = location || u.location;
+  if (!title && company && looksLikeJobTitleToken(company) && location) {
+    const loc = unstickCompanyPlace(location);
+    if (loc.company && loc.location) {
+      title = company;
+      company = loc.company;
+      location = loc.location;
     }
   }
+  if (looksLikeJobTitleToken(company) && title && !looksLikeJobTitleToken(title) && !looksLikeLocationToken(title)) {
+    const tmp = company;
+    const u = unstickCompanyPlace(title);
+    company = u.company || title;
+    title = tmp;
+    if (u.location) location = location || u.location;
+  }
+  if (/^job title$/i.test(title)) title = '';
   return { company, location, title, dates };
 }
 
@@ -9280,18 +9444,18 @@ function extractExperienceRoleRecords(resumeText) {
 function formatExperienceLocationLock(resumeText) {
   const roles = extractExperienceRoleRecords(resumeText);
   if (!roles.length) {
-    return 'LOCKED EXPERIENCE LOCATIONS: copy a city/Remote on a role line ONLY if it already appears on that master role. If a role has no location, write Company | Job Title Month YYYY – Month YYYY. Never invent Remote, a city, a state, or company HQ.';
+    return 'LOCKED EXPERIENCE LOCATIONS: copy a city/Remote on a role line ONLY if it already appears on that master role. If a role has no location, write Company | <exact master title> Month YYYY – Month YYYY. Never invent Remote, a city, a state, or company HQ. Never write the words "Job Title".';
   }
   const lines = roles.map((r, i) => {
-    const title = r.title || 'Job Title';
-    const dates = r.dates || 'Month YYYY – Month YYYY';
+    const title = r.title || 'the master job title';
+    const dates = r.dates || 'dates from the master';
     if (r.location) {
       return `  ${i + 1}. ${r.company} — KEEP location "${r.location}". Write: ${r.company} | ${r.location} | ${title} ${dates}`.replace(/\s+/g, ' ').trim();
     }
     return `  ${i + 1}. ${r.company} — NO location on master. Write: ${r.company} | ${title} ${dates}`.replace(/\s+/g, ' ').trim()
       + '  Do NOT add Remote, a city, a state, or HQ.';
   });
-  return `LOCKED EXPERIENCE LOCATIONS (copy from master; never invent):\n${lines.join('\n')}`;
+  return `LOCKED EXPERIENCE LOCATIONS (copy from master; never invent):\n${lines.join('\n')}\nNever write the placeholder words "Job Title" or "Month YYYY" on the page.`;
 }
 
 function companyKeysMatch(a, b) {
@@ -9347,6 +9511,32 @@ function restoreMasterExperienceLocations(text, master) {
     if (next) lines[i] = next;
   }
   return lines.join('\n');
+}
+
+function restoreMasterNamedSection(text, master, headerTest) {
+  const masterSec = extractResumeSections(master).find(s => headerTest(s.header));
+  if (!masterSec) return text;
+  const block = masterSec.lines
+    .map(l => (typeof unstickGluedResumeText === 'function' ? unstickGluedResumeText(l) : l))
+    .join('\n')
+    .replace(/\s+$/, '');
+  if (!block.trim()) return text;
+  const { lines, firstAt } = stripSectionsByHeader(text, headerTest);
+  const insert = block.split('\n');
+  if (firstAt >= 0) {
+    lines.splice(firstAt, 0, ...insert);
+    return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+  lines.push('', ...insert);
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function restoreMasterEducation(text, master) {
+  return restoreMasterNamedSection(text, master, l => /^education$/i.test(normalizeHeader(l)));
+}
+
+function restoreMasterCertifications(text, master) {
+  return restoreMasterNamedSection(text, master, l => /^certif/i.test(normalizeHeader(l)));
 }
 
 function isHangingRoleDateLine(l) {
