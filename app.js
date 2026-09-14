@@ -1,5 +1,5 @@
 /* Jobilly.AI Resume Dashboard */
-const APP_VERSION = '20260914g';
+const APP_VERSION = '20260914i';
 const SCORE_THRESHOLD = 90;
 const SCORE_TARGET = 95;
 const SCORE_MAX = 100;
@@ -9187,8 +9187,7 @@ function formatEduHtml(line) {
     const school = escapeHtml(parts.slice(1).join(', ').replace(/[.,]+$/, ''));
     return `<div class="r-edu-block">`
       + `<div class="r-edu-degree">${degree}</div>`
-      + `<div class="r-edu-school">${school}</div>`
-      + `</div>`;
+      + `<div class="r-edu-school">${school}</div>`;
   }
   const comma = raw.indexOf(',');
   const after = comma > 0 ? raw.slice(comma + 1).trim() : '';
@@ -9197,10 +9196,9 @@ function formatEduHtml(line) {
     && /\b(university|college|institute|school|polytechnic)\b/i.test(after)) {
     return `<div class="r-edu-block">`
       + `<div class="r-edu-degree">${escapeHtml(raw.slice(0, comma).trim())}</div>`
-      + `<div class="r-edu-school">${escapeHtml(after)}</div>`
-      + `</div>`;
+      + `<div class="r-edu-school">${escapeHtml(after)}</div>`;
   }
-  return `<div class="r-edu-block"><div class="r-edu-degree">${escapeHtml(raw)}</div></div>`;
+  return `<div class="r-edu-block"><div class="r-edu-degree">${escapeHtml(raw)}</div>`;
 }
 
 const ROLE_MONTH = '(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
@@ -9714,6 +9712,7 @@ function parseResumeToHtml(text, opts = {}) {
   let entryOpen = false;
   const closeEntry = () => {
     if (entryOpen) {
+      if (/EDUCATION/.test(currentSection)) html += '</div>';
       html += '</div>';
       entryOpen = false;
     }
@@ -9821,6 +9820,7 @@ function resumeCssBlock(bodyPt, lh, sel = '') {
     ${s}.r-edu-block { margin: ${t.spJob} 0 0 4.55pt; padding: 0; }
     ${s}.r-edu-degree { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsRole}; font-weight: bold; color: #000000; margin: 0; padding: 0; line-height: ${t.lhRole}; text-align: left; }
     ${s}.r-edu-school { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsBody}; font-weight: normal; color: #000000; margin: 0.6pt 0 0 0; padding: 0; line-height: ${t.lhBody}; text-align: left; }
+    ${s}.r-entry-edu > .r-edu-school { margin-left: 4.55pt; }
     ${s}.r-role { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsRole}; font-weight: bold; color: #000000; margin: ${t.spJob} 0 0 4.55pt; line-height: ${t.lhRole}; text-align: left; }
     ${s}.r-role i, ${s}.r-job i { font-style: italic; font-weight: bold; }
     ${s}.r-bullet { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsBody}; color: #000000; margin: 0 0 0 18pt; text-indent: -13.5pt; line-height: ${t.lhBody}; mso-line-height-rule: exactly; padding: 0; text-align: left; }
@@ -9844,8 +9844,8 @@ function resumeCss() {
     .r-skill-label { font-weight: bold; color: #000000; }
     b, strong { font-weight: bold; color: #000000; }
     a { color: #1a56c4; text-decoration: underline; }
-    .r-page-break { page-break-before: always; break-before: page; height: 0; margin: 0; padding: 0; border: 0; }
-    .r-page-start { page-break-before: always; break-before: page; }
+    .r-page-break { page-break-before: always; break-before: page; height: 0 !important; margin: 0; padding: 0; border: 0; }
+    .r-page-start { page-break-before: always; break-before: page; padding-top: ${PAGE_MARGINS.page2Top}in; }
     .r-section + .r-job,
     .r-section + .r-role,
     .r-section + .r-bullet,
@@ -9908,16 +9908,17 @@ const PAGE_FIT = {
   MAX_PAGES: 2,
 };
 
-const PAGE_MARGINS = { top: 0.05, right: 0.10, bottom: 0.19, left: 0.10 };
+const PAGE_MARGINS = { top: 0.05, right: 0.10, bottom: 0.19, left: 0.10, page2Top: 0.5 };
 const US_LETTER = { widthIn: 8.5, heightIn: 11 };
 
 function letterPageSizeCss() {
   return `size: letter portrait; size: ${US_LETTER.widthIn}in ${US_LETTER.heightIn}in;`;
 }
 
-function pageMarginsCss() {
+function pageMarginsCss(which = 'first') {
   const m = PAGE_MARGINS;
-  return `${m.top}in ${m.right}in ${m.bottom}in ${m.left}in`;
+  const top = which === 'page2' ? (m.page2Top || m.top) : m.top;
+  return `${top}in ${m.right}in ${m.bottom}in ${m.left}in`;
 }
 
 function applyPageMargins(el) {
@@ -10125,7 +10126,7 @@ function insertVisualPageBreak(paper) {
   if (!paper) return;
   clearPageBreaks(paper);
   const pageBreakY = inchesToPx(US_LETTER.heightIn);
-  const page2Top = inchesToPx(PAGE_MARGINS.top);
+  const page2Top = inchesToPx(PAGE_MARGINS.page2Top || PAGE_MARGINS.top);
   const kids = [...paper.children].filter(el => !el.classList.contains('r-page-break'));
   if (!kids.length) return;
 
@@ -10346,6 +10347,7 @@ function resumePaperLayoutCss() {
       font-size: var(--fs-body, 12pt); font-weight: 400 !important; color: #000; margin: 0.6pt 0 0 0;
       line-height: var(--lh-body, 13.8pt); text-align: left;
     }
+    .resume-paper .r-entry-edu > .r-edu-school { margin-left: 4.55pt; }
     .resume-paper .r-role {
       font-size: var(--fs-role, 13.2pt); font-weight: 700; color: #000;
       margin: var(--sp-job, 1.85pt) 0 0 4.55pt; line-height: var(--lh-role, 13.2pt); text-align: left;
@@ -10386,7 +10388,8 @@ function resumePaperLayoutCss() {
     .resume-paper .r-section + .r-bullet,
     .resume-paper .r-section + .r-skill-line,
     .resume-paper .r-section + .r-body { break-before: avoid; page-break-before: avoid; }
-    @page { ${letterPageSizeCss()} margin: ${pageMarginsCss()}; }
+    @page { ${letterPageSizeCss()} margin: ${pageMarginsCss('page2')}; }
+    @page :first { margin: ${pageMarginsCss('first')}; }
     @media print {
       html, body { margin: 0; padding: 0; background: #fff; }
       .resume-paper {
