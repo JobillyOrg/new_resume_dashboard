@@ -275,11 +275,30 @@ function targetJdTitle(jd, keywords) {
   );
 }
 
+/** Frozen JSON from the original master paste — never the tailored draft. */
+function frozenMasterResumeJson(explicit) {
+  if (explicit) return explicit;
+  if (typeof state !== 'undefined' && state.masterResumeJson) return state.masterResumeJson;
+  return null;
+}
+
 /** Infer dominant career label from master experience titles (for role-pivot guidance). */
 function inferMasterCareerLabel(resumeText, resumeJson) {
-  const rj = resumeJson || state.lastResumeJson;
+  const master = String(
+    (typeof $ === 'function' && $('resumeInput') && $('resumeInput').value)
+    || resumeText
+    || ''
+  );
+  const recs = typeof extractExperienceRoleRecords === 'function'
+    ? extractExperienceRoleRecords(master)
+    : [];
+  const textRoles = recs.map(r => r.title).filter(Boolean);
+  const rj = frozenMasterResumeJson(resumeJson);
   const jsonRoles = (rj?.professional_experience || []).map(j => j.role).filter(Boolean);
-  const roles = jsonRoles.length ? jsonRoles : extractRolesFromResume(resumeText || '');
+  const fallbackRoles = typeof extractRolesFromResume === 'function'
+    ? extractRolesFromResume(master)
+    : [];
+  const roles = textRoles.length ? textRoles : (jsonRoles.length ? jsonRoles : fallbackRoles);
   const blob = roles.join(' ').toLowerCase();
   const checks = [
     [/ai engineer|machine learning|ml engineer|llm|genai|generative ai|deep learning/, 'AI / ML Engineer'],
@@ -310,6 +329,108 @@ function inferMasterCareerLabel(resumeText, resumeJson) {
   return 'the master career profile';
 }
 
+function headerCityNames(master) {
+  const loc = typeof extractContactFields === 'function'
+    ? String(extractContactFields(master || '').location || '').trim()
+    : '';
+  const names = [];
+  if (loc) {
+    names.push(loc);
+    const city = loc.split(',')[0].trim();
+    if (city && city.toLowerCase() !== loc.toLowerCase()) names.push(city);
+  }
+  return names.filter(Boolean).sort((a, b) => b.length - a.length);
+}
+
+/** Job title only — never a header city, state, or trailing comma. */
+function stripPlaceFromJobTitle(title, master) {
+  let t = String(title || '').replace(/\s+/g, ' ').trim().replace(/[|,]+$/g, '').trim();
+  if (!t) return '';
+  const paste = master
+    || (typeof $ === 'function' && $('resumeInput') && $('resumeInput').value)
+    || '';
+  for (const place of headerCityNames(paste)) {
+    const esc = place.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    t = t.replace(new RegExp(`[\\s,|]+${esc}(?:\\s*,\\s*[A-Z]{2})?\\s*$`, 'i'), '').trim();
+    t = t.replace(new RegExp(`^${esc}[\\s,|]+`, 'i'), '').trim();
+  }
+  if (typeof PLACE_RE !== 'undefined') {
+    t = t.replace(new RegExp('[\\s,|]+' + PLACE_RE.source + '\\s*$', 'i'), '').trim();
+  }
+  t = t.replace(/[,\s|]+$/g, '').trim();
+  if (typeof unstickTitleLocation === 'function') {
+    const u = unstickTitleLocation(t);
+    if (u.location && u.title && (typeof looksLikeJobTitleToken !== 'function' || looksLikeJobTitleToken(u.title))) {
+      t = u.title;
+    }
+  }
+  const glued = t.match(/^(.*?\b(?:engineer|analyst|scientist|developer|manager|architect|consultant|specialist|lead|director|associate|intern|administrator|technician))\s+([A-Z][a-zA-Z.'-]+(?:[\s-][A-Z][a-zA-Z.'-]+){0,2}),?$/i);
+  if (glued && typeof looksLikeLocationToken === 'function' && looksLikeLocationToken(glued[2])) {
+    t = glued[1].trim();
+  }
+  return t.replace(/[,\s]+$/g, '').trim();
+}
+
+function collapseRepeatedOpener(s, role) {
+  const esc = String(role || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!esc) return String(s || '').trim();
+  let out = String(s || '').trim();
+  for (let i = 0; i < 4; i++) {
+    const next = out.replace(new RegExp(`^((?:An?|The)\\s+)?${esc}\\s*[,;]?\\s+${esc}\\b`, 'i'), (role || '').trim());
+    if (next === out) break;
+    out = next;
+  }
+  return out.replace(/\s{2,}/g, ' ').trim();
+}
+
+function peelLocationFromSummaryLead(s, role, master) {
+  let out = String(s || '');
+  const escRole = String(role || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const cities = headerCityNames(master);
+  for (const city of cities) {
+    const esc = city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (escRole) {
+      out = out.replace(new RegExp(`(${escRole})(?:\\s*,)?\\s+${esc}(?:\\s*,\\s*[A-Z]{2})?\\s*,?`, 'gi'), '$1');
+    }
+  }
+  return out.replace(/\s{2,}/g, ' ').replace(/\s+,/g, ',').replace(/,\s*,+/g, ',').trim();
+}
+
+/** Most recent EXPERIENCE job title from the master — used for Line 2 and the SUMMARY opener. */
+function masterExperienceRoleTitle(resumeText, resumeJson) {
+  const master = String(
+    (typeof $ === 'function' && $('resumeInput') && $('resumeInput').value)
+    || resumeText
+    || ''
+  );
+  const fromLine = (title) => {
+    const cleaned = stripPlaceFromJobTitle(cleanJobTitle(String(title || '')
+      .replace(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+\d{4}\b.*$/i, '')
+      .replace(/\s*[-–—]\s*(present|current|now).*$/i, '')
+      .trim()), master);
+    if (!cleaned || cleaned.length < 3 || cleaned.length > 70) return '';
+    if (/^(summary|skills|experience|education|projects|professional experience)$/i.test(cleaned)) return '';
+    return cleaned;
+  };
+  const recs = typeof extractExperienceRoleRecords === 'function'
+    ? extractExperienceRoleRecords(master)
+    : [];
+  let fromRec = fromLine(recs[0] && recs[0].title);
+  if (!fromRec && recs[0] && !recs[0].title && typeof looksLikeJobTitleToken === 'function' && looksLikeJobTitleToken(recs[0].company)) {
+    fromRec = fromLine(recs[0].company);
+  }
+  if (fromRec) return fromRec;
+  const rj = resumeJson || frozenMasterResumeJson();
+  const fromJson = fromLine((rj?.professional_experience || [])[0]?.role);
+  if (fromJson) return fromJson;
+  const roles = typeof extractRolesFromResume === 'function' ? extractRolesFromResume(master) : [];
+  if (roles[0] && typeof parseRoleLineParts === 'function') {
+    const t = fromLine(parseRoleLineParts(roles[0]).title);
+    if (t) return t;
+  }
+  return '';
+}
+
 function familiesAligned(a, b) {
   const x = String(a || '');
   const y = String(b || '');
@@ -330,16 +451,17 @@ function familiesAligned(a, b) {
 /** JD skills already evidenced on the master + prior bullets worth reusing. */
 function jdBuildPlanFromMaster(jd, resume, keywords) {
   const jj = (keywords && keywords.jdJson) || state.lastJdJson || {};
-  const rj = state.lastResumeJson;
+  const masterText = (typeof $ === 'function' && $('resumeInput') && $('resumeInput').value) || resume || '';
+  const rj = frozenMasterResumeJson();
   const aliasMap = (keywords && keywords.aliasMap) || {};
   const jdSkills = uniqTerms([
     ...(jj.must_have_skills || []),
     ...(keywords?.jdPrimary || keywords?.primary || []),
   ]).slice(0, 16);
-  const corpus = rj ? corpusFromResumeJson(rj) : String(resume || '');
+  const corpus = rj ? corpusFromResumeJson(rj) : String(masterText);
   const bullets = rj
     ? bulletsFromResumeJson(rj)
-    : String(resume || '').split('\n').map(l => l.trim()).filter(l => /^[-•*]/.test(l));
+    : String(masterText).split('\n').map(l => l.trim()).filter(l => /^[-•*]/.test(l));
   const overlapping = jdSkills.filter(s => keywordPresent(s, corpus, aliasMap));
   const missingOnMaster = jdSkills.filter(s => !keywordPresent(s, corpus, aliasMap));
   const reusable = bullets.filter(b =>
@@ -356,19 +478,22 @@ function jdBuildPlanFromMaster(jd, resume, keywords) {
 
 function formatJdProfileContract(jd, resume, keywords) {
   const target = targetJdTitle(jd, keywords);
-  const masterLabel = inferMasterCareerLabel(resume);
+  const master = (typeof $ === 'function' && $('resumeInput') && $('resumeInput').value) || resume;
+  const pageTitle = masterExperienceRoleTitle(master) || inferMasterCareerLabel(master);
+  const masterLabel = inferMasterCareerLabel(master);
   const matched = familiesAligned(roleFamilyFromTitle(masterLabel), roleFamilyFromTitle(target))
     || roleFamilyFromTitle(masterLabel) === roleFamilyFromTitle(target);
   const plan = jdBuildPlanFromMaster(jd, resume, keywords);
-  return `JD ROLE CONTRACT — works for ANY posting. The page is always the JD role.
-THIS PAGE IS: ${target}
-MASTER READS AS: ${masterLabel}  (${matched ? 'MATCH — reuse previous-role work that already proves this JD' : 'DIFFERENT — convert the page to the JD role; reuse only overlapping prior work'})
+  return `JD ROLE CONTRACT — Line 2 and SUMMARY keep the most recent EXPERIENCE job title. Skills and bullets tailor to the JD.
+LINE 2 + SUMMARY TITLE: ${pageTitle}  (most recent experience role — do NOT replace with the JD title)
+TAILOR SKILLS / BULLETS TO: ${target}
+MASTER READS AS: ${masterLabel}  (${matched ? 'MATCH — reuse previous-role work that already proves this JD' : `DIFFERENT family — still keep ${pageTitle} on Line 2 and SUMMARY; tailor overlapping work to the JD`})
 
-HOW TO BUILD (same rules whether roles match or not):
+HOW TO BUILD:
 1. SKILLS = this JD's must-haves first. Add a master tool only if it supports this JD.
 2. EXPERIENCE = rewrite bullets to prove the JD responsibilities below. Keep companies, PAST titles, and dates.
 3. PREVIOUS ROLE IF MATCHED: keep and polish master bullets that already show JD skills/duties (listed below).
-4. PREVIOUS ROLE IF NOT MATCHED: still write as ${target}. Reuse only overlapping skills/bullets. Do not keep a full ${masterLabel} stack dominating SUMMARY or experience.
+4. PREVIOUS ROLE IF NOT MATCHED: keep Line 2 + SUMMARY as ${pageTitle}. Reuse only overlapping skills/bullets. Do not rename the person to ${target}.
 5. Never invent tools, tests, employers, titles, or metrics.
 
 JD MUST-HAVE SKILLS (lead SKILLS + SUMMARY + experience): ${plan.jdSkills.join(', ') || 'see locked set'}
@@ -382,21 +507,27 @@ ${plan.reusable.length ? plan.reusable.map(b => `  - ${String(b).slice(0, 180)}`
 
 function formatRolePivotBlock(jd, resume, keywords) {
   const target = targetJdTitle(jd, keywords);
-  const masterLabel = inferMasterCareerLabel(resume);
-  const rj = state.lastResumeJson;
-  const jsonRoles = (rj?.professional_experience || []).map(j => j.role).filter(Boolean).slice(0, 4);
-  const masterRoles = jsonRoles.length ? jsonRoles : extractRolesFromResume(resume || []).slice(0, 4);
+  const master = (typeof $ === 'function' && $('resumeInput') && $('resumeInput').value) || resume;
+  const pageTitle = masterExperienceRoleTitle(master) || inferMasterCareerLabel(master);
+  const masterLabel = inferMasterCareerLabel(master);
+  const recs = typeof extractExperienceRoleRecords === 'function'
+    ? extractExperienceRoleRecords(master)
+    : [];
+  const textRoles = recs.map(r => r.title).filter(Boolean).slice(0, 4);
+  const jsonRoles = (frozenMasterResumeJson()?.professional_experience || []).map(j => j.role).filter(Boolean).slice(0, 4);
+  const masterRoles = textRoles.length ? textRoles : (jsonRoles.length ? jsonRoles : extractRolesFromResume(master || '').slice(0, 4));
   const matched = familiesAligned(roleFamilyFromTitle(masterLabel), roleFamilyFromTitle(target))
     || roleFamilyFromTitle(masterLabel) === roleFamilyFromTitle(target);
-  return `TARGET ROLE — any JD: write a ${target} resume (not a hybrid of the master career).
-- TARGET: ${target}
-- MASTER: ${masterLabel} (${matched ? 'matched family — reuse previous-role proof' : 'different family — convert page to JD role'})
+  return `TARGET ROLE — Line 2 and SUMMARY use the most recent EXPERIENCE title. Skills/bullets still prove this JD.
+- PAGE TITLE (Line 2 + SUMMARY opener): ${pageTitle}
+- JD BEING TAILORED: ${target}
+- MASTER: ${masterLabel} (${matched ? 'matched family — reuse previous-role proof' : 'different family — keep experience title; tailor overlapping work'})
 - Keep these past titles exactly: ${masterRoles.join(' · ') || 'see master'}
-- Line 2 + SUMMARY opener = ${target}. Never "${masterLabel} / ${target}".
+- Line 2 + SUMMARY opener = ${pageTitle}. Never swap in the JD title "${target}".
 - Keep every real company, past job title, and date. Do NOT rename past jobs to "${target}".
 ${matched
     ? `- Previous role matches this family. Rebuild SKILLS and bullets around THIS posting's must-haves and duties. Keep prior bullets that already prove those duties; drop off-JD side stacks from the top third.`
-    : `- Previous role does not match. Convert SUMMARY, SKILLS order, and bullet framing to ${target}. Reuse only master work that overlaps JD skills/duties. Demote ${masterLabel}-only tools. Invent nothing.`}
+    : `- Previous role does not match. Keep Line 2 + SUMMARY as ${pageTitle}. Reorder SKILLS and reframe bullets toward ${target} using only overlapping master work. Invent nothing.`}
 - Close EVERY score-rule gap below that is stack-aligned and truthful — incomplete gap fill = failed rewrite.`;
 }
 
@@ -420,7 +551,7 @@ function formatMandatoryCloseList(unified, mustAdd, atsMustAdd) {
     `2. Skills-only today — rewrite so each of these appears in an EXPERIENCE bullet (not Skills dump): ${skillsOnly.join(', ') || 'none'}`,
     `3. Weave these JD ATS phrases naturally: ${phrases.join(' · ') || 'none'}`,
     `4. Raise these weak score-rule categories with the 20 writing rules: ${weak.join('; ') || 'none weak'}`,
-    '5. SUMMARY opens with the TARGET JD title (never a number), then years + 8–9 JD must-have tools. The whole paragraph is that JD role.',
+    '5. SUMMARY opens with the most recent EXPERIENCE job title (never a number, never the JD title), then years + 8–9 JD must-have tools.',
     '6. SKILLS are built from JD must-haves; keep previous-role tools only when they overlap this JD.',
     '7. EXPERIENCE is built from JD responsibilities. Reuse previous-role bullets that already match; reframe or shrink the rest.',
     '8. FORMAT MUST match the Anirudh template exactly (Name / Title / Contact | sections ALL-CAPS / role lines / "- " bullets) — wrong format = failed rewrite.',
@@ -434,13 +565,12 @@ function formatMandatoryTemplateBlock(headline, resumeText) {
   const skillsHeader = /\bTECHNICAL\s+SKILLS\b/i.test(String(resumeText || ''))
     ? 'TECHNICAL SKILLS'
     : (/\bSKILLS\b/i.test(String(resumeText || '')) ? 'SKILLS' : 'TECHNICAL SKILLS');
-  const title = headline
-    ? String(headline).split('|')[0].trim()
-    : 'exact JD title';
+  const title = masterExperienceRoleTitle(resumeText)
+    || (headline ? String(headline).split('|')[0].trim() : 'the most recent EXPERIENCE job title');
   const masterForRoles = ($('resumeInput') && $('resumeInput').value) || resumeText;
   return `FORMAT IS MANDATORY (Anirudh Word template) — non-negotiable; wrong layout = failed rewrite:
 Line 1: Full Name in Title Case (never ALL CAPS)
-Line 2: Target job title only — ${title}
+Line 2: Most recent EXPERIENCE job title only — ${title}. Do NOT put the JD title on Line 2.
 ${formatContactLineInstruction(resumeText)}
 Line 4: blank
 Then ONLY these ALL-CAPS headers (exact spelling):
@@ -496,7 +626,7 @@ Write like a human: prose summary, real bullets — never comma-dump tools or ta
 
 function formatTwentyRulesRewriteBlock() {
   return `20 US FULL-TIME RESUME RULES (use these to WRITE the resume):
-1. 1-2 pages. 2. Tailor to the JD — every JD must-have tool must appear in EXPERIENCE, not only Skills. 3. Skills-only is a fail for that tool: weave it into a real work bullet. Naming a JD service on work you already did (S3 on AWS pipelines, SQL in warehouse/Spark bullets) is required tailoring, not a fake job. Do not invent employers, degrees, or metrics. 4. Every bullet answers "so what?" (action → technology → problem → result). 5. Quantify when numbers exist; do not invent. 6. Achievements over responsibilities. 7. Strongest info in the top third. 8. No generic objective. 9-10. Use JD terminology when accurate. 11. No graphics/icons/tables/columns. 12. No sensitive personal data. 13. Concise education. 14. Only relevant projects. 15. Experience is the main section. 16. Short bullets, not paragraphs. 17. Technologies must be interview-defensible. 18. Do not exaggerate ownership if the master said "contributed". 19. Show career progression. 20. The page should look like a targeted JD-role resume — not the master career with extra keywords.`;
+1. 1-2 pages. 2. Tailor to the JD — every JD must-have tool must appear in EXPERIENCE, not only Skills. 3. Skills-only is a fail for that tool: weave it into a real work bullet. Naming a JD service on work you already did (S3 on AWS pipelines, SQL in warehouse/Spark bullets) is required tailoring, not a fake job. Do not invent employers, degrees, or metrics. 4. Every bullet answers "so what?" (action → technology → problem → result). 5. Quantify when numbers exist; do not invent. 6. Achievements over responsibilities. 7. Strongest info in the top third. 8. No generic objective. 9-10. Use JD terminology when accurate. 11. No graphics/icons/tables/columns. 12. No sensitive personal data. 13. Concise education. 14. Only relevant projects. 15. Experience is the main section. 16. Short bullets, not paragraphs. 17. Technologies must be interview-defensible. 18. Do not exaggerate ownership if the master said "contributed". 19. Show career progression. 20. Tailor skills and bullets to the JD. Line 2 and SUMMARY keep the most recent EXPERIENCE job title — do not rename the person to the JD title.`;
 }
 
 function formatAiRubricRewriteTargets() {
@@ -508,7 +638,7 @@ D. Skill evidence and context (10) — prove important tools with action + conte
 E. Experience level and seniority (10) — show ownership, production systems, technical decisions, troubleshooting/optimization, and collaboration appropriate to the JD level. Do not rename past job titles.
 F. Achievements and business impact (8) — bullets should show results (automated, reduced time, reliability, users supported) when true. Never manufacture metrics.
 G. ATS parseability and formatting (5) — simple single-column layout, ALL-CAPS headers, company/title/dates easy to parse, hyphen bullets, selectable text.
-H. Job title / role alignment (2) — Line 2 and SUMMARY = JD title. Keep legitimate past titles. Do not rewrite history to copy the JD title onto old jobs.
+H. Job title / role alignment (2) — Line 2 and SUMMARY open with the most recent EXPERIENCE job title, not the JD title. Keep legitimate past titles. Do not copy the JD title onto Line 2, SUMMARY, or old jobs.
 I. Recruiter readability (5) — in ~10 seconds a recruiter should see your role, years, strongest tech, where you worked, and that recent work matches this opening.
 SUCCESS: ${SCORE_RULE_NAME} alignment ${SCORE_THRESHOLD}+ (Push aims for ${SCORE_TARGET}+). Skills-only dumps cannot clear ${SCORE_THRESHOLD}.`;
 }
@@ -550,7 +680,7 @@ function formatScoreRuleGapReport(unified) {
       } else if (meta.key === 'semanticResponsibilityMatch') {
         lines.push('    · Build experience from JD duties. Reuse previous-role bullets that already match; reframe only overlapping work if the master career differs.');
       } else if (meta.key === 'jobTitleAlignment') {
-        lines.push('    · Keep legitimate past titles; SUMMARY + Line 2 + recent work must read as the JD role');
+        lines.push('    · Keep Line 2 and SUMMARY as the most recent EXPERIENCE job title; do not swap in the JD title');
       } else {
         lines.push(`    · Raise ${meta.letter} by matching more of this category’s checks`);
       }
@@ -571,17 +701,19 @@ function formatScoreRuleGapReport(unified) {
 
 function formatExternalAtsBlock(jd, keywords) {
   const role = targetJdTitle(jd, keywords);
+  const pageTitle = masterExperienceRoleTitle(($('resumeInput') && $('resumeInput').value) || '')
+    || 'the most recent EXPERIENCE job title';
   const primary = dropCertTerms(keywords?.primary || keywords?.jdPrimary || []);
   const atsPhrases = filterExtractedSkills(keywords?.atsKeywords || []);
   return `LAYOUT + KEYWORD ALIGNMENT (supports A–I JD-alignment scoring):
-- Line 2 is the TARGET role for this posting: ${role}. Do NOT rename past job titles to copy the JD.
-- SUMMARY is a ${role} profile: open with the job title (never a number), then years + 8-9 JD must-have tools in natural prose. No %/$ metrics in SUMMARY. Not a hybrid of a different master career.
+- Line 2 is the most recent EXPERIENCE job title: ${pageTitle}. Do NOT put the JD title "${role}" on Line 2. Do NOT rename past job titles to copy the JD.
+- SUMMARY is a ${pageTitle} profile: open with that experience title (never a number, never the JD title), then years + 8-9 JD must-have tools in natural prose. No %/$ metrics in SUMMARY.
 - JD must-have skills lead SKILLS; prove them in EXPERIENCE bullets connected to real work (JD duties first)
 - Use the JD's exact spelling when it is true: ${primary.slice(0, 14).join(', ') || 'see locked set'}
 - Weave ATS phrases naturally (never comma dumps or repeating one keyword ten times): ${atsPhrases.slice(0, 10).join(' · ') || 'n/a'}
 - Add metrics only when they are real on the master — never invent records, %, or dollars
 - Prefer achievement-shaped bullets (Built/Designed/Reduced/Improved/Automated…) over "Responsible for…"
-- Top third proves ${role} fit in ~10 seconds: role, years, strongest JD tech, where you worked
+- Top third proves fit in ~10 seconds: ${pageTitle}, years, strongest JD tech, where you worked
 - ALL-CAPS headers: SUMMARY, SKILLS (or TECHNICAL SKILLS), PROFESSIONAL EXPERIENCE, EDUCATION
 - Avoid: keyword stuffing, tools with no work evidence, leftover bullets from a different career family, rival-cloud mixes in one bullet`;
 }
@@ -623,14 +755,14 @@ CLOSE THESE GAPS (stack-aligned only — leave none open):
 - Fixes to apply: ${suggestions.slice(0, 6).map(s => String(s)).join(' | ') || 'prove every JD tool in experience; raise metric density; mirror JD responsibilities'}
 
 RULES:
-- Do not change name, contact, companies, PAST job titles, dates, or education (Line 2 = TARGET JD title)
+- Do not change name, contact, companies, PAST job titles, dates, or education (Line 2 = most recent EXPERIENCE job title, not the JD title)
 - Keep the master's skill category layout; add tools into existing lines
 - Weave each missing skill inside a bullet sentence — never tack ", Skill." at the end
 - Add realistic metrics to bullets that lack numbers (reuse the resume's scale)
 - Each role: 6-7 bullets. Keep extra sections already on the resume. If PROJECTS exists, keep those same projects once as a name plus hyphen bullets — no dates. Do not invent a second Projects section.
 - No H1B, visa, or work authorization language in SUMMARY
 - Prefer evidence and clarity over stuffing
-- Pivot the whole page to the JD role (summary, skills order, experience). Do not keep the master career as the profile.
+- Keep Line 2 and SUMMARY as the most recent experience role. Tailor skills order and bullets to the JD. Do not rename the person to the JD title.
 - Keep Anirudh format exactly (ALL-CAPS headers, role lines, "- " bullets)
 - Do not add a city/Remote/HQ to a role that had no location on the master
 - SUMMARY years must be the calculated EXPERIENCE tenure, never a JD range like "2-5 years" or "3-4 years"
@@ -647,16 +779,22 @@ OUTPUT: complete resume only, starting with the candidate name.`;
 }
 
 function buildProofreadPrompt(jd, master, draft) {
-  const title = currentHeadline() || 'keep Line 2 as the JD title';
-  return `You are a final proofreader. Read the TAILORED resume once against the MASTER. Fix only copy mistakes. Do not retailor for the job. Do not add skills.
+  const title = masterExperienceRoleTitle(master) || 'the most recent EXPERIENCE job title';
+  const city = extractContactFields(master).location || '';
+  const skillsHeader = /\bTECHNICAL\s+SKILLS\b/i.test(String(master || ''))
+    ? 'TECHNICAL SKILLS'
+    : (/\bSKILLS\b/i.test(String(master || '')) ? 'SKILLS' : 'TECHNICAL SKILLS');
+  return `You are the FINAL READER of this tailored resume. Read the page from top to bottom like a recruiter. You do NOT score it. Scoring is a separate 9-point rubric in the browser.
 
-MASTER (source of truth for contact, companies, dates, role locations, what exists):
+Your only job: fix formatting, duplication, broken copy, and anything that does not read as a clean US resume. Do not retailor for the job. Do not add skills, companies, jobs, degrees, metrics, or contact that is not on the master.
+
+MASTER (source of truth for contact, companies, dates, role locations, extra sections, what exists):
 ${String(master || '').slice(0, 9000)}
 
-TAILORED DRAFT (fix this and output the full resume):
+TAILORED DRAFT (read every line; output the corrected full resume):
 ${String(draft || '').slice(0, 12000)}
 
-Line 2 must stay: ${title}
+${formatMandatoryTemplateBlock(title, master)}
 
 ${formatLockedContactBlock(master)}
 
@@ -664,31 +802,72 @@ ${formatLockedTenureBlock(master)}
 
 ${formatExperienceLocationLock(master)}
 
-FIX IF PRESENT:
-- Duplicate tenure in SUMMARY (e.g. "with 3+ years of experience 3+ years of experience") — keep it ONCE after the job title
-- Repeated words or doubled phrases
-- Decimal years like 7.2 → write 7+ years. Never a JD range like 2-5 years
-- SUMMARY starting with a number — open with the job title, then tenure
-- Phone, email, LinkedIn, GitHub, or city that is NOT on the master header — delete it. If the master has LinkedIn (a URL or the word LinkedIn), KEEP it on Line 3 — do not omit it. Do not invent a slug unless the master already has one
-- A city/Remote/HQ on an experience role that the master role did not have — delete it
-- Doubled section headings or a second PROJECTS block
+${extraSectionsPromptBlock(master)}
+
+LINE 2 MUST BE EXACTLY: ${title}
+${city ? `Line 3 personal city: ${city} — only on the contact line, never on Line 2 or the SUMMARY opener.` : 'No personal city — do not invent one.'}
+
+SCAN TOP TO BOTTOM. Fix every hit. Then re-read once to confirm the page makes sense.
+
+1. HEADER
+- Line 1: name in Title Case, not ALL CAPS, not doubled
+- Line 2: job title only. Bad: "${title} St. Louis," or "${title}, ${city || 'City'}". Good: "${title}"
+- Line 3: one contact line, fields that exist on the master, pipe-separated, no invented phone/email/LinkedIn/GitHub/city. Keep LinkedIn/GitHub if they are on the master (URL or the word). Do not invent slugs
+- One blank line, then SUMMARY. No extra blank lines, no markdown, no **bold**
+
+2. SUMMARY
+- One prose paragraph. No bullets, no %, no $, no tables
+- Opens with "${title}" ONCE, then tenure, then the rest. Bad: "${title} St. Louis, ${title} St. Louis, with 3+ years…"
+- No city on the opener. No duplicate tenure. No leading number. No JD years range (2-5 years)
+- Reads as English: no doubled words, no "including including", no trailing "using Skill, Skill"
+
+3. ${skillsHeader}
+- Keep the master's category labels and order
+- No duplicated heading. No skill listed twice on the same line. No comma-dump at the end of a line
+- Do not invent a new Technical Skills line if the master did not have one
+
+4. PROFESSIONAL EXPERIENCE
+- Heading once, ALL-CAPS
+- Each role is ONE line: Company | Title Dates  OR  Company | Location | Title Dates — location ONLY if that same master role had it. Never copy the header city onto a role. Never dates on a second line. Never Title glued to a city (EngineerCA, Analyst St. Louis)
+- Keep company names, past titles, and dates as on the master
+- 6–7 bullets per role, each "- " (hyphen space), each a complete sentence ending with a period
+- Every bullet must read: action → work → result. Fix fragments, doubled phrases, "and Tableau" dumps, missing verbs, glued words
+- No duplicate bullets. No empty bullets. No two clouds in one bullet
+
+5. EDUCATION
+- Heading once
+- Degree on its own line; school / city on the next line
+- Do not invent a school, degree, or date. Do not merge education into experience
+
+6. EXTRA SECTIONS (Projects, Awards, Volunteer, Languages, …)
+- Keep every extra section that is on the master, same heading, same order, once
+- Do not invent extra sections. Do not duplicate PROJECTS
+- Project titles are names only (no dates/location/role line) plus "- " bullets
+
+7. PAGE-WIDE COPY
+- Repeated words, doubled phrases, duplicate section headings
+- Broken punctuation (, ,  ..  "and .")
+- Markdown, tables, icons, columns, ALL-CAPS body text
+- H1B / visa / citizenship / sponsorship language in SUMMARY or SKILLS
+- Sentences that do not make sense — rewrite the sentence so it is grammatical, keeping the same facts
 
 DO NOT:
 - Add skills, companies, jobs, degrees, or metrics
 - Change past job titles, dates, or company names
-- Rewrite bullets for keywords unless a sentence is broken from a duplicate
+- Rewrite bullets for keywords unless the sentence is broken
 - Invent contact details
-- Delete JD must-have tools already in SKILLS or EXPERIENCE — keep them woven in
+- Delete JD must-have tools already in SKILLS or EXPERIENCE
+- Assign or mention a numeric score
 
 JOB DESCRIPTION (context only — do not stuff new JD text):
-${String(jd || '').slice(0, 2500)}
+${String(jd || '').slice(0, 2000)}
 
 OUTPUT the complete corrected resume only, starting with the candidate name.`;
 }
 
 async function proofreadTailoredResume(jd, draft) {
   const master = ($('resumeInput') && $('resumeInput').value) || '';
-  const raw = await callGemini(buildProofreadPrompt(jd, master, draft), { maxTokens: 7000 });
+  const raw = await callGemini(buildProofreadPrompt(jd, master, draft), { maxTokens: 8000 });
   const cleaned = cleanupResume(raw, { master, keywords: state.keywords });
   if (!cleaned || cleaned.length < 200) return draft;
   return cleaned;
@@ -1053,6 +1232,8 @@ let state = {
   activeJdId: '',
   lastUnderstanding: null,
   lastResumeJson: null,
+  /** Frozen JSON from the master paste — never overwritten by tailored drafts. */
+  masterResumeJson: null,
   lastJdJson: null,
   lastMissingReport: null,
   lastAtsUnified: null,
@@ -1281,6 +1462,7 @@ function scheduleSaveWorkspace() {
 function onResumeInput() {
   updateCounts();
   clearManualScoreGate();
+  state.masterResumeJson = null;
   scheduleSaveWorkspace();
 }
 
@@ -1369,6 +1551,7 @@ function setBaseResume(text, fileName, extra = {}) {
   updateCounts();
   state.keywords = null;
   state.kwHash = '';
+  state.masterResumeJson = null;
   clearManualScoreGate();
   saveWorkspace();
 }
@@ -1854,6 +2037,12 @@ function formatContactLine(line) {
       if (/^linkedin$/i.test(p)) return p;
       return p;
     }
+    if (/\bgithub\b/i.test(p)) {
+      const gh = extractGithubHandle(p);
+      if (gh) return gh;
+      if (/^github$/i.test(p)) return p;
+      return p;
+    }
     const phoneMatch = p.match(/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/);
     if (phoneMatch) return formatPhoneUS(phoneMatch[0]);
     return p;
@@ -1871,7 +2060,7 @@ function normalizeContactInResume(text) {
       continue;
     }
     if (isSectionHeader(l)) break;
-    if (/@/.test(l) || /\d{3}[\s.()-]*\d{3}/.test(l) || /linkedin/i.test(l)) {
+    if (/@/.test(l) || /\d{3}[\s.()-]*\d{3}/.test(l) || /linkedin/i.test(l) || /\bgithub\b/i.test(l)) {
       const trimmed = formatContactLine(l);
       if (trimmed !== l) lines[i] = lines[i].replace(l, trimmed);
     }
@@ -1953,7 +2142,7 @@ function extractPersonalLocation(text, resumeJson) {
   const header = resumeHeaderLines(text);
   const standalone = [];
   for (const l of header) {
-    if (/@/.test(l) || /\d{3}[\s.()-]*\d{3}/.test(l) || /linkedin/i.test(l)) continue;
+    if (/@/.test(l) || /\d{3}[\s.()-]*\d{3}/.test(l) || /linkedin/i.test(l) || /\bgithub\b/i.test(l)) continue;
     if (isSchoolishLine(l)) continue;
     const place = extractPlaceToken(l);
     if (!place) continue;
@@ -1963,9 +2152,9 @@ function extractPersonalLocation(text, resumeJson) {
   if (standalone.length) return standalone[0];
 
   for (const l of header) {
-    if (!(/@/.test(l) || /\d{3}/.test(l) || /linkedin/i.test(l))) continue;
+    if (!(/@/.test(l) || /\d{3}/.test(l) || /linkedin/i.test(l) || /\bgithub\b/i.test(l))) continue;
     for (const p of l.split(/[|•]/).map(s => s.trim())) {
-      if (/@/.test(p) || /\d{3}/.test(p) || /linkedin/i.test(p) || isSchoolishLine(p)) continue;
+      if (/@/.test(p) || /\d{3}/.test(p) || /linkedin/i.test(p) || /\bgithub\b/i.test(p) || isSchoolishLine(p)) continue;
       const place = extractPlaceToken(p);
       if (place) return place;
     }
@@ -2021,11 +2210,11 @@ function restoreMasterLocation(text, master) {
       continue;
     }
     if (typeof isSectionHeader === 'function' && isSectionHeader(l)) break;
-    if (/@/.test(l) || /\d{3}[\s.()-]*\d{3}/.test(l) || /linkedin/i.test(l)) {
+    if (/@/.test(l) || /\d{3}[\s.()-]*\d{3}/.test(l) || /linkedin/i.test(l) || /\bgithub\b/i.test(l)) {
       const parts = l.split('|').map(p => p.trim()).filter(Boolean);
       let replaced = false;
       const next = parts.map(p => {
-        if (/@/.test(p) || /\d{3}/.test(p) || /linkedin/i.test(p)) return p;
+        if (/@/.test(p) || /\d{3}/.test(p) || /linkedin/i.test(p) || /\bgithub\b/i.test(p)) return p;
         if (extractPlaceToken(p)) {
           replaced = true;
           return loc;
@@ -2043,8 +2232,42 @@ function restoreMasterLocation(text, master) {
 function extractGithubHandle(text) {
   const m = String(text || '').match(/(?:https?:\/\/)?(?:www\.)?github\.com\/([A-Za-z0-9_-]+)/i);
   if (!m) return '';
-  if (/^(username|yourname|profile)$/i.test(m[1])) return '';
+  if (/^(username|yourname|profile|settings|explore|features|topics|marketplace|login|signup|about|pricing|orgs|notifications)$/i.test(m[1])) return '';
   return `github.com/${m[1]}`;
+}
+
+function githubFromHeader(header) {
+  const url = extractGithubHandle(header);
+  if (url) return url;
+  if (/\bgithub\b/i.test(header)) return 'GitHub';
+  return '';
+}
+
+function stripFakeGitHub(text) {
+  const master = ($('resumeInput') && $('resumeInput').value) || '';
+  const token = extractContactFields(master).github;
+  const url = extractGithubHandle(token) || extractGithubHandle(master);
+  const keepLabel = Boolean(url)
+    || /\bgithub\b/i.test(String(token || ''))
+    || /\bgithub\b/i.test(resumeHeaderLines(master).join('\n'));
+  const lines = String(text || '').split('\n');
+  for (let i = 0; i < Math.min(lines.length, 10); i++) {
+    const l = String(lines[i] || '').trim();
+    if (!l) continue;
+    if (typeof isSectionHeader === 'function' && isSectionHeader(l)) break;
+    if (!/\bgithub\b/i.test(l)) continue;
+    let next = lines[i];
+    if (url) {
+      next = next.replace(/(?:https?:\/\/)?(?:www\.)?github\.com\/(?:username|yourname|profile)\b/gi, url);
+    } else {
+      next = next
+        .replace(/\s*\|\s*(?:https?:\/\/)?(?:www\.)?github\.com\/[A-Za-z0-9_-]+\b/gi, keepLabel ? ' | GitHub' : '')
+        .replace(/(?:https?:\/\/)?(?:www\.)?github\.com\/[A-Za-z0-9_-]+\b/gi, keepLabel ? 'GitHub' : '');
+      if (!keepLabel) next = next.replace(/\s*\|\s*GitHub\b/gi, '');
+    }
+    lines[i] = next;
+  }
+  return lines.join('\n');
 }
 
 function linkedinFromHeader(header) {
@@ -2066,7 +2289,7 @@ function extractContactFields(resumeText, resumeJson = null) {
     email,
     phone: formatPhoneUS(rawPhone),
     linkedin: linkedinFromHeader(header),
-    github: extractGithubHandle(header),
+    github: githubFromHeader(header),
     location: extractPersonalLocation(resumeText, resumeJson),
   };
 }
@@ -2081,7 +2304,7 @@ function formatContactLineInstruction(resumeText) {
   if (!line) {
     return 'Line 3: omit — the master has no phone, email, LinkedIn, GitHub, or city. Do NOT invent any of them.';
   }
-  return `Line 3: ${line}  (copy exactly; include ONLY these master fields; if LinkedIn is on the master keep it; never invent a phone, LinkedIn slug, GitHub, email, or city)`;
+  return `Line 3: ${line}  (copy exactly; include ONLY these master fields; if LinkedIn or GitHub is on the master keep it; never invent a phone, LinkedIn slug, GitHub, email, or city)`;
 }
 
 function formatLockedContactBlock(resumeText) {
@@ -2095,10 +2318,13 @@ function formatLockedContactBlock(resumeText) {
   Email: ${cf.email || 'OMIT — master has no email'}
   Phone: ${cf.phone || 'OMIT — master has no phone number'}
   LinkedIn: ${li}
-  GitHub: ${cf.github || 'OMIT — master has no GitHub'}
+  GitHub: ${cf.github
+    ? ( /github\.com\//i.test(cf.github) ? cf.github : 'GitHub — KEEP this word on Line 3. Do not omit it. Do not invent a slug.')
+    : 'OMIT — master has no GitHub'}
   Location: ${cf.location || 'OMIT — master header has no personal city'}
   Line 3 must be exactly: ${line || '[no contact fields — omit them]'}
   If LinkedIn is on the master (URL or the word LinkedIn), it MUST stay on Line 3.
+  If GitHub is on the master (URL or the word GitHub), it MUST stay on Line 3.
   Personal city only — do NOT substitute a college city, university city, or employer office city.`;
 }
 
@@ -2106,7 +2332,7 @@ function isHeaderContactLine(l) {
   const t = String(l || '').trim();
   if (!t || (typeof isSectionHeader === 'function' && isSectionHeader(t))) return false;
   if (/@/.test(t)) return true;
-  if (/linkedin/i.test(t) || /github\.com/i.test(t) || /lnkd\.in/i.test(t)) return true;
+  if (/linkedin/i.test(t) || /\bgithub\b/i.test(t) || /lnkd\.in/i.test(t)) return true;
   if (/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/.test(t)) return true;
   return false;
 }
@@ -2904,18 +3130,31 @@ function rangesFromExperienceSection(resumeText) {
 }
 
 function estimateResumeExperienceYears(resumeText, resumeJson) {
-  const rj = resumeJson || (typeof state !== 'undefined' ? state.lastResumeJson : null);
-  let ranges = rangesFromExperienceJobs(rj?.professional_experience);
-  if (!ranges.length) ranges = rangesFromExperienceSection(resumeText || (rj ? resumeJsonToScoreText(rj) : '') || '');
+  const master = String(
+    (typeof $ === 'function' && $('resumeInput') && $('resumeInput').value)
+    || resumeText
+    || ''
+  );
+  let ranges = rangesFromExperienceSection(master);
+  if (!ranges.length && typeof extractExperienceRoleRecords === 'function') {
+    for (const rec of extractExperienceRoleRecords(master)) {
+      const m = String(rec.dates || '').match(EXP_ROLE_DATE_RE);
+      if (!m) continue;
+      const startRaw = `${m[1] || ''} ${m[2]}`.trim();
+      const endRaw = /present|current|now|today|ongoing/i.test(m[4]) ? 'Present' : `${m[3] || ''} ${m[4]}`.trim();
+      const r = parseExperienceDateRange(startRaw, endRaw);
+      if (r) ranges.push(r);
+    }
+  }
+  if (!ranges.length) ranges = rangesFromExperienceJobs(resumeJson?.professional_experience);
   if (!ranges.length) {
-    return { years: null, roleCount: (rj?.professional_experience || []).length, note: 'Could not parse experience dates from the EXPERIENCE section' };
+    return { years: null, roleCount: (resumeJson?.professional_experience || []).length, note: 'Could not parse experience dates from the EXPERIENCE section' };
   }
   const merged = mergeMonthRanges(ranges);
   const totalMonths = merged.reduce((sum, r) => sum + (r.end - r.start + 1), 0);
-  const jobs = (rj?.professional_experience || []).length;
   return {
     years: monthsToYears(totalMonths),
-    roleCount: jobs || ranges.length,
+    roleCount: ranges.length,
     note: '',
   };
 }
@@ -2944,16 +3183,17 @@ function formatLockedTenureBlock(resumeText, resumeJson) {
   const master = ($('resumeInput') && $('resumeInput').value) || resumeText || '';
   const tenure = estimateResumeExperienceYears(
     master,
-    resumeJson || (typeof state !== 'undefined' ? state.lastResumeJson : null),
+    resumeJson || frozenMasterResumeJson(),
   );
   const label = tenure.years != null ? formatTenureForSummary(tenure.years) : '';
   if (!label) {
     return `LOCKED SUMMARY YEARS: could not parse job dates. Do not copy a JD years range into SUMMARY (not "2-5 years", "3-4 years", "2-5+ years").`;
   }
+  const role = masterExperienceRoleTitle(master) || 'the most recent EXPERIENCE job title';
   return `LOCKED SUMMARY YEARS — calculated from EXPERIENCE job dates only (month+year, gaps not counted, education ignored):
   ${label} (exact ${tenure.years} years across ${tenure.roleCount} role(s)).
   If leftover months exist, write the whole years with a plus (7.2 → "7+ years"). Never write a decimal like "7.2 years".
-  Weave this exact tenure after the job title: "Data Analyst with ${label} of experience…".
+  Weave this exact tenure after the job title: "${role} with ${label} of experience…".
   Do NOT start SUMMARY with a number (never "${label} of experience…" as the first words).
   NEVER write a range: not "2-5 years", "3-4 years", "2-5+ years", "1 to 6 years".
   NEVER copy the JD years requirement into SUMMARY. NEVER use a different number from the master summary. Do not use college dates.`;
@@ -2970,10 +3210,8 @@ function rewriteSummaryTenureLine(line, label) {
 }
 
 function summaryLeadRoleTitle() {
-  const h = (typeof currentHeadline === 'function' && currentHeadline()) || '';
-  const fromHeadline = String(h).split('|')[0].trim();
-  if (fromHeadline) return fromHeadline;
-  return String((typeof state !== 'undefined' && (state.keywords?.role?.title || state.keywords?.role?.label)) || '').trim();
+  const master = (typeof $ === 'function' && $('resumeInput') && $('resumeInput').value) || '';
+  return masterExperienceRoleTitle(master) || '';
 }
 
 function fixSummaryLeadingNumber(line, label) {
@@ -3017,7 +3255,7 @@ function injectSummaryTenure(line, label) {
 function restoreSummaryTenure(text, master) {
   const tenure = estimateResumeExperienceYears(
     master || text,
-    typeof state !== 'undefined' ? state.lastResumeJson : null,
+    frozenMasterResumeJson(),
   );
   if (tenure.years == null || !Number.isFinite(tenure.years)) return text;
   const label = formatTenureForSummary(tenure.years);
@@ -3266,7 +3504,7 @@ function buildCitizenshipEligibility(citizenshipJd, wa) {
 function buildEligibilityReport(eligibility, resumeText) {
   const NOT_FOUND = 'Not found';
   const wa = eligibility?.workAuthorization || {};
-  const exp = estimateResumeExperienceYears(resumeText, state.lastResumeJson);
+  const exp = estimateResumeExperienceYears(resumeText, frozenMasterResumeJson());
 
   let yearsJd = (eligibility?.yearsNote || '').trim();
   let yearsReq = getJdYearsRequirement(eligibility);
@@ -4646,6 +4884,7 @@ function buildRewritePrompt(jd, resume, keywords, missingReport, scoreUnified) {
   const secondary = dropEligibilityTerms(keywords.secondary || []);
   const roles = extractRolesFromResume(resume);
   const headline = currentHeadline();
+  const pageTitle = masterExperienceRoleTitle(resume) || headline;
   const aggressive = state.mode === 'aggressive';
   const masterSkills = masterSkillsBlock(resume);
   const candidateProfile = detectCandidateProfile(resume);
@@ -4686,7 +4925,7 @@ ${mustAdd.filter(s => stretchGaps.some(g => String(g).toLowerCase() === String(s
 - ADD JD must-have skills AND Stretch-only gaps that fit the candidate stack.
 - MUST ADD THESE SKILLS (stack-aligned): ${mustAdd.join(', ') || 'none — already covered'}
 - MUST WEAVE THESE JD ATS PHRASES naturally (only if they fit the candidate stack): ${atsMustAdd.join(' · ') || 'none — already covered'}
-- Preserve name, contact, companies, PAST job titles, dates, education (past titles stay as on master; Line 2 = TARGET JD title).
+- Preserve name, contact, companies, PAST job titles, dates, education (past titles stay as on master; Line 2 = most recent EXPERIENCE job title, not the JD title).
 - NEVER add certifications that are not in the master resume.
 - Do not invent employers, degrees, or job titles.
 ${stretchBan}`
@@ -4700,7 +4939,7 @@ ${stretchBan}`
 - Do NOT add Stretch-only / preferred / secondary / market skills unless Stretch mode is selected.
 - Do NOT add clearances, DOD Secret, citizenship, or eligibility into SKILLS or SUMMARY.
 - Do NOT add certifications. Do not invent employers, degrees, or fake job history.
-- Keep companies, PAST titles, dates, education, and ownership language honest. Line 2 = TARGET JD title.
+- Keep companies, PAST titles, dates, education, and ownership language honest. Line 2 = most recent EXPERIENCE job title, not the JD title.
 ${stretchBan}`;
 
   return `You are a US full-time resume writer. Rewrite the MASTER resume into the EXACT Anirudh Word template (Calibri, US Letter, 1 page preferred / 2 max). Format is mandatory — same priority as closing score-rule gaps.
@@ -4730,7 +4969,7 @@ LOCKED CONTACT — use exactly these formatted values:
 ${formatLockedContactBlock(resume)}
 
 EXPERIENCE TENURE / SUMMARY YEARS:
-${formatLockedTenureBlock(resume, state.lastResumeJson)}
+${formatLockedTenureBlock(resume, frozenMasterResumeJson())}
 
 ${roles.length ? `MANDATORY ROLES (${roles.length}) — output all of them:\n${roles.map((r, i) => `  ${i + 1}. ${r}`).join('\n')}` : ''}
 
@@ -4751,7 +4990,7 @@ Obey FORMAT IS MANDATORY above exactly — do not invent a different layout.
 OUTPUT LAYOUT — match the Anirudh Word template exactly (this is how the downloaded .doc must look):
 
 Line 1: Full Name in Title Case (not ALL CAPS)
-Line 2: Target job title only — ${headline ? headline.split('|')[0].trim() : 'exact JD title'}. Never append JD section headings such as "Primary Responsibilities", "Why [Company]?", "Job Description", "Requirements", or "Duties".
+Line 2: Most recent EXPERIENCE job title only — ${pageTitle || 'the first job title in EXPERIENCE'}. Do NOT put the JD title here. Never append JD section headings such as "Primary Responsibilities", "Why [Company]?", "Job Description", "Requirements", or "Duties".
 ${formatContactLineInstruction(resume)}
 Line 4: blank
 SUMMARY
@@ -4773,10 +5012,10 @@ Then keep every extra master section in the same place it already sits (before o
 If the master has PROJECTS, output that section once: project name, then hyphen bullets only — no dates, no location/role line. Keep the same projects and facts. Do not add another PROJECTS heading. If the master has no PROJECTS section, do not create one.
 
 HR SCAN — SUMMARY AND EXPERIENCE (these are what recruiters actually read):
-The SUMMARY is a ${headline ? headline.split('|')[0].trim() : 'TARGET JD'} profile — not a ${inferMasterCareerLabel(resume)} story with a new title.
+The SUMMARY opens as ${pageTitle || 'the most recent EXPERIENCE job title'} — keep that title. Do not rename the person to ${headline ? headline.split('|')[0].trim() : 'the JD title'}.
 SUMMARY must naturally include AT LEAST 8 and AT MOST 9 of these IMPORTANT JD skills, exact spelling:
   ${summaryKw.join(', ') || primary.slice(0, 9).join(', ')}
-Do not dump a comma list. Weave them into one readable paragraph that opens with the JD title (never a number), then the LOCKED SUMMARY YEARS (example: "Data Analyst with 7+ years of experience" when tenure is 7.2 — never "7.2 years", never "6 years of experience…" first, and never a JD range like "2-5 years").
+Do not dump a comma list. Weave them into one readable paragraph that opens with the EXPERIENCE job title (never a number, never the JD title), then the LOCKED SUMMARY YEARS (example: "${pageTitle || 'the experience job title'} with 7+ years of experience" when tenure is 7.2 — never "7.2 years", never "6 years of experience…" first, and never a JD range like "2-5 years").
 Write in natural English — a recruiter should hear a career story, not a keyword checklist.
 Do NOT put percentages, dollar amounts, ROI figures, or quantified wins in SUMMARY (no "40%", no "$500K", no "valued at…"). Put metrics only in experience bullets.
 Do NOT mention H1B, H-1B, visa sponsorship, work authorization, citizenship, or any immigration/eligibility language in SUMMARY — those are posting gates, not professional skills.
@@ -4882,12 +5121,12 @@ Mode: ${aggressive ? 'AGGRESSIVE' : 'INTEGRITY / HONEST'}
 Preserve name, contact, companies, PAST titles, dates, education, and every extra section already on this resume (Projects, Awards, Volunteer, Languages, and any other heading). Keep those extra sections in the same place. Do not drop them. Do not invent new extra sections. If PROJECTS is already on the resume, keep those same projects once as a name plus hyphen bullets — no dates, no location/role line. Do not create another Projects heading.
 Keep the master's skill categories. Put JD must-haves first on each line. Do not invent a new Technical Skills line.
 Each role must have 6 or 7 bullets. If a role has fewer than 6, add bullets. If it has more than 7, keep the strongest 7.
-Line 2 = TARGET JD title. Rewrite the page as that role (summary, skills order, experience). Do not 50/50 merge a different master career with the JD role.
+Line 2 = most recent EXPERIENCE job title (${masterExperienceRoleTitle(master) || 'see master'}). Do not put the JD title on Line 2 or in the SUMMARY opener. Tailor skills order and bullets to the JD.
 Keep the Anirudh template format exactly (ALL-CAPS headers, Company | Title Dates, location only if already on that master role, "- " bullets).
 
 HR SCAN: SUMMARY must contain 8-9 of these important skills (exact spelling) — only stack-aligned tools: ${summaryKw.join(', ') || 'keep current summary stack'}
-SUMMARY must start with the JD title, not a number. Tenure comes after the title (example: "Data Analyst with 7+ years of experience" if calculated tenure is 7.2 — never "7.2 years").
-${formatLockedTenureBlock(master, state.lastResumeJson)}
+SUMMARY must start with the most recent EXPERIENCE job title, not a number and not the JD title. Tenure comes after the title (example: "${masterExperienceRoleTitle(master) || 'the experience job title'} with 7+ years of experience" if calculated tenure is 7.2 — never "7.2 years").
+${formatLockedTenureBlock(master, frozenMasterResumeJson())}
 Write naturally — a career story, not a keyword dump. Never mention H1B, visa sponsorship, work authorization, or citizenship in SUMMARY.
 Never put percentages, dollar amounts, or quantified metrics in SUMMARY (no "40%", "$500K", "valued at…"). Keep metrics in experience bullets only.
 Never close SUMMARY with "including AWS, Azure, or GCP" or mix BigQuery with Redshift/S3 in that paragraph. Name one primary cloud in SUMMARY; put other evidenced clouds in SKILLS and separate bullets.
@@ -5444,24 +5683,7 @@ function hasQuantifiedResult(core) {
 }
 
 function repairBrokenBulletMetrics(line) {
-  if (!isBulletLine(line)) return line;
-  const parts = bulletLineParts(line);
-  if (!parts) return line;
-  let { mark, core, punct } = parts;
-
-  // Fix shattered metric: "...using Some Skill by 4." was likely "...by 40%."
-  const shattered = core.match(/^(.+?)\s+using\s+.+?\s+by\s+(\d)$/i);
-  if (shattered && !/%/.test(core)) {
-    core = `${shattered[1].trim()} by ${shattered[2]}0%`;
-  }
-
-  // Fix trailing "using X by N." without percent
-  const trailing = core.match(/^(.+?)\s+using\s+([^,]+?)\s+by\s+(\d{1,2})$/i);
-  if (trailing && !/%/.test(core)) {
-    core = `${trailing[1].trim()} by ${trailing[3]}0%`;
-  }
-
-  return `${mark}${core}${punct}`;
+  return line;
 }
 
 function weaveTermIntoBullet(line, term, profile) {
@@ -5507,7 +5729,11 @@ function weaveTermIntoBullet(line, term, profile) {
   }
   const coreNoEnd = core.replace(/[.]+$/, '');
   if (/\b(using|with|via|through)\s+\S+/i.test(coreNoEnd)) {
-    return `${mark}${coreNoEnd} and ${kw}${punct || '.'}`;
+    const joined = coreNoEnd.replace(
+      /(\b(?:using|with|via|through)\s+[A-Za-z0-9.#+\-/]+(?:\s+and\s+[A-Za-z0-9.#+\-/]+)*)/i,
+      `$1 and ${kw}`,
+    );
+    if (joined !== coreNoEnd) return `${mark}${joined}${punct || '.'}`;
   }
   return `${mark}${coreNoEnd} using ${kw}${punct || '.'}`;
 }
@@ -5578,7 +5804,6 @@ function polishResumeForAts(resume, keywords, masterResume) {
     ? uniqTerms([...primary, ...secondary])
     : primary;
   const inject = dropEligibilityTerms(filterTermsForCandidateProfile(rawInject, master, profile));
-  const summaryKw = summaryKeywordList(keywords, master);
   let lines = sanitizeResumeHeadline(resume).split('\n');
   const full = () => lines.join('\n');
 
@@ -5587,25 +5812,6 @@ function polishResumeForAts(resume, keywords, masterResume) {
   const skillsText = skillsBounds ? lines.slice(skillsBounds.start, skillsBounds.end).join('\n') : '';
   const toSkills = uniqTerms(missingAnywhere.filter(k => !keywordPresent(k, skillsText || full(), aliasMap)));
   lines = applyMasterSkills(lines, master, toSkills, aliasMap);
-
-  const sum = summaryBounds(lines);
-  if (sum) {
-    let paraIdx = -1;
-    for (let i = sum.start + 1; i < sum.end; i++) {
-      if (lines[i].trim() && !isSectionHeader(lines[i]) && !isBulletLine(lines[i])) {
-        paraIdx = i;
-        break;
-      }
-    }
-    if (paraIdx >= 0) {
-      const have = summaryKw.filter(k => keywordPresent(k, lines[paraIdx], aliasMap));
-      const need = Math.max(0, Math.min(3, Math.min(9, summaryKw.length) - have.length));
-      const missing = summaryKw.filter(k => !keywordPresent(k, lines[paraIdx], aliasMap)).slice(0, need);
-      if (have.length < 7 && missing.length) {
-        lines[paraIdx] = appendTermsToLine(lines[paraIdx], missing.slice(0, 2), profile);
-      }
-    }
-  }
 
   const plan = planExperienceKeywords(master, keywords);
   const blocks = experienceRoleBlocks(lines);
@@ -6135,24 +6341,35 @@ function applyScoreRuleFromCoverage(unified) {
   const gMatched = gChecks.filter(c => c.ok).length;
   const ptsG = coveragePts(gMatched, gChecks.length, 5);
 
-  // —— H. Title / role alignment (2) — family only; do not require rewriting past titles ——
+  // —— H. Title / role alignment (2) — keep most recent experience title on Line 2 / SUMMARY ——
   const resumeRoles = (rj?.professional_experience || []).map(j => j.role).filter(Boolean);
   const jdFam = roleFamilyFromTitle(jdTitle);
   const resumeFams = resumeRoles.map(roleFamilyFromTitle);
   const summaryFam = roleFamilyFromTitle(summary.slice(0, 80));
+  const pageTitle = masterExperienceRoleTitle(
+    (typeof $ === 'function' && $('resumeInput') && $('resumeInput').value) || text,
+    rj,
+  );
+  const headerBlob = String(text || '').split('\n').slice(0, 8).join('\n');
+  const pageTitleHit = !!(pageTitle && (
+    new RegExp('\\b' + (typeof escapeRegExp === 'function' ? escapeRegExp(pageTitle) : pageTitle) + '\\b', 'i').test(summary.slice(0, 120))
+    || new RegExp('\\b' + (typeof escapeRegExp === 'function' ? escapeRegExp(pageTitle) : pageTitle) + '\\b', 'i').test(headerBlob)
+  ));
   const familyHit = !jdTitle
     || resumeFams.includes(jdFam)
     || summaryFam === jdFam
-    || (jdTitle && summary.includes(String(jdTitle).toLowerCase()))
     || resumeFams.some(f => familiesAligned(f, jdFam))
-    || familiesAligned(summaryFam, jdFam);
-  const adjacentHit = familyHit || resumeFams.some(f => f === jdFam);
+    || familiesAligned(summaryFam, jdFam)
+    || familiesAligned(roleFamilyFromTitle(pageTitle), jdFam);
+  const adjacentHit = familyHit || pageTitleHit || resumeFams.some(f => f === jdFam);
   const hTitleChecks = [
     {
-      ok: familyHit,
-      label: familyHit
-        ? `Reads as a ${jdTitle || 'matching'} role`
-        : `Does not yet read as ${jdTitle || 'this job'}`,
+      ok: pageTitleHit || familyHit,
+      label: pageTitleHit
+        ? `Line 2 / SUMMARY keep ${pageTitle}`
+        : familyHit
+          ? `Reads in the ${jdTitle || 'matching'} family`
+          : `Keep Line 2 and SUMMARY as ${pageTitle || 'the most recent experience title'}`,
     },
     {
       ok: adjacentHit || familyHit,
@@ -6419,8 +6636,10 @@ function enrichKeywordsFromUnderstanding(keywords, understanding) {
  */
 async function scoreWithUnderstandingAndAiRubric(jd, resume) {
   const text = String(resume || '');
+  const masterPaste = (typeof $ === 'function' && $('resumeInput') && $('resumeInput').value) || '';
+  const scoringMaster = !!(masterPaste && text.trim() === String(masterPaste).trim());
   // Gemini JSON convert — silent (no loader convert copy, no UI dump)
-  let resumeJson = state.lastResumeJson;
+  let resumeJson = scoringMaster ? (state.masterResumeJson || null) : null;
   let jdJson = state.lastJdJson;
   try {
     const tasks = [];
@@ -6433,6 +6652,7 @@ async function scoreWithUnderstandingAndAiRubric(jd, resume) {
   }
   state.lastResumeJson = resumeJson;
   state.lastJdJson = jdJson;
+  if (scoringMaster) state.masterResumeJson = resumeJson;
 
   let understanding = null;
   try {
@@ -6870,7 +7090,7 @@ function buildAiCategoryDetails(unified) {
       findings: passedOf('jobTitleAlignment'),
       improvements: uniqTerms([
         'Do not rename old jobs to copy this posting.',
-        jdTitle ? `Use “${jdTitle}” as the target title at the top.` : 'Keep old titles honest; let the summary show the job you want.',
+        'Keep Line 2 and SUMMARY as the most recent EXPERIENCE job title — do not put the JD title there.',
       ].filter(Boolean)),
     },
     recruiterReadability: {
@@ -6878,7 +7098,7 @@ function buildAiCategoryDetails(unified) {
       findings: passedOf('recruiterReadability'),
       improvements: uniqTerms([
         Number(scores.recruiterReadability || 0) < 4
-          ? 'Open with the job title, years, and main tools.'
+          ? 'Open with the most recent experience job title, years, and main tools.'
           : 'Keep the top of the page showing role, years, tools, and employers.',
       ].filter(Boolean)),
     },
@@ -7927,6 +8147,7 @@ async function runAtsCheck() {
       parseJdToJson(jd),
     ]);
     state.lastResumeJson = resumeJson;
+    state.masterResumeJson = resumeJson;
     state.lastJdJson = jdJson;
 
     const kw = keywordsFromJdJson(jdJson);
@@ -8088,7 +8309,7 @@ async function runAnalysis() {
       $('outputArea').textContent = scored.resume;
     }
 
-    updateAiProcessing('Reading the tailored resume once more…');
+    updateAiProcessing('Final read — top to bottom for format, duplicates, and copy…');
     const proofed = await proofreadTailoredResume(jd, state.tailoredResume);
     if (proofed && proofed.length > 200) {
       state.tailoredResume = proofed;
@@ -8202,7 +8423,7 @@ async function boostScore() {
       $('outputArea').textContent = scored.resume;
       if (unified.atsScore >= SCORE_TARGET) break;
     }
-    updateAiProcessing('Reading the tailored resume once more…');
+    updateAiProcessing('Final read — top to bottom for format, duplicates, and copy…');
     const proofed = await proofreadTailoredResume(inputs.jd, state.tailoredResume);
     if (proofed && proofed.length > 200) {
       state.tailoredResume = proofed;
@@ -8309,7 +8530,9 @@ function cleanupResume(text, opts = {}) {
   t = enforceAnirudhTemplate(t);
   t = sanitizeResumeHeadline(t);
   const master = opts.master || ($('resumeInput') && $('resumeInput').value) || '';
+  if (master) t = restoreMasterHeadline(t, master);
   t = stripEligibilityFromSummary(t);
+  t = restoreSummaryLeadRole(t, master);
   t = restoreSummaryTenure(t, master);
   t = normalizeExperienceRoleLines(t);
   t = t.split('\n').map(repairBrokenBulletMetrics).join('\n');
@@ -8318,6 +8541,7 @@ function cleanupResume(text, opts = {}) {
     t = restoreMasterContact(t, master);
     t = restoreMasterExperienceLocations(t, master);
     t = stripFakeLinkedIn(t);
+    t = stripFakeGitHub(t);
   }
   const kw = opts.keywords || state.keywords || null;
   if (kw) {
@@ -8326,6 +8550,7 @@ function cleanupResume(text, opts = {}) {
   if (state.mode !== 'aggressive' && master && kw) {
     t = scrubSkillsNotOnMaster(t, master, kw);
   }
+  if (master) t = restoreExtraSections(t, master);
   return t;
 }
 
@@ -8410,6 +8635,87 @@ function sanitizeResumeHeadline(text) {
     if (isSectionHeader(l)) break;
     const cleaned = cleanJobTitle(l);
     if (cleaned && cleaned !== l) lines[i] = lines[i].replace(l, cleaned);
+    break;
+  }
+  return lines.join('\n');
+}
+
+function restoreMasterHeadline(text, master) {
+  const title = masterExperienceRoleTitle(master || text);
+  if (!title) return String(text || '');
+  const lines = String(text || '').split('\n');
+  let seenName = false;
+  let nameIdx = -1;
+  for (let i = 0; i < Math.min(lines.length, 10); i++) {
+    const l = String(lines[i] || '').trim();
+    if (!l) continue;
+    if (!seenName) {
+      seenName = true;
+      nameIdx = i;
+      continue;
+    }
+    if (typeof isSectionHeader === 'function' && isSectionHeader(l)) {
+      lines.splice(i, 0, title);
+      return lines.join('\n');
+    }
+    if (typeof isHeaderContactLine === 'function' && isHeaderContactLine(l)) {
+      lines.splice(i, 0, title);
+      return lines.join('\n');
+    }
+    if (l.toLowerCase() !== title.toLowerCase()) lines[i] = title;
+    return lines.join('\n');
+  }
+  if (nameIdx >= 0) lines.splice(nameIdx + 1, 0, title);
+  return lines.join('\n');
+}
+
+function restoreSummaryLeadRole(text, master) {
+  const role = masterExperienceRoleTitle(master || text);
+  if (!role) return String(text || '');
+  const jd = targetJdTitle(
+    (typeof $ === 'function' && $('jdInput') && $('jdInput').value) || '',
+    typeof state !== 'undefined' ? state.keywords : {},
+  );
+  const lines = String(text || '').split('\n');
+  const bounds = typeof summaryBounds === 'function' ? summaryBounds(lines) : null;
+  if (!bounds) return lines.join('\n');
+  const esc = typeof escapeRegExp === 'function'
+    ? escapeRegExp(role)
+    : role.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  for (let i = bounds.start + 1; i < bounds.end; i++) {
+    if (!lines[i].trim() || isSectionHeader(lines[i]) || isBulletLine(lines[i])) continue;
+    let s = peelLocationFromSummaryLead(lines[i].trim(), role, master || text);
+    s = collapseRepeatedOpener(s, role);
+    const roleRe = new RegExp('^((?:An?|The)\\s+)?' + esc + '\\b', 'i');
+    if (roleRe.test(s)) {
+      lines[i] = s.replace(roleRe, role);
+      break;
+    }
+    if (jd && jd.toLowerCase() !== role.toLowerCase()) {
+      const jdEsc = typeof escapeRegExp === 'function'
+        ? escapeRegExp(jd)
+        : jd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const jdRe = new RegExp('^((?:An?|The)\\s+)?' + jdEsc + '\\b', 'i');
+      if (jdRe.test(s)) {
+        lines[i] = s.replace(jdRe, role);
+        break;
+      }
+    }
+    const lead = s.match(/^((?:An?\s+)?[A-Z][A-Za-z0-9/+&.,' -]{2,80}?)(\s+with\s+\d)/);
+    if (lead && /engineer|analyst|scientist|developer|architect|specialist|manager|consultant|technician|administrator|intern/i.test(lead[1])) {
+      lines[i] = role + s.slice(lead[1].length);
+      break;
+    }
+    const lead2 = s.match(/^((?:An?\s+)?[A-Z][A-Za-z0-9/+&.,' -]{2,80}?)(\s+)/);
+    if (lead2 && /engineer|analyst|scientist|developer|architect|specialist|manager|consultant|technician|administrator|intern/i.test(lead2[1])) {
+      lines[i] = role + s.slice(lead2[1].length);
+      break;
+    }
+    if (!/^\d/.test(s) && !(typeof looksLikeJobTitleToken === 'function' && looksLikeJobTitleToken(s.slice(0, 80)))) {
+      lines[i] = `${role} ${s.replace(/^(?:An?\s+)/i, '')}`.replace(/\s{2,}/g, ' ');
+    } else {
+      lines[i] = s;
+    }
     break;
   }
   return lines.join('\n');
@@ -8755,8 +9061,11 @@ function isRoleLine(l, section) {
   if (/^client\s*:/i.test(l)) return true;
   const hasDate = new RegExp(`\\b${ROLE_MONTH_YEAR}\\b`, 'i').test(l)
     || /\b(19|20)\d{2}\s*[–—-]\s*((19|20)\d{2}|present)\b/i.test(l);
-  if (l.includes('|') && (hasDate || /EXPERIENCE/.test(sec))) return true;
+  const withoutDates = String(l || '').replace(ROLE_DATE_RE, '').replace(/[\s|,.–—-]+/g, '');
+  if (hasDate && !withoutDates && !String(l).includes('|')) return false;
   if (hasDate && /EXPERIENCE/.test(sec) && l.length < 140) return true;
+  if (l.includes('|') && hasDate) return true;
+  if (l.includes('|') && /EXPERIENCE/.test(sec) && l.length < 140) return true;
   return false;
 }
 
@@ -8772,8 +9081,8 @@ function formatEduHtml(line) {
   if (!raw) return '';
   const parts = raw.split('|').map(s => s.trim()).filter(Boolean);
   if (parts.length >= 2) {
-    const degree = escapeHtml(parts[0]);
-    const school = escapeHtml(parts.slice(1).join(', '));
+    const degree = escapeHtml(parts[0].replace(/[.,]+$/, ''));
+    const school = escapeHtml(parts.slice(1).join(', ').replace(/[.,]+$/, ''));
     return `<div class="r-edu-block">`
       + `<div class="r-edu-degree">${degree}</div>`
       + `<div class="r-edu-school">${school}</div>`
@@ -8848,27 +9157,64 @@ function splitRoleAndDates(line) {
   };
 }
 
-function looksLikeLocationToken(s) {
+function looksLikeJobTitleToken(s) {
+  return /\b(engineer|analyst|scientist|developer|manager|architect|consultant|specialist|lead|director|associate|intern|officer|coordinator|administrator|programmer|designer|technician|owner|master|trainer|recruiter|accountant|teacher|professor|executive|president|founder|head|coach|tester|sre|devops)\b/i.test(String(s || ''));
+}
+
+function looksLikeLocationToken(s, opts = {}) {
   const t = String(s || '').trim();
-  if (!t || t.length > 40) return false;
-  if (/^(remote|hybrid|onsite|on-site|usa|u\.s\.a\.|united states|india|uk|u\.k\.)$/i.test(t)) return true;
-  if (/^[A-Z]{2}$/.test(t)) return true;
-  if (/^[A-Za-z .'-]+,\s*[A-Z]{2}$/.test(t)) return true;
-  if (/^[A-Za-z .'-]+,\s*(Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wisconsin|Wyoming)$/i.test(t)) return true;
-  if (/\b(engineer|analyst|scientist|developer|manager|architect|consultant|specialist|lead|director|associate|intern|officer)\b/i.test(t)) return false;
-  return t.length <= 22 && !/\d{4}/.test(t);
+  if (!t || t.length > 48) return false;
+  if (looksLikeJobTitleToken(t)) return false;
+  if (/^(full[- ]?time|part[- ]?time|contract|permanent|temporary|freelance|w2|c2c)$/i.test(t)) return false;
+  if (/^(inc|llc|ltd|corp|corporation|technologies|systems|labs|group|services)$/i.test(t)) return false;
+  if (/^(remote|hybrid|onsite|on-site)(?:\s*[–—,-]\s*(usa|us|india|uk|united states))?$/i.test(t)) return true;
+  if (/^(india|usa|us|united states|uk|united kingdom|canada|germany|singapore|uae|australia)$/i.test(t)) return true;
+  if (new RegExp(`^(?:${US_STATE_ABBR})$`, 'i').test(t)) return true;
+  if (typeof PLACE_RE !== 'undefined' && PLACE_RE.test(t)) return true;
+  if (/^[A-Za-z .'-]+,\s*(?:[A-Z]{2}|USA|US|United States|India|UK|UAE|Canada)$/i.test(t)) return true;
+  if (opts.strong) return false;
+  if (t.length <= 2) return false;
+  if (/\b(software|data|business|machine|learning|intelligence|product|project|program|quality|assurance|information|technology|technical|senior|junior|staff|principal|cloud|platform|security|network|support|operations|research|science|engineering|development|application|systems?)\b/i.test(t)) return false;
+  return /^[A-Z][a-zA-Z.'-]+(?:[\s-][A-Z][a-zA-Z.'-]+){0,2}$/.test(t) && t.length <= 28 && !/\d/.test(t);
 }
 
 function splitCompanyLocation(company) {
   const t = String(company || '').trim();
   if (!t) return { company: '', location: '' };
   const us = t.match(/^(.*?),\s*([A-Za-z .'-]+,\s*[A-Z]{2}(?:\s*,?\s*USA)?)$/);
-  if (us) return { company: us[1].trim(), location: us[2].trim() };
+  if (us && looksLikeLocationToken(us[2], { strong: true })) {
+    return { company: us[1].trim(), location: us[2].trim() };
+  }
   const remote = t.match(/^(.*?),\s*(Remote|Hybrid|On[- ]?site)$/i);
   if (remote) return { company: remote[1].trim(), location: remote[2].trim() };
   return { company: t, location: '' };
 }
 
+function unstickTitleLocation(title) {
+  const t = String(title || '').trim();
+  if (!t) return { title: '', location: '' };
+  const cityHit = t.match(/^(.*?)[\s,]+([A-Z][a-zA-Z.'-]+(?:[\s-][A-Z][a-zA-Z.'-]+){0,2})$/);
+  if (cityHit && looksLikeJobTitleToken(cityHit[1]) && looksLikeLocationToken(cityHit[2])) {
+    return { title: cityHit[1].replace(/[,\s]+$/g, '').trim(), location: cityHit[2].trim() };
+  }
+  const stateHit = t.match(new RegExp(`^(.*?)\\s*(${US_STATE_ABBR})$`, ''));
+  if (stateHit && looksLikeJobTitleToken(stateHit[1]) && stateHit[1].length > 6) {
+    return { title: stateHit[1].trim(), location: stateHit[2] };
+  }
+  const gluedState = t.match(new RegExp(`^(.*[a-z])(${US_STATE_ABBR})$`));
+  if (gluedState && looksLikeJobTitleToken(gluedState[1])) {
+    return { title: gluedState[1].trim(), location: gluedState[2] };
+  }
+  const country = t.match(/^(.*?)[\s,]*(India|USA|UK|UAE|Canada|Germany|Singapore|Australia)$/i);
+  if (country && looksLikeJobTitleToken(country[1]) && country[1].length > 6) {
+    return { title: country[1].replace(/[,\s]+$/, '').trim(), location: country[2] };
+  }
+  const gluedCountry = t.match(/^(.*[a-z])(India|USA|UK|Canada)$/i);
+  if (gluedCountry && looksLikeJobTitleToken(gluedCountry[1])) {
+    return { title: gluedCountry[1].trim(), location: gluedCountry[2] };
+  }
+  return { title: t, location: '' };
+}
 function parseRoleLineParts(line) {
   const { left, dates } = splitRoleAndDates(line);
   const parts = left.split('|').map(s => s.trim()).filter(Boolean);
@@ -8880,7 +9226,8 @@ function parseRoleLineParts(line) {
     if (looksLikeLocationToken(parts[1]) && !looksLikeLocationToken(parts[2])) {
       location = parts[1];
       title = parts.slice(2).join(' ');
-    } else if (looksLikeLocationToken(parts[parts.length - 1])) {
+    } else if (looksLikeLocationToken(parts[parts.length - 1], { strong: true })
+      || looksLikeLocationToken(parts[parts.length - 1])) {
       location = parts[parts.length - 1];
       title = parts.slice(1, -1).join(' ');
     } else {
@@ -8888,7 +9235,7 @@ function parseRoleLineParts(line) {
     }
   } else if (parts.length === 2) {
     company = parts[0];
-    if (looksLikeLocationToken(parts[1])) location = parts[1];
+    if (looksLikeLocationToken(parts[1], { strong: true })) location = parts[1];
     else title = parts[1];
   } else {
     company = left;
@@ -8898,6 +9245,20 @@ function parseRoleLineParts(line) {
     if (split.location) {
       company = split.company;
       location = split.location;
+    }
+  }
+  if (title && !location) {
+    const u = unstickTitleLocation(title);
+    if (u.location) {
+      title = u.title;
+      location = u.location;
+    }
+  }
+  if (!title && company) {
+    const u = unstickTitleLocation(company);
+    if (u.location && u.title) {
+      company = u.title;
+      location = location || u.location;
     }
   }
   return { company, location, title, dates };
@@ -8918,7 +9279,7 @@ function companyMatchKey(name) {
 }
 
 function extractExperienceRoleRecords(resumeText) {
-  const lines = String(resumeText || '').split('\n');
+  const lines = mergeHangingRoleDates(String(resumeText || '').split('\n'));
   const { start, end } = experienceBounds(lines);
   const records = [];
   for (let i = start; i < end; i++) {
@@ -8949,27 +9310,82 @@ function formatExperienceLocationLock(resumeText) {
   return `LOCKED EXPERIENCE LOCATIONS (copy from master; never invent):\n${lines.join('\n')}`;
 }
 
+function companyKeysMatch(a, b) {
+  const x = companyMatchKey(a);
+  const y = companyMatchKey(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const strip = s => s.replace(/(incorporated|inc|llc|ltd|corp|corporation|company|co|technologies|tech|labs|group)$/g, '');
+  return strip(x) === strip(y);
+}
+
+function matchMasterExperienceRole(parsed, masterRoles) {
+  const cands = (masterRoles || []).filter(m => companyKeysMatch(m.company, parsed.company));
+  if (!cands.length) return null;
+  if (cands.length === 1) return cands[0];
+  const titleLc = String(parsed.title || '').toLowerCase().trim();
+  const datesLc = String(parsed.dates || '').toLowerCase().trim();
+  const byTitle = cands.filter(m => {
+    const mt = String(m.title || '').toLowerCase().trim();
+    return mt && titleLc && (mt === titleLc || mt.includes(titleLc) || titleLc.includes(mt));
+  });
+  if (byTitle.length === 1) return byTitle[0];
+  const byDates = cands.filter(m => {
+    const md = String(m.dates || '').toLowerCase();
+    return md && datesLc && (datesLc.includes(md.slice(0, 8)) || md.includes(datesLc.slice(0, 8)));
+  });
+  if (byDates.length === 1) return byDates[0];
+  return (byTitle[0] || cands[0]);
+}
+
 function restoreMasterExperienceLocations(text, master) {
   const masterRoles = extractExperienceRoleRecords(master);
   if (!masterRoles.length) return text;
-  const byCompany = masterRoles.map(r => ({
-    key: companyMatchKey(r.company),
-    location: String(r.location || '').trim(),
-  }));
   const lines = String(text || '').split('\n');
   const { start, end } = experienceBounds(lines);
+  if (!/EXPERIENCE|WORK HISTORY/i.test(String(lines[start] || ''))) return text;
   for (let i = start; i < end; i++) {
     if (!isRoleLine(lines[i], 'EXPERIENCE')) continue;
     const p = parseRoleLineParts(lines[i]);
     if (!p.company) continue;
-    const key = companyMatchKey(p.company);
-    const hit = byCompany.find(m => m.key === key || (key && m.key && (key.includes(m.key) || m.key.includes(key))));
-    if (!hit) continue;
-    p.location = hit.location || '';
+    const hit = matchMasterExperienceRole(p, masterRoles);
+    if (!hit) {
+      if (p.location) {
+        p.location = '';
+        const next = formatRoleLineFromParts(p);
+        if (next) lines[i] = next;
+      }
+      continue;
+    }
+    p.location = String(hit.location || '').trim();
+    if (!p.title && hit.title) p.title = hit.title;
     const next = formatRoleLineFromParts(p);
     if (next) lines[i] = next;
   }
   return lines.join('\n');
+}
+
+function isHangingRoleDateLine(l) {
+  const t = String(l || '').trim();
+  if (!t || t.includes('|') || isBulletLine(t) || (typeof isAnySectionHeader === 'function' && isAnySectionHeader(t))) return false;
+  return typeof ROLE_DATE_RE !== 'undefined' && ROLE_DATE_RE.test(t) && t.length < 48;
+}
+
+function mergeHangingRoleDates(lines) {
+  const src = Array.isArray(lines) ? lines : String(lines || '').split('\n');
+  const { start, end } = experienceBounds(src);
+  if (!/EXPERIENCE|WORK HISTORY/i.test(String(src[start] || ''))) return src;
+  const out = src.slice();
+  for (let i = start; i < end; i++) {
+    if (!out[i] || !isRoleLine(out[i], 'EXPERIENCE')) continue;
+    const p = parseRoleLineParts(out[i]);
+    if (p.dates) continue;
+    const next = String(out[i + 1] || '').trim();
+    if (!isHangingRoleDateLine(next)) continue;
+    out[i] = String(out[i]).replace(/\s+$/, '') + ' ' + next;
+    out[i + 1] = '';
+  }
+  return out;
 }
 
 function normalizeOneRoleLine(line) {
@@ -8979,7 +9395,7 @@ function normalizeOneRoleLine(line) {
 }
 
 function normalizeExperienceRoleLines(text) {
-  const lines = String(text || '').split('\n');
+  let lines = mergeHangingRoleDates(String(text || '').split('\n'));
   const { start, end } = experienceBounds(lines);
   for (let i = start; i < end; i++) {
     if (isRoleLine(lines[i], 'EXPERIENCE')) lines[i] = normalizeOneRoleLine(lines[i]);
@@ -9117,7 +9533,7 @@ function boldResumeKeywords(text) {
 function parseResumeToHtml(text, opts = {}) {
   if (!text || !text.trim()) return '';
   const roleOpts = { compactDates: !!opts.compactDates || opts.pages === 1 };
-  const lines = text.split('\n');
+  const lines = mergeHangingRoleDates(String(text || '').split('\n'));
   let html = '';
   let i = 0;
   let currentSection = '';
@@ -9141,9 +9557,13 @@ function parseResumeToHtml(text, opts = {}) {
     const l = lines[i].trim();
     if (!l) { i++; continue; }
     if (isSectionHeader(l)) break;
-    const isContact = /@/.test(l) || /\d{3}[\s.()-]*\d{3}[\s.-]*\d{4}/.test(l) || /linkedin\.com/i.test(l);
+    const isContact = /@/.test(l)
+      || /\d{3}[\s.()-]*\d{3}[\s.-]*\d{4}/.test(l)
+      || /linkedin/i.test(l)
+      || /\bgithub\b/i.test(l)
+      || /lnkd\.in/i.test(l);
     if (!sawHeadline && !isContact && l.length < 70) {
-      html += `<div class="r-headline">${escapeHtml(cleanJobTitle(l) || l)}</div>`;
+      html += `<div class="r-headline">${escapeHtml(stripPlaceFromJobTitle(cleanJobTitle(l) || l, ($('resumeInput') && $('resumeInput').value) || '') || l)}</div>`;
       sawHeadline = true;
     } else {
       html += `<div class="r-contact">${linkify(l)}</div>`;
@@ -9171,6 +9591,8 @@ function parseResumeToHtml(text, opts = {}) {
       closeEntry();
       entryOpen = true;
       html += `<div class="r-entry r-entry-edu">${formatEduHtml(l)}`;
+    } else if (/EDUCATION/.test(currentSection) && entryOpen && !isBulletLine(l) && !isRoleLine(l, currentSection)) {
+      html += `<div class="r-edu-school">${escapeHtml(l.replace(/[.,]+$/, ''))}</div>`;
     } else if (isRoleLine(l, currentSection)) {
       closeEntry();
       entryOpen = true;
@@ -9221,7 +9643,7 @@ function resumeCssBlock(bodyPt, lh, sel = '') {
     ${s}.r-job col.r-col-right { width: 42%; }
     ${s}.r-job td { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsRole}; font-weight: bold; color: #000000; padding: 0; line-height: ${t.lhRole}; vertical-align: bottom; mso-line-height-rule: exactly; border: none; text-align: left; }
     ${s}.r-job td:first-child, ${s}.r-job-left { padding-left: 4.55pt; width: 58%; }
-    ${s}.r-dates { text-align: right !important; white-space: nowrap; width: 42%; vertical-align: bottom; font-weight: bold; }
+    ${s}.r-dates { text-align: right !important; white-space: normal; width: 42%; vertical-align: bottom; font-weight: bold; }
     ${s}.r-edu-block { margin: ${t.spJob} 0 0 4.55pt; padding: 0; }
     ${s}.r-edu-degree { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsRole}; font-weight: bold; color: #000000; margin: 0; padding: 0; line-height: ${t.lhRole}; text-align: left; }
     ${s}.r-edu-school { font-family: Calibri, Arial, sans-serif; font-size: ${t.fsBody}; font-weight: normal; color: #000000; margin: 0.6pt 0 0 0; padding: 0; line-height: ${t.lhBody}; text-align: left; }
@@ -9241,7 +9663,7 @@ function resumeCss() {
     p { margin: 0; padding: 0; }
     .WordSection1 { text-align: left; }
     .r-rule { font-family: Calibri, Arial, sans-serif; font-size: 1pt; line-height: 1pt; mso-line-height-rule: exactly; margin: 0; padding: 0; height: 1pt; border: none; border-top: 0.5pt solid #000000; overflow: hidden; }
-    .r-dates { text-align: right !important; white-space: nowrap; width: 42%; vertical-align: bottom; font-weight: bold; }
+    .r-dates { text-align: right !important; white-space: normal; width: 42%; vertical-align: bottom; font-weight: bold; }
     .r-edu-degree { font-weight: bold; }
     .r-edu-school { font-weight: normal !important; }
     .r-bmark, .r-btext { text-align: left; }
