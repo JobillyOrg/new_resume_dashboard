@@ -17,6 +17,28 @@ R_NS = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 REL_NS = "{http://schemas.openxmlformats.org/package/2006/relationships}"
 
 _FAKE_LINKEDIN = {"username", "your-profile", "yourname", "name", "profile"}
+_FAKE_GITHUB = {
+    "username",
+    "yourname",
+    "profile",
+    "settings",
+    "explore",
+    "features",
+    "topics",
+    "marketplace",
+    "login",
+    "signup",
+    "about",
+    "pricing",
+    "orgs",
+    "notifications",
+    "actions",
+    "sponsors",
+    "issues",
+    "pulls",
+    "new",
+}
+_GITHUB_RE = re.compile(r"(?:https?://)?(?:www\.)?github\.com/([A-Za-z0-9_-]+)/?", re.I)
 _LINKEDIN_SLUG_RE = re.compile(
     r"(?:https?://)?(?:[\w-]+\.)?(linkedin\.com/(?:mwlite/)?(?:in|pub)/[A-Za-z0-9\-_%\.]+)",
     re.I,
@@ -112,6 +134,7 @@ def _finalize_extract(text: str, urls: list[str] | None) -> tuple[str, list[str]
     urls = list(urls or [])
     blob = _clean_text(text)
     blob = _inject_linkedin(blob, urls)
+    blob = _inject_github(blob, urls)
     blob = _inject_emails(blob, urls)
     return blob, urls
 
@@ -130,6 +153,47 @@ def linkedin_slug(url: str) -> str:
         return slug
     m = _LNKD_RE.search(raw)
     return m.group(0) if m else ""
+
+
+def github_profile(url: str) -> str:
+    """Return github.com/handle, or '' if missing/placeholder."""
+    raw = unescape(str(url or "")).strip()
+    if not raw:
+        return ""
+    m = _GITHUB_RE.search(raw)
+    if not m:
+        return ""
+    handle = m.group(1)
+    if handle.lower() in _FAKE_GITHUB:
+        return ""
+    return f"github.com/{handle}"
+
+
+def first_github_profile(text: str, extra_urls: list[str] | None = None) -> str:
+    for url in list(extra_urls or []) + [text or ""]:
+        slug = github_profile(url)
+        if slug:
+            return slug
+    return ""
+
+
+def _inject_github(text: str, urls: list[str]) -> str:
+    slug = first_github_profile(text, urls)
+    if not slug:
+        return text
+    if re.search(re.escape(slug), text, re.I):
+        return text
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        if re.search(r"GitHub\s+Actions", line, re.I):
+            continue
+        if re.search(r"(?:^|\||•)\s*GitHub\s*(?:\||$)", line, re.I) or re.fullmatch(r"GitHub", line.strip(), re.I):
+            lines[i] = re.sub(r"\bGitHub\b", slug, line, count=1)
+            return "\n".join(lines)
+        if "@" in line or re.search(r"\d{3}[\s.()-]*\d{3}", line) or "linkedin" in line.lower():
+            lines[i] = line.rstrip() + " | " + slug
+            return "\n".join(lines)
+    return text
 
 
 def first_linkedin_slug(text: str, extra_urls: list[str] | None = None) -> str:
@@ -241,12 +305,23 @@ def _para_text_and_urls(para: ET.Element, rels: dict[str, str]) -> tuple[str, li
             if slug.lower() not in inner.lower() and "linkedin.com" not in inner.lower():
                 parts.append(" " + slug)
             return
+        gh = github_profile(url or "")
+        if gh:
+            urls.append(f"https://{gh}")
+            label = inner.strip()
+            if not label or re.fullmatch(r"github", label, re.I):
+                parts.append(gh)
+                return
+            parts.append(inner)
+            if gh.lower() not in inner.lower() and "github.com" not in inner.lower():
+                parts.append(" " + gh)
+            return
         if url:
             urls.append(url)
             label = inner.strip()
             if label and url not in inner:
                 parts.append(inner)
-                if re.fullmatch(r"(github|portfolio|website|site)", label, re.I):
+                if re.fullmatch(r"(portfolio|website|site)", label, re.I):
                     parts.append(" " + url)
             else:
                 parts.append(inner or url)
@@ -494,7 +569,8 @@ def extract_resume(filename: str, data: bytes) -> dict:
     else:
         raise ValueError(f"Unsupported file type: {ext or 'unknown'}. Upload a PDF, DOC, or DOCX.")
     slug = first_linkedin_slug(text, urls)
-    return {"text": text, "links": {"linkedin": slug}, "urls": urls}
+    gh = first_github_profile(text, urls)
+    return {"text": text, "links": {"linkedin": slug, "github": gh}, "urls": urls}
 
 
 def extract_resume_text(filename: str, data: bytes) -> str:

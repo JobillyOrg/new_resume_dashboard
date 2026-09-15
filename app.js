@@ -1,5 +1,5 @@
 /* Jobilly.AI Resume Dashboard */
-const APP_VERSION = '20260914i';
+const APP_VERSION = '20260915d';
 const SCORE_THRESHOLD = 90;
 const SCORE_TARGET = 95;
 const SCORE_MAX = 100;
@@ -814,7 +814,7 @@ SCAN TOP TO BOTTOM. Fix every hit. Then re-read once to confirm the page makes s
 1. HEADER
 - Line 1: name in Title Case, not ALL CAPS, not doubled
 - Line 2: job title only. Bad: "${title} St. Louis," or "${title}, ${city || 'City'}". Good: "${title}"
-- Line 3: copy EVERY contact field that is on the master (phone, email, LinkedIn, GitHub, city). If the master has a phone and email they MUST appear — do not drop them and keep only LinkedIn
+- Line 3: copy EVERY contact field that is on the master (phone, email, LinkedIn, github.com/username if present, city). If the master has a github.com profile, keep that URL. If it only says GitHub with no handle, omit it. If the master has a phone and email they MUST appear — do not drop them and keep only LinkedIn
 - One blank line, then SUMMARY. No extra blank lines, no markdown, no **bold**
 
 2. SUMMARY
@@ -1522,7 +1522,10 @@ async function handleResumeUpload(file) {
   try {
     const data = await fileToBase64(file);
     const payload = await extractResumeOnServer(file.name, data);
-    setBaseResume(payload.text, file.name, { linkedin: payload.links && payload.links.linkedin });
+    setBaseResume(payload.text, file.name, {
+      linkedin: payload.links && payload.links.linkedin,
+      github: payload.links && payload.links.github,
+    });
     stopAiProcessing();
     showToast('Base resume loaded · ' + wordCount(payload.text) + ' words');
   } catch (err) {
@@ -1534,7 +1537,9 @@ async function handleResumeUpload(file) {
 function normalizeMasterResumeText(text, extra = {}) {
   let t = unstickGluedResumeText(text || '');
   t = injectLinkedInSlug(t, extra.linkedin);
+  t = injectGithubProfile(t, extra.github);
   t = normalizeContactInResume(t);
+  t = stripFakeGitHub(t, t);
   const locked = buildLockedContactLine(extractContactFields(t));
   if (locked) t = restoreMasterContact(t, t);
   if (typeof normalizeExperienceRoleLines === 'function') t = normalizeExperienceRoleLines(t);
@@ -1545,12 +1550,14 @@ function setBaseResume(text, fileName, extra = {}) {
   const ext = (fileName || '').split('.').pop().toLowerCase();
   const normalized = normalizeMasterResumeText(text || '', extra);
   const linkedin = shortenLinkedIn(extra.linkedin) || extractContactFields(normalized).linkedin || '';
+  const github = extractGithubHandle(extra.github) || extractContactFields(normalized).github || '';
   state.baseResume = {
     text: normalized,
     fileName: fileName || '',
     fileType: ext || 'txt',
     updatedAt: Date.now(),
     linkedin,
+    github,
   };
   applyBaseResumeToUi();
   updateCounts();
@@ -1564,7 +1571,10 @@ function setBaseResume(text, fileName, extra = {}) {
 function sanitizeMasterInEditor() {
   const el = $('resumeInput');
   const raw = el ? el.value : ((state.baseResume && state.baseResume.text) || '');
-  const extra = { linkedin: state.baseResume && state.baseResume.linkedin };
+  const extra = {
+    linkedin: state.baseResume && state.baseResume.linkedin,
+    github: state.baseResume && state.baseResume.github,
+  };
   const next = normalizeMasterResumeText(raw, extra);
   if (el && next && next !== raw) {
     el.value = next;
@@ -2089,10 +2099,9 @@ function formatContactLine(line) {
     const gh = typeof extractGithubHandle === 'function' ? extractGithubHandle(p) : '';
     if (gh) {
       push(gh);
-      p = p.replace(gh, ' ').replace(/\bgithub\.com\/[A-Za-z0-9_-]+\b/i, ' ').trim();
+      p = p.replace(gh, ' ').replace(/(?:https?:\/\/)?(?:www\.)?github\.com\/[A-Za-z0-9_-]+\b/i, ' ').trim();
     } else if (/^github$/i.test(p)) {
-      push(p);
-      p = '';
+      continue;
     }
     p = p.replace(/^[\s|,•·-]+|[\s|,•·-]+$/g, '').trim();
     if (p && !/^(linkedin|github|email|phone|mobile)$/i.test(p)) push(p);
@@ -2288,36 +2297,82 @@ function extractGithubHandle(text) {
 }
 
 function githubFromHeader(header) {
-  const url = extractGithubHandle(header);
-  if (url) return url;
-  if (/\bgithub\b/i.test(header)) return 'GitHub';
-  return '';
+  return extractGithubHandle(header) || '';
 }
 
-function stripFakeGitHub(text, masterText) {
-  const master = String(masterText || ($('resumeInput') && $('resumeInput').value) || (state.baseResume && state.baseResume.text) || '');
-  const token = extractContactFields(master).github;
-  const url = extractGithubHandle(token) || extractGithubHandle(master);
-  const keepLabel = Boolean(url)
-    || /\bgithub\b/i.test(String(token || ''))
-    || /\bgithub\b/i.test(resumeHeaderLines(master).join('\n'));
+function injectGithubProfile(text, slug) {
+  const clean = extractGithubHandle(slug);
+  if (!clean) return String(text || '');
   const lines = String(text || '').split('\n');
+  const slugRe = new RegExp(clean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
   for (let i = 0; i < Math.min(lines.length, 10); i++) {
     const l = String(lines[i] || '').trim();
     if (!l) continue;
     if (typeof isSectionHeader === 'function' && isSectionHeader(l)) break;
-    if (!/\bgithub\b/i.test(l)) continue;
-    let next = lines[i];
-    if (url) {
-      next = next.replace(/(?:https?:\/\/)?(?:www\.)?github\.com\/(?:username|yourname|profile)\b/gi, url);
-    } else {
-      next = next
-        .replace(/\s*\|\s*(?:https?:\/\/)?(?:www\.)?github\.com\/[A-Za-z0-9_-]+\b/gi, keepLabel ? ' | GitHub' : '')
-        .replace(/(?:https?:\/\/)?(?:www\.)?github\.com\/[A-Za-z0-9_-]+\b/gi, keepLabel ? 'GitHub' : '');
-      if (!keepLabel) next = next.replace(/\s*\|\s*GitHub\b/gi, '');
+    if (/GitHub\s+Actions/i.test(l) && !/@/.test(l) && !/\d{3}/.test(l)) continue;
+    if (slugRe.test(l)) return lines.join('\n');
+    if (isHeaderContactLine(l) || /github/i.test(l)) {
+      let next = l.replace(/(?:^|\||•)\s*GitHub\s*(?=\||$)/i, (m) => m.replace(/GitHub/i, clean));
+      if (!slugRe.test(next)) next = (next ? next + ' | ' : '') + clean;
+      lines[i] = next;
+      return lines.join('\n');
     }
-    lines[i] = next;
   }
+  return lines.join('\n');
+}
+
+function stripGithubFromContactLine(line, keepProfile) {
+  const keep = extractGithubHandle(keepProfile);
+  const parts = String(line || '').split('|').map(p => p.trim()).filter(Boolean);
+  if (parts.length > 1) {
+    const out = [];
+    let keptProfile = false;
+    for (const p of parts) {
+      if (/^github$/i.test(p)) continue;
+      const gh = extractGithubHandle(p);
+      if (gh) {
+        if (keep && !keptProfile) {
+          out.push(keep);
+          keptProfile = true;
+        }
+        continue;
+      }
+      out.push(p);
+    }
+    if (keep && !keptProfile) out.push(keep);
+    return out.join(' | ');
+  }
+  let raw = String(line || '');
+  if (keep) {
+    if (extractGithubHandle(raw)) return raw.replace(/(?:https?:\/\/)?(?:www\.)?github\.com\/[A-Za-z0-9_-]+\b/i, keep);
+    return raw.replace(/(?:^|\s)GitHub(?:\s*\||\s*$)/gi, ' ').trim();
+  }
+  return raw
+    .replace(/(?:https?:\/\/)?(?:www\.)?github\.com\/[A-Za-z0-9_-]+\b/gi, '')
+    .replace(/(?:^|\s)GitHub(?:\s*\||\s*$)/gi, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function stripFakeGitHub(text, masterText) {
+  const master = String(masterText || ($('resumeInput') && $('resumeInput').value) || (state.baseResume && state.baseResume.text) || '');
+  const profile = githubFromHeader(resumeHeaderLines(master).join('\n'))
+    || extractGithubHandle(state.baseResume && state.baseResume.github)
+    || '';
+  const lines = String(text || '').split('\n');
+  let sawContact = false;
+  for (let i = 0; i < Math.min(lines.length, 10); i++) {
+    const l = String(lines[i] || '').trim();
+    if (!l) continue;
+    if (typeof isSectionHeader === 'function' && isSectionHeader(l)) break;
+    if (!(isHeaderContactLine(l) || /github/i.test(l))) continue;
+    sawContact = true;
+    lines[i] = stripGithubFromContactLine(lines[i], profile);
+  }
+  if (profile && !sawContact) {
+    return injectGithubProfile(lines.join('\n'), profile);
+  }
+  if (profile) return injectGithubProfile(lines.join('\n'), profile);
   return lines.join('\n');
 }
 
@@ -2403,7 +2458,7 @@ function extractContactFields(resumeText, resumeJson = null) {
     email,
     phone: formatPhoneUS(rawPhone),
     linkedin: linkedinFromHeader(header) || linkedinFromHeader(blob),
-    github: githubFromHeader(header) || githubFromHeader(blob),
+    github: githubFromHeader(header),
     location: extractPersonalLocation(raw, resumeJson),
   };
 }
@@ -2416,9 +2471,9 @@ function formatContactLineInstruction(resumeText) {
   const master = ($('resumeInput') && $('resumeInput').value) || resumeText || '';
   const line = buildLockedContactLine(extractContactFields(master));
   if (!line) {
-    return 'Line 3: omit — the master has no phone, email, LinkedIn, GitHub, or city. Do NOT invent any of them.';
+    return 'Line 3: omit — the master has no phone, email, LinkedIn, GitHub profile, or city. Do NOT invent any of them.';
   }
-  return `Line 3: ${line}  (copy exactly; include ONLY these master fields; if LinkedIn or GitHub is on the master keep it; never invent a phone, LinkedIn slug, GitHub, email, or city)`;
+  return `Line 3: ${line}  (copy exactly; include ONLY these master fields; if LinkedIn is on the master keep it; if a github.com/username profile is on the master keep that URL; never invent a phone, LinkedIn slug, GitHub, email, or city. Do not put the word GitHub without a github.com/handle.)`;
 }
 
 function formatLockedContactBlock(resumeText) {
@@ -2428,17 +2483,16 @@ function formatLockedContactBlock(resumeText) {
   const li = cf.linkedin
     ? (shortenLinkedIn(cf.linkedin) ? cf.linkedin : 'LinkedIn — KEEP this word on Line 3. Do not omit it. Do not invent a slug.')
     : 'OMIT — master has no LinkedIn';
+  const gh = extractGithubHandle(cf.github);
   return `LOCKED CONTACT — copy only what is on the master header. Never invent a phone, email, LinkedIn slug, GitHub, or city.
   Email: ${cf.email || 'OMIT — master has no email'}
   Phone: ${cf.phone || 'OMIT — master has no phone number'}
   LinkedIn: ${li}
-  GitHub: ${cf.github
-    ? ( /github\.com\//i.test(cf.github) ? cf.github : 'GitHub — KEEP this word on Line 3. Do not omit it. Do not invent a slug.')
-    : 'OMIT — master has no GitHub'}
+  GitHub: ${gh ? gh + ' — KEEP this github.com profile on Line 3' : 'OMIT — master has no github.com/username profile. Do not add the word GitHub or invent a handle. GitHub Actions in SKILLS is not a profile.'}
   Location: ${cf.location || 'OMIT — master header has no personal city'}
   Line 3 must be exactly: ${line || '[no contact fields — omit them]'}
   If LinkedIn is on the master (URL or the word LinkedIn), it MUST stay on Line 3.
-  If GitHub is on the master (URL or the word GitHub), it MUST stay on Line 3.
+  If a github.com/username profile is on the master, it MUST stay on Line 3. The word GitHub alone is not a profile.
   Personal city only — do NOT substitute a college city, university city, or employer office city.`;
 }
 
@@ -8636,14 +8690,15 @@ function cleanupResume(text, opts = {}) {
   t = normalizeExperienceRoleLines(t);
   t = t.split('\n').map(repairBrokenBulletMetrics).join('\n');
   t = normalizeContactInResume(t).trim();
+  t = stripFakeGitHub(t, master);
   if (master) {
     t = restoreMasterContact(t, master);
     t = restoreMasterExperienceLocations(t, master);
     t = restoreMasterEducation(t, master);
     t = restoreMasterCertifications(t, master);
     t = stripFakeLinkedIn(t, master);
-    t = stripFakeGitHub(t, master);
   }
+  t = stripFakeGitHub(t, master);
   const kw = opts.keywords || state.keywords || null;
   if (kw) {
     t = polishResumeForAts(t, kw, master || t);
