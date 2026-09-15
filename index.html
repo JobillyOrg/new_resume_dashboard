@@ -56,116 +56,157 @@
     button, textarea, input { font-family: inherit; }
 
     .app-shell {
-      display: grid;
-      grid-template-columns: 260px 1fr;
-      min-height: 100vh;
-    }
-    .rail {
-      background:
-        linear-gradient(180deg, rgba(255,255,255,0.06) 0%, transparent 40%),
-        linear-gradient(180deg, #312e81 0%, #1e1b4b 55%, #0f0a2e 100%);
-      color: #fff;
-      padding: 32px 24px;
       display: flex;
       flex-direction: column;
-      gap: 32px;
+      min-height: 100vh;
+    }
+    .top-nav {
+      background: #fff;
+      color: var(--ink);
+      padding: 12px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      border-bottom: 1px solid var(--line);
+      box-shadow: 0 1px 0 rgba(15, 23, 42, 0.03);
       position: sticky;
       top: 0;
-      height: 100vh;
-      border-right: 1px solid rgba(255,255,255,0.06);
-      box-shadow: 4px 0 32px rgba(15, 23, 42, 0.12);
+      z-index: 50;
     }
     .brand {
       display: flex;
-      flex-direction: column;
-      gap: 16px;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
     }
     .brand-logo {
-      width: 68px;
-      height: 68px;
+      width: 40px;
+      height: 40px;
       object-fit: contain;
       background: #fff;
-      border-radius: 20px;
-      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      padding: 5px;
       display: block;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
     }
     .brand-mark {
-      font-size: 24px;
+      font-size: 17px;
       font-weight: 800;
       letter-spacing: -0.04em;
       line-height: 1.1;
+      color: #0f172a;
     }
-    .brand-mark span { color: #a5b4fc; }
+    .brand-mark span { color: #4f46e5; }
     .brand-sub {
-      margin-top: 4px;
+      margin-top: 2px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #64748b;
+      line-height: 1.3;
+    }
+    .top-nav-meta {
       font-size: 12px;
-      font-weight: 500;
-      color: #c7d2fe;
-      line-height: 1.5;
-      opacity: 0.9;
+      font-weight: 600;
+      color: #64748b;
     }
-    .rail-label {
+
+    .path-strip {
+      background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+      border-bottom: 1px solid #e2e8f0;
+      padding: 14px 28px 16px;
+      position: sticky;
+      top: 65px;
+      z-index: 40;
+    }
+    .path-strip-inner {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .path-strip-label {
       font-size: 10px;
-      letter-spacing: 0.18em;
+      letter-spacing: 0.16em;
       text-transform: uppercase;
-      color: #a5b4fc;
-      margin-bottom: 14px;
-      font-weight: 700;
+      color: #64748b;
+      font-weight: 800;
+      margin-bottom: 10px;
     }
-    .steps { display: flex; flex-direction: column; gap: 4px; }
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 0;
+      align-items: stretch;
+      counter-reset: none;
+    }
     .step {
-      display: flex; align-items: center; gap: 12px;
-      padding: 10px 12px;
-      border-radius: 14px;
-      color: #c7d2fe;
-      font-size: 13px;
-      font-weight: 500;
-      transition: background 0.2s ease, color 0.2s ease;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 12px 14px 12px 12px;
+      margin: 0;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.35;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
     }
-    .step.active {
-      background: rgba(255,255,255,0.95);
-      color: #3730a3;
-      font-weight: 700;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-    }
-    .step.done { color: #86efac; }
+    .step + .step { border-left: none; }
+    .step:first-child { border-radius: 12px 0 0 12px; }
+    .step:last-child { border-radius: 0 12px 12px 0; }
     .step-num {
       width: 24px; height: 24px; border-radius: 8px;
-      border: 1.5px solid rgba(165,180,252,0.5);
+      border: 1.5px solid #cbd5e1;
       display: flex; align-items: center; justify-content: center;
       font-size: 11px; font-weight: 800;
       flex-shrink: 0;
+      background: #f8fafc;
+      color: #64748b;
     }
-    .step.active .step-num { background: #4f46e5; border-color: #4f46e5; color: #fff; }
-    .step.done .step-num { background: #16a34a; border-color: #16a34a; color: #fff; }
+    .step.active {
+      background: #eef2ff;
+      color: #312e81;
+      font-weight: 800;
+      border-color: #c7d2fe;
+      box-shadow: inset 0 0 0 1px #c7d2fe;
+      z-index: 1;
+    }
+    .step.active .step-num {
+      background: #4f46e5; border-color: #4f46e5; color: #fff;
+    }
+    .step.done {
+      color: #166534;
+      background: #f0fdf4;
+      border-color: #bbf7d0;
+    }
+    .step.done .step-num {
+      background: #16a34a; border-color: #16a34a; color: #fff;
+    }
 
     .workspace {
-      padding: 32px 40px 56px;
-      max-width: 1280px;
+      padding: 24px 36px 56px;
+      max-width: 1400px;
       width: 100%;
       margin: 0 auto;
     }
 
     .masthead {
       display: flex; justify-content: space-between; gap: 20px; align-items: flex-end;
-      margin-bottom: 28px;
-      padding-bottom: 24px;
+      margin-bottom: 22px;
+      padding-bottom: 18px;
       border-bottom: 1px solid var(--line);
     }
     .masthead h1 {
-      font-size: 28px; font-weight: 800; letter-spacing: -0.03em;
-      display: flex; align-items: center; gap: 14px;
-      line-height: 1.2;
+      font-size: 24px; font-weight: 800; letter-spacing: -0.03em;
+      line-height: 1.2; color: #0f172a;
     }
-    .masthead-logo {
-      width: 44px; height: 44px; object-fit: contain;
-      background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 7px;
-      box-shadow: var(--shadow-sm);
-    }
+    .masthead-logo { display: none; }
     .masthead p {
-      color: var(--muted); font-size: 15px; margin-top: 8px;
-      max-width: 580px; line-height: 1.6; font-weight: 500;
+      color: var(--muted); font-size: 14px; margin-top: 6px;
+      max-width: 640px; line-height: 1.55; font-weight: 500;
     }
 
     .toolbar { display: grid; grid-template-columns: 1fr 1.2fr; gap: 18px; margin-bottom: 22px; }
@@ -246,6 +287,129 @@
     }
     .upload-zone p { margin: 0; font-size: 13px; color: #475569; }
     .upload-zone small { display: block; margin-top: 4px; font-size: 11px; color: #94a3b8; }
+    .resume-fields-card { margin-top: 18px; }
+    .resume-fields-card .card-title { margin-bottom: 4px; }
+    .rf-legend {
+      display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center;
+      margin: 0 0 14px; padding: 10px 12px; border-radius: 10px;
+      background: #f1f5f9; border: 1px solid #e2e8f0; font-size: 12px; color: #475569;
+    }
+    .rf-legend-pill {
+      display: inline-flex; align-items: center; gap: 6px; font-weight: 700;
+    }
+    .rf-badge {
+      display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: 0.04em;
+      text-transform: uppercase; padding: 2px 7px; border-radius: 999px; line-height: 1.4;
+    }
+    .rf-badge-bold { background: #1e293b; color: #fff; }
+    .rf-badge-plain { background: #e2e8f0; color: #475569; }
+    .rf-layout {
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+      min-height: 420px;
+    }
+    .rf-nav {
+      position: sticky; top: 150px;
+      display: flex; flex-direction: column; gap: 4px;
+      padding: 12px; border-radius: 14px;
+      background: #0f172a; color: #e2e8f0;
+      box-shadow: var(--shadow-md);
+    }
+    .rf-nav-title {
+      font-size: 10px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
+      color: #94a3b8; margin: 0 0 8px; padding: 0 6px;
+    }
+    .rf-nav button {
+      display: flex; align-items: center; gap: 10px; width: 100%;
+      border: none; background: transparent; color: #cbd5e1;
+      text-align: left; padding: 9px 10px; border-radius: 10px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      box-shadow: none; transform: none !important;
+    }
+    .rf-nav button:hover { background: rgba(255,255,255,0.08); color: #fff; transform: none !important; }
+    .rf-nav button.active {
+      background: #fff; color: #0f172a; font-weight: 800;
+    }
+    .rf-nav-num {
+      width: 22px; height: 22px; border-radius: 7px; flex-shrink: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 800; background: rgba(148,163,184,0.25); color: #e2e8f0;
+    }
+    .rf-nav button.active .rf-nav-num { background: #4f46e5; color: #fff; }
+    .rf-nav button.ok .rf-nav-num { background: #16a34a; color: #fff; }
+    .rf-nav button.ok:not(.active) { color: #bbf7d0; }
+    .rf-panels {
+      display: flex; flex-direction: column; gap: 16px;
+      max-height: min(72vh, 900px); overflow: auto;
+      padding-right: 4px; scroll-behavior: smooth;
+    }
+    .rf-block {
+      border: 1px solid #cbd5e1; border-radius: 14px; padding: 16px 16px 14px;
+      background: #fff;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+      scroll-margin-top: 100px;
+    }
+    .rf-block h3 {
+      margin: 0; font-size: 13px; font-weight: 800; letter-spacing: 0.04em;
+      text-transform: uppercase; color: #0f172a;
+    }
+    .rf-block-note { margin: 6px 0 0; font-size: 12px; color: #64748b; line-height: 1.45; }
+    .rf-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+    .rf-head h3 { margin: 0; }
+    .rf-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 12px; }
+    .rf-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .rf-span-2 { grid-column: span 2; }
+    .rf-span-3 { grid-column: 1 / -1; }
+    .rf-field label, .rf-grid label {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+      font-size: 12px; font-weight: 700; color: #334155; margin-bottom: 6px;
+    }
+    .rf-field input, .rf-grid input, .rf-field textarea, .rf-grid textarea {
+      width: 100%; box-sizing: border-box; border: 1.5px solid #cbd5e1; border-radius: 10px;
+      padding: 11px 12px; font-size: 14px; line-height: 1.45; background: #fff; color: var(--ink);
+    }
+    .rf-field input:focus, .rf-grid input:focus, .rf-field textarea:focus, .rf-grid textarea:focus {
+      outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    }
+    .rf-field.rf-bold-field input,
+    .rf-field.rf-bold-field textarea {
+      font-weight: 700; border-color: #94a3b8; background: #f8fafc;
+    }
+    .rf-field textarea, .rf-grid textarea { min-height: 96px; resize: vertical; }
+    .rf-field textarea.rf-area-lg { min-height: 160px; font-size: 14px; }
+    .rf-field textarea.rf-area-xl { min-height: 220px; font-size: 14px; }
+    .rf-field input.rf-input-lg { min-height: 46px; }
+    .rf-item {
+      margin-top: 14px; padding: 14px; border: 1px solid #e2e8f0; border-radius: 12px;
+      background: #f8fafc;
+    }
+    .rf-item:first-of-type { margin-top: 0; }
+    .rf-item-top {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px;
+      font-size: 13px; font-weight: 800; color: #0f172a;
+    }
+    .rf-check-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .rf-check-list li {
+      display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px;
+      border-radius: 10px; background: #f8fafc; border: 1px solid #e2e8f0;
+      font-size: 13px; color: #334155; line-height: 1.45;
+    }
+    .rf-check-dot {
+      width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; flex-shrink: 0;
+      background: #cbd5e1;
+    }
+    .rf-check-list li.ok .rf-check-dot { background: #16a34a; }
+    .rf-check-list li.warn .rf-check-dot { background: #f59e0b; }
+    @media (max-width: 980px) {
+      .rf-layout { grid-template-columns: 1fr; }
+      .rf-nav { position: static; flex-direction: row; flex-wrap: wrap; }
+      .rf-nav button { width: auto; }
+      .rf-panels { max-height: none; }
+      .rf-grid, .rf-grid-2 { grid-template-columns: 1fr; }
+      .rf-span-2, .rf-span-3 { grid-column: auto; }
+    }
     .jd-tab-row {
       display: flex; gap: 8px; flex-wrap: nowrap; margin-bottom: 10px; align-items: stretch;
       overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin;
@@ -375,6 +539,12 @@
     .kpi-mini .score-card:nth-child(3) { background: #f0fdf4; border-color: #bbf7d0; }
     .kpi-mini .score-card:nth-child(4) { background: #fff7ed; border-color: #fed7aa; }
 
+    .score-report-hero {
+      display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
+      padding: 8px 4px 4px;
+    }
+    .score-report-hero-copy { min-width: 0; flex: 1 1 220px; }
+    .score-report-hero .donut-wrap { flex-shrink: 0; }
     .insight-hero {
       display: grid; grid-template-columns: 180px 1fr; gap: 24px; align-items: center;
       margin-bottom: 22px;
@@ -1018,8 +1188,76 @@
     .stack-detect-detail { color: #64748b; flex: 1 1 200px; }
     .post-rewrite-score .stack-detect { margin-top: 8px; }
 
-    .preview-toggle { display: flex; gap: 8px; margin-bottom: 12px; }
+    .preview-toggle { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; flex-wrap: wrap; }
     .preview-toggle .active { background: #4f46e5; color: #fff; border-color: #4f46e5; }
+    .resume-paper.editing {
+      outline: 2px solid #4f46e5;
+      outline-offset: 6px;
+      cursor: text;
+    }
+    .resume-paper.editing .r-page-break { pointer-events: none; user-select: none; }
+    .resume-edit-bar {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px;
+      margin: 0 0 10px; padding: 7px 10px;
+      background: linear-gradient(#fbfcfe, #eef2f7);
+      border: 1px solid #c5cdd8; border-radius: 8px;
+      box-shadow: inset 0 1px 0 #fff;
+    }
+    .resume-edit-bar.hidden { display: none; }
+    .resume-ruler {
+      margin: 0 0 8px; padding: 6px 12px 4px;
+      background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px;
+      user-select: none;
+    }
+    .resume-ruler.hidden { display: none; }
+    .resume-ruler-track {
+      position: relative; height: 18px; margin: 0 8px;
+      background: repeating-linear-gradient(
+        90deg,
+        #e2e8f0 0, #e2e8f0 1px,
+        transparent 1px, transparent calc(12.5% - 0px)
+      );
+      border-bottom: 1px solid #94a3b8;
+    }
+    .resume-ruler-mark {
+      position: absolute; top: 10px; width: 1px; height: 8px; background: #64748b;
+      transform: translateX(-50%);
+    }
+    .resume-ruler-margin {
+      position: absolute; top: 0; bottom: 0; width: 10px;
+      background: #cbd5e1; opacity: 0.85;
+    }
+    .resume-ruler-margin.left { left: 0; border-radius: 2px 0 0 2px; }
+    .resume-ruler-margin.right { right: 0; border-radius: 0 2px 2px 0; }
+    .resume-ruler-indent {
+      position: absolute; top: 2px; left: 8%; width: 0; height: 0;
+      border-left: 6px solid transparent; border-right: 6px solid transparent;
+      border-top: 8px solid #4f46e5;
+      transform: translateX(-50%);
+    }
+    .resume-ruler-labels {
+      display: flex; justify-content: space-between; margin: 2px 4px 0;
+      font-size: 9px; font-weight: 700; color: #64748b; letter-spacing: 0.02em;
+    }
+    .resume-edit-bar .edit-bar-group { display: flex; align-items: center; gap: 4px; }
+    .resume-edit-bar .edit-bar-sep { width: 1px; height: 22px; background: #cbd5e1; margin: 0 4px; }
+    .resume-edit-bar button {
+      min-width: 32px; height: 30px; padding: 0 8px; margin: 0;
+      border: 1px solid transparent; border-radius: 4px;
+      background: transparent; color: #1e293b;
+      font-size: 13px; font-weight: 700; letter-spacing: 0;
+      box-shadow: none; transform: none !important;
+    }
+    .resume-edit-bar button:hover { background: #fff; border-color: #cbd5e1; transform: none !important; }
+    .resume-edit-bar button.active { background: #dbeafe; border-color: #93c5fd; }
+    .resume-edit-bar button.edit-u { text-decoration: underline; }
+    .resume-edit-bar button.edit-i { font-style: italic; }
+    .resume-edit-bar select {
+      height: 30px; border: 1px solid #cbd5e1; border-radius: 4px;
+      background: #fff; color: #0f172a; font-size: 12px; font-weight: 600;
+      padding: 0 6px; max-width: 140px;
+    }
+    .resume-paper u { text-decoration: underline; }
     .paper-wrap {
       background: linear-gradient(180deg, #e2e8f0 0%, #cbd5e1 100%);
       border-radius: var(--radius-xl);
@@ -1093,6 +1331,12 @@
     .resume-paper .r-edu-degree {
       font-size: var(--fs-role, 13.2pt); font-weight: 700; color: #000;
       margin: 0; padding: 0; line-height: var(--lh-role, 13.2pt); text-align: left;
+      font-family: Calibri, Arial, sans-serif;
+    }
+    .resume-paper .r-other-heading {
+      font-size: var(--fs-role, 13.2pt); font-weight: 700; color: #000;
+      margin: var(--sp-job, 1.85pt) 0 0 4.55pt; padding: 0;
+      line-height: var(--lh-role, 13.2pt); text-align: left;
       font-family: Calibri, Arial, sans-serif;
     }
     .resume-paper .r-edu-school {
@@ -1174,16 +1418,14 @@
     }
 
     @media (max-width: 980px) {
-      .app-shell { grid-template-columns: 1fr; }
-      .rail {
-        position: static; height: auto; flex-direction: row; flex-wrap: wrap;
-        gap: 16px; padding: 20px; box-shadow: none; border-right: none;
-      }
-      .brand { flex-direction: row; align-items: center; }
-      .brand-logo { width: 48px; height: 48px; border-radius: 14px; padding: 7px; }
-      .steps { flex-direction: row; flex-wrap: wrap; }
+      .top-nav { padding: 10px 16px; position: static; }
+      .path-strip { padding: 12px 16px 14px; position: static; }
+      .steps { grid-template-columns: 1fr; }
+      .step, .step:first-child, .step:last-child { border-radius: 10px; border: 1px solid #e2e8f0; }
+      .step + .step { border-left: 1px solid #e2e8f0; margin-top: 6px; }
+      .brand-logo { width: 36px; height: 36px; }
       .toolbar, .grid-2, .score-grid { grid-template-columns: 1fr; }
-      .workspace { padding: 20px 16px 40px; }
+      .workspace { padding: 18px 16px 40px; }
       .masthead { flex-direction: column; align-items: flex-start; border-bottom: none; padding-bottom: 0; }
       .action-bar { padding: 14px; }
     }
@@ -1191,7 +1433,7 @@
 </head>
 <body class="screen-loading">
 <div class="app-shell">
-  <aside class="rail">
+  <header class="top-nav">
     <div class="brand">
       <img class="brand-logo" src="logo.png" alt="Jobilly.AI">
       <div>
@@ -1199,8 +1441,12 @@
         <p class="brand-sub">Resume Dashboard</p>
       </div>
     </div>
-    <div>
-      <div class="rail-label">Path</div>
+    <div class="top-nav-meta">Score → Rewrite → Export</div>
+  </header>
+
+  <div class="path-strip" aria-label="Workflow path">
+    <div class="path-strip-inner">
+      <div class="path-strip-label">Path</div>
       <div class="steps">
         <div class="step active" id="step1"><div class="step-num">1</div> Drop in the posting</div>
         <div class="step" id="step2"><div class="step-num">2</div> Score the match</div>
@@ -1209,28 +1455,13 @@
         <div class="step" id="step5"><div class="step-num">5</div> Export the file</div>
       </div>
     </div>
-  </aside>
+  </div>
 
   <main class="workspace">
     <div class="masthead">
       <div>
-        <h1><img class="masthead-logo" src="logo.png" alt="">Jobilly.AI Resume Dashboard</h1>
-        <p>Paste the posting and your source resume. Jobilly.AI reads the role, scores the gap, then rewrites one honest page for that opening.</p>
-      </div>
-    </div>
-
-    <div class="toolbar">
-      <div class="card">
-        <div class="card-title">Role focus</div>
-        <div class="track-row" id="trackRow"></div>
-      </div>
-      <div class="card">
-        <div class="card-title">Rewrite style</div>
-        <div class="mode-toggle">
-          <button class="active" id="modeIntegrity" onclick="setMode('integrity')">Stay truthful<small>Gemini extracts JD skills only. Rewrite stays truthful to the posting.</small></button>
-          <button id="modeAggressive" onclick="setMode('aggressive')">Stretch for the posting<small>Gemini extracts JD skills + internet/market skills from job boards.</small></button>
-        </div>
-        <div class="hint">Works for any posting — help desk, network, data, security, and the rest. The posting decides the role. Certifications are never invented or scored.</div>
+        <h1>Resume workspace</h1>
+        <p>Paste the posting and verify your resume fields. Jobilly scores the gap, then rewrites one honest page for that opening.</p>
       </div>
     </div>
 
@@ -1242,6 +1473,7 @@
           <span><strong id="baseResumeName">No file loaded — upload a PDF, DOC, or DOCX</strong></span>
           <div class="base-resume-actions">
             <button type="button" class="btn-mini" onclick="triggerReplaceResume()">Replace resume</button>
+            <button type="button" class="btn-mini" onclick="clearBaseResume()">Clear resume</button>
           </div>
         </div>
         <input type="file" id="resumeFileInput" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
@@ -1249,9 +1481,9 @@
           <p>Drop resume here or click to upload</p>
           <small>PDF · DOC · DOCX</small>
         </div>
-        <textarea id="resumeInput" placeholder="Upload a PDF, DOC, or DOCX. Extracted text appears here — edit only if a field looks wrong."></textarea>
+        <textarea id="resumeInput" class="hidden" placeholder="Upload a PDF, DOC, or DOCX. Extracted text appears here — edit only if a field looks wrong."></textarea>
         <div class="char-count"><span id="resumeCount">0</span> characters · <span id="resumeWords">0</span> words</div>
-        <div class="hint">Source of truth for every posting — drafts are rewritten from this text only.</div>
+        <div class="hint">Source of truth for every posting — drafts are rewritten from the verified fields below.</div>
       </div>
       <div class="card">
         <div class="card-title">Job postings</div>
@@ -1269,6 +1501,20 @@
           <button type="button" class="btn-mini" onclick="removeActiveJdSession()">Clear this posting</button>
           <div class="char-count" style="margin:0"><span id="jdCount">0</span> characters · <span id="jdWords">0</span> words</div>
         </div>
+      </div>
+    </div>
+
+    <div id="resumeFieldsCard" class="card resume-fields-card hidden">
+      <div class="card-title">Verify extracted resume</div>
+      <p class="hint" style="margin-bottom:10px;">Check every section after upload. Empty fields stay off the tailored page until you fill them, then Score.</p>
+      <div class="rf-legend">
+        <span class="rf-legend-pill"><span class="rf-badge rf-badge-bold">Bold on page</span> prints in bold</span>
+        <span class="rf-legend-pill"><span class="rf-badge rf-badge-plain">Normal</span> regular weight</span>
+        <span>Use the left checklist to jump sections.</span>
+      </div>
+      <div class="rf-layout">
+        <nav class="rf-nav" id="resumeFieldsNav" aria-label="Resume field sections"></nav>
+        <div class="rf-panels" id="resumeFields"></div>
       </div>
     </div>
 
@@ -1293,90 +1539,28 @@
     </div>
 
     <div id="freeAtsPanel" class="hidden card" style="margin-bottom:20px;">
-      <div id="roleCompare"></div>
-      <div class="insight-hero">
-        <div>
-          <div class="donut-wrap" id="atsDonut"></div>
-          <div class="legend-row" style="justify-content:center;">
-            <span><i style="background:#16a34a"></i>95+</span>
-            <span><i style="background:#d97706"></i>70–94</span>
-            <span><i style="background:#e11d48"></i>Below 70</span>
-          </div>
-        </div>
-        <div>
-          <div class="card-title">Match for <span id="scoreSourceLabel">this job</span></div>
-          <div id="roleDetectLine" class="hint hidden" style="margin-bottom:8px;"></div>
-          <div id="stackDetectLine" class="stack-detect hidden" role="status" aria-live="polite"></div>
-          <div class="kpi-mini">
-            <div class="score-card">
-              <div class="score-label">Match</div>
-              <div class="score-value" id="freeAtsScore">--</div>
-              <div class="score-sub">How well it fits this job</div>
-            </div>
-            <div class="score-card">
-              <div class="score-label">Skills in work history</div>
-              <div class="score-value blue" id="freeKwMatch">--</div>
-              <div class="score-sub" id="freeKwMatchSub">of the job’s tools</div>
-            </div>
-            <div class="score-card">
-              <div class="score-label">Layout</div>
-              <div class="score-value" id="freeFmtCheck" style="font-size:22px;">--</div>
-              <div class="score-sub">Plain text, easy to read</div>
-            </div>
-            <div class="score-card">
-              <div class="score-label">Measured bullets</div>
-              <div class="score-value yellow" id="freeBulletScore" style="font-size:22px;">--</div>
-              <div class="score-sub">bullets with real numbers</div>
-            </div>
-          </div>
+      <div class="score-report-hero">
+        <div class="donut-wrap" id="atsDonut"></div>
+        <div class="score-report-hero-copy">
+          <div class="card-title" style="margin:0 0 4px;">Match score · <span id="scoreSourceLabel">this job</span></div>
+          <div class="score-value" id="freeAtsScore" style="font-size:42px;line-height:1.1;">--</div>
+          <p class="hint" id="scoreDisclaimer" style="margin:8px 0 0;">9-point alignment to this posting — not a guess of ATS software.</p>
         </div>
       </div>
-
-      <div id="eligibilityPanel" class="eligibility-panel hidden"></div>
-      <p class="hint" id="scoreDisclaimer" style="margin:8px 0 0;">How well this resume matches the job — not a guess of ATS software.</p>
       <div id="hardKnockoutBanner"></div>
-
-      <div class="chart-grid">
+      <div class="chart-grid" style="margin-top:14px;">
         <div class="chart-card">
-          <h3>How this resume matches</h3>
-          <p class="ai-cat-hint">Click a row to see why.</p>
+          <h3>9-point report</h3>
+          <p class="ai-cat-hint">Click a row for the detail report.</p>
           <div class="bar-chart" id="ruleBars"></div>
         </div>
         <div class="chart-card">
-          <h3 id="aiCategoryDetailTitle">Why this score</h3>
+          <h3 id="aiCategoryDetailTitle">Report detail</h3>
           <div class="ai-cat-detail" id="aiCategoryDetail">
-            <p class="hint" style="margin:0;">Click a row on the left to see what that number means.</p>
+            <p class="hint" style="margin:0;">Click a category on the left to read the report.</p>
           </div>
         </div>
       </div>
-
-      <div class="card-title">How we read this posting</div>
-      <div class="flow-rail"><span class="c1">Business problem</span> <i>→</i> <span class="c2">Data problem</span> <i>→</i> <span class="c3">Architecture</span> <i>→</i> <span class="c4">Technologies</span> <i>→</i> <span class="c5">Your contribution</span> <i>→</i> <span class="c6">Result</span></div>
-      <div class="flow" id="atsFlow"></div>
-
-      <div class="chart-grid">
-        <div>
-          <div class="card-title">Recruiter glance</div>
-          <div class="chart-card" style="margin-bottom:12px;">
-            <h3>What a recruiter clears in 10 seconds</h3>
-            <div id="glanceChart"></div>
-          </div>
-          <div class="ten-list" id="tenSecondList"></div>
-        </div>
-        <div>
-          <div class="card-title">Open issues on this page</div>
-          <div id="freeGaps"></div>
-        </div>
-      </div>
-
-      <div class="card-title" style="margin-top:16px;">JD must-have tools (this is the scored set)</div>
-      <p class="hint" style="margin:0 0 8px;">Teal = in work history · gold = Skills only · pink = missing. Purple = nice-to-have (not scored). Orange = ATS phrases to weave into bullets.</p>
-      <div id="freeKwGrid" class="keyword-grid"></div>
-
-      <div class="card-title" style="margin-top:16px;">What a rewrite will change</div>
-<p class="hint" style="margin-bottom:12px;">Any posting: rewrite as that JD role. Skills and experience come from the JD; previous-role work is kept when it already matches.</p>
-      <div id="missingReport"></div>
-      <div id="tailorCta"></div>
     </div>
 
     <div id="progressSection" class="hidden card" style="margin-bottom:20px;">
@@ -1466,17 +1650,99 @@
         <div class="preview-toggle">
           <button class="btn-secondary active" id="viewFormattedBtn" onclick="setResumeView('formatted')">Page view</button>
           <button class="btn-secondary" id="viewRawBtn" onclick="setResumeView('raw')">Plain text</button>
+          <button class="btn-secondary" id="editResumeBtn" onclick="startResumeEdit()">Edit page</button>
+          <button class="btn-success hidden" id="doneResumeBtn" onclick="finishResumeEdit()">Done editing</button>
+        </div>
+        <div class="resume-edit-bar hidden" id="resumeEditBar" role="toolbar" aria-label="Resume formatting">
+          <div class="edit-bar-group">
+            <button type="button" title="Undo (Ctrl+Z)" aria-label="Undo" onmousedown="prepEditToolbarAction(event)" onclick="resumeEditCommand('undo')">Undo</button>
+            <button type="button" title="Redo (Ctrl+Y)" aria-label="Redo" onmousedown="prepEditToolbarAction(event)" onclick="resumeEditCommand('redo')">Redo</button>
+          </div>
+          <span class="edit-bar-sep" aria-hidden="true"></span>
+          <div class="edit-bar-group">
+            <select id="editFontName" title="Font" aria-label="Font" onmousedown="saveEditSelection()" onchange="resumeEditFontName(this.value)">
+              <option value="Calibri">Calibri</option>
+              <option value="Arial">Arial</option>
+              <option value="Times New Roman">Times New Roman</option>
+              <option value="Georgia">Georgia</option>
+              <option value="Cambria">Cambria</option>
+            </select>
+            <select id="editFontSize" title="Font size" aria-label="Font size" onmousedown="saveEditSelection()" onchange="resumeEditFontSize(this.value)">
+              <option value="8">8</option>
+              <option value="9">9</option>
+              <option value="10">10</option>
+              <option value="11">11</option>
+              <option value="12" selected>12</option>
+              <option value="13">13</option>
+              <option value="14">14</option>
+              <option value="16">16</option>
+              <option value="18">18</option>
+              <option value="20">20</option>
+              <option value="22">22</option>
+              <option value="24">24</option>
+            </select>
+            <button type="button" title="Decrease font" aria-label="Decrease font" onmousedown="prepEditToolbarAction(event)" onclick="resumeEditFontStep(-1)">A−</button>
+            <button type="button" title="Increase font" aria-label="Increase font" onmousedown="prepEditToolbarAction(event)" onclick="resumeEditFontStep(1)">A+</button>
+          </div>
+          <span class="edit-bar-sep" aria-hidden="true"></span>
+          <div class="edit-bar-group">
+            <button type="button" class="edit-fmt" data-cmd="bold" title="Bold (Ctrl+B)" aria-label="Bold" onmousedown="prepEditToolbarAction(event)" onclick="resumeEditCommand('bold')"><b>B</b></button>
+            <button type="button" class="edit-fmt edit-i" data-cmd="italic" title="Italic (Ctrl+I)" aria-label="Italic" onmousedown="prepEditToolbarAction(event)" onclick="resumeEditCommand('italic')">I</button>
+            <button type="button" class="edit-fmt edit-u" data-cmd="underline" title="Underline (Ctrl+U)" aria-label="Underline" onmousedown="prepEditToolbarAction(event)" onclick="resumeEditCommand('underline')">U</button>
+            <button type="button" class="edit-fmt" data-cmd="strikeThrough" title="Strikethrough" aria-label="Strikethrough" onmousedown="prepEditToolbarAction(event)" onclick="resumeEditCommand('strikeThrough')"><s>S</s></button>
+            <select id="editFontColor" title="Font color" aria-label="Font color" onmousedown="saveEditSelection()" onchange="resumeEditColor(this.value)">
+              <option value="#000000">Black</option>
+              <option value="#1e3a8a">Blue</option>
+              <option value="#334155">Gray</option>
+              <option value="#b91c1c">Red</option>
+            </select>
+            <button type="button" title="Clear formatting" aria-label="Clear formatting" onmousedown="prepEditToolbarAction(event)" onclick="resumeEditCommand('removeFormat')">Clear</button>
+          </div>
+          <span class="edit-bar-sep" aria-hidden="true"></span>
+          <div class="edit-bar-group">
+            <button type="button" class="edit-fmt" data-cmd="justifyLeft" title="Align left" aria-label="Align left" onmousedown="prepEditToolbarAction(event)" onclick="resumeEditCommand('justifyLeft')">Left</button>
+            <button type="button" class="edit-fmt" data-cmd="justifyCenter" title="Align center" aria-label="Align center" onmousedown="prepEditToolbarAction(event)" onclick="resumeEditCommand('justifyCenter')">Center</button>
+            <button type="button" class="edit-fmt" data-cmd="justifyRight" title="Align right" aria-label="Align right" onmousedown="prepEditToolbarAction(event)" onclick="resumeEditCommand('justifyRight')">Right</button>
+          </div>
+          <span class="edit-bar-sep" aria-hidden="true"></span>
+          <div class="edit-bar-group">
+            <button type="button" title="Insert bullet at cursor" aria-label="Insert bullet" onmousedown="prepEditToolbarAction(event)" onclick="resumeEditBullet()">• Bullet</button>
+            <button type="button" title="Convert line ↔ bullet" aria-label="Toggle bullet" onmousedown="prepEditToolbarAction(event)" onclick="resumeEditToggleBullet()">Toggle •</button>
+            <button type="button" title="Remove this bullet" aria-label="Remove bullet" onmousedown="prepEditToolbarAction(event)" onclick="resumeEditRemoveBullet()">Remove •</button>
+            <button type="button" title="Increase indent" aria-label="Indent" onmousedown="prepEditToolbarAction(event)" onclick="resumeEditIndent(1)">→ Indent</button>
+            <button type="button" title="Decrease indent" aria-label="Outdent" onmousedown="prepEditToolbarAction(event)" onclick="resumeEditIndent(-1)">← Outdent</button>
+            <button type="button" title="Insert blank line at cursor" aria-label="Insert line" onmousedown="prepEditToolbarAction(event)" onclick="resumeEditInsertLine()">+ Line</button>
+          </div>
+        </div>
+        <div class="resume-ruler hidden" id="resumeRuler" aria-hidden="true">
+          <div class="resume-ruler-track">
+            <span class="resume-ruler-mark" style="left:0%"></span>
+            <span class="resume-ruler-mark" style="left:12.5%"></span>
+            <span class="resume-ruler-mark" style="left:25%"></span>
+            <span class="resume-ruler-mark" style="left:37.5%"></span>
+            <span class="resume-ruler-mark" style="left:50%"></span>
+            <span class="resume-ruler-mark" style="left:62.5%"></span>
+            <span class="resume-ruler-mark" style="left:75%"></span>
+            <span class="resume-ruler-mark" style="left:87.5%"></span>
+            <span class="resume-ruler-mark" style="left:100%"></span>
+            <div class="resume-ruler-margin left" title="Left margin"></div>
+            <div class="resume-ruler-margin right" title="Right margin"></div>
+            <div class="resume-ruler-indent" id="resumeRulerIndent" title="First-line / bullet indent"></div>
+          </div>
+          <div class="resume-ruler-labels"><span>0"</span><span>1"</span><span>2"</span><span>3"</span><span>4"</span><span>5"</span><span>6"</span><span>7"</span><span>8.5"</span></div>
         </div>
         <div class="paper-wrap" id="resumePaperWrap">
           <div class="resume-paper" id="resumePaper"></div>
         </div>
         <div id="outputArea" contenteditable="true" spellcheck="false" class="hidden"></div>
+        <div class="hint hidden" id="resumeEditHint" style="margin-top:8px;">Click in the resume, then use the bar or ruler. • Bullet inserts at the caret (or after the last bullet). Indent / Outdent shift the line. Enter in a bullet adds another.</div>
         <div class="hint" id="resumeFitHint" style="margin-top:8px;">One page first: scales 12pt down to 8.8pt to fit; second page only if 8.8pt still overflows. Page 1 top 0.05″; page 2 top 0.5″.</div>
         <div class="dl-strip">
+          <button class="btn-success" onclick="downloadPdf()">Save PDF</button>
           <button class="btn-success" onclick="downloadDocx()">Save Word file</button>
           <button class="btn-secondary" onclick="downloadTxt()">Save text file</button>
           <button class="btn-secondary" onclick="copyToClipboard()">Copy text</button>
-          <button class="btn-secondary" onclick="printResume()">Print or PDF</button>
+          <button class="btn-secondary" onclick="printResume()">Print</button>
           <button class="btn-warning hidden" id="boostBtn" onclick="boostScore()">Push the score</button>
         </div>
       </div>
@@ -1518,7 +1784,7 @@
 </div>
 
 <div id="toast"></div>
-<script src="rag-engine.js?v=20260915d"></script>
-<script src="app.js?v=20260915d"></script>
+<script src="rag-engine.js?v=20260915j"></script>
+<script src="app.js?v=20260916g"></script>
 </body>
 </html>

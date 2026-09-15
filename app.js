@@ -1,5 +1,5 @@
 /* Jobilly.AI Resume Dashboard */
-const APP_VERSION = '20260915d';
+const APP_VERSION = '20260916g';
 const SCORE_THRESHOLD = 90;
 const SCORE_TARGET = 95;
 const SCORE_MAX = 100;
@@ -252,12 +252,12 @@ function scorePairKey(jd, resume) {
 }
 
 function hasFreshManualScore(jd, resume) {
-  return !!(
-    state.manualScoreKey
-    && state.manualScoreKey === scorePairKey(jd, resume)
-    && state.manualScoreUnified
-    && Number.isFinite(Number(state.manualScoreUnified.atsScore))
-  );
+  if (!state.manualScoreKey || !state.manualScoreUnified) return false;
+  if (!Number.isFinite(Number(state.manualScoreUnified.atsScore))) return false;
+  // JD must still match. Resume text may be re-normalized when syncing verified
+  // fields before Rewrite — that must not force Score again.
+  const jdPart = String(state.manualScoreKey).split('::')[0];
+  return jdPart === jdHash(String(jd || '').trim());
 }
 
 function clearManualScoreGate() {
@@ -574,12 +574,11 @@ Line 1: Full Name in Title Case (never ALL CAPS)
 Line 2: Most recent EXPERIENCE job title only — ${title}. Do NOT put the JD title on Line 2.
 ${formatContactLineInstruction(resumeText)}
 Line 4: blank
-Then ONLY these ALL-CAPS headers (exact spelling):
+Then ONLY these ALL-CAPS headers in the model output:
   SUMMARY
   ${skillsHeader}
   PROFESSIONAL EXPERIENCE
-  EDUCATION
-  (+ any extra master sections already present, same ALL-CAPS headers, same order)
+Do NOT output EDUCATION, PROJECTS, or CERTIFICATIONS — the app injects those once from verified fields (format only).
 SUMMARY = one prose paragraph (no bullets, no metrics).
 ${skillsHeader} = keep master category labels. Put JD must-have skills first on each line; demote off-role master tools.
 PROFESSIONAL EXPERIENCE role lines — exactly one plain-text line per role:
@@ -591,10 +590,12 @@ PROFESSIONAL EXPERIENCE role lines — exactly one plain-text line per role:
   Never put dates on a second line. Never Company | Title | Location | Dates.
   Never write the placeholder words "Job Title" or "Month YYYY" — copy the real title and dates.
 ${formatExperienceLocationLock(masterForRoles)}
+${formatVerifiedOmitBlock(masterForRoles)}
+${formatVerifiedStaticLockBlock()}
 Bullets: start with hyphen-space "- " only (not • * ·). 6–7 bullets per role. Each ends with a period.
-EDUCATION: Qualification / degree on its own line (bold). College, City, ST on the next line (not bold).
+TAILOR ONLY SUMMARY + SKILLS + EXPERIENCE. Education / Projects / Certifications are format-only from verified fields.
 No tables/columns/icons/photos/skill bars in the text output. No markdown. No **bold**.
-Do not invent section names. Do not drop required core sections.`;
+Do not invent section names. Omit any section or field that is empty on the verified form.`;
 }
 
 function formatCandidateProfileBlock(profile) {
@@ -782,7 +783,7 @@ OUTPUT: complete resume only, starting with the candidate name.`;
 
 function buildProofreadPrompt(jd, master, draft) {
   const title = masterExperienceRoleTitle(master) || 'the most recent EXPERIENCE job title';
-  const city = extractContactFields(master).location || '';
+  const city = verifiedContactFields(master).location || '';
   const skillsHeader = /\bTECHNICAL\s+SKILLS\b/i.test(String(master || ''))
     ? 'TECHNICAL SKILLS'
     : (/\bSKILLS\b/i.test(String(master || '')) ? 'SKILLS' : 'TECHNICAL SKILLS');
@@ -800,9 +801,13 @@ ${formatMandatoryTemplateBlock(title, master)}
 
 ${formatLockedContactBlock(master)}
 
+${formatVerifiedOmitBlock(master)}
+
 ${formatLockedTenureBlock(master)}
 
 ${formatExperienceLocationLock(master)}
+
+${formatVerifiedStaticLockBlock()}
 
 ${extraSectionsPromptBlock(master)}
 
@@ -814,7 +819,7 @@ SCAN TOP TO BOTTOM. Fix every hit. Then re-read once to confirm the page makes s
 1. HEADER
 - Line 1: name in Title Case, not ALL CAPS, not doubled
 - Line 2: job title only. Bad: "${title} St. Louis," or "${title}, ${city || 'City'}". Good: "${title}"
-- Line 3: copy EVERY contact field that is on the master (phone, email, LinkedIn, github.com/username if present, city). If the master has a github.com profile, keep that URL. If it only says GitHub with no handle, omit it. If the master has a phone and email they MUST appear — do not drop them and keep only LinkedIn
+- Line 3: copy EVERY contact field that is on the master (phone, email, linkedin.com/in/… if present, github.com/username if present, city). If the master has a LinkedIn URL, keep that URL. If it only says LinkedIn with no hyperlink, omit it. If the master has a github.com profile, keep that URL. If it only says GitHub with no handle, omit it. If the master has a phone and email they MUST appear — do not drop them
 - One blank line, then SUMMARY. No extra blank lines, no markdown, no **bold**
 
 2. SUMMARY
@@ -837,17 +842,14 @@ SCAN TOP TO BOTTOM. Fix every hit. Then re-read once to confirm the page makes s
 - Every bullet must read: action → work → result. Fix fragments, doubled phrases, "and Tableau" dumps, missing verbs, glued words
 - No duplicate bullets. No empty bullets. No two clouds in one bullet
 
-5. EDUCATION
-- Heading once
-- Degree + field on its own line (Master of Science, Data Science). Do not glue "Graduated" onto the degree
-- School / city on the next line
-- Do not invent a school, degree, or date. Do not merge education into experience
-- Certifications: put a space before the month (Certification Nov 2024, not CertificationNov 2024)
+5. EDUCATION / PROJECTS / CERTIFICATIONS
+- Do not rewrite these. If present in the draft, leave headings once; the app replaces them from verified fields
+- Never invent a school, degree, date, project, or certificate
+- Never duplicate EDUCATION or PROJECTS
 
-6. EXTRA SECTIONS (Projects, Awards, Volunteer, Languages, …)
-- Keep every extra section that is on the master, same heading, same order, once
-- Do not invent extra sections. Do not duplicate PROJECTS
-- Project titles are names only (no dates/location/role line) plus "- " bullets
+6. OTHER EXTRA SECTIONS (Awards, Volunteer, Languages, …)
+- Keep only if on the master, same heading, once
+- Do not invent extra sections
 
 7. PAGE-WIDE COPY
 - Repeated words, doubled phrases, duplicate section headings
@@ -1222,6 +1224,8 @@ let state = {
   keywords: null,
   kwHash: '',
   tailoredResume: '',
+  editingResume: false,
+  paperEdited: false,
   scorecard: null,
   filename: '',
   geminiOk: false,
@@ -1238,6 +1242,7 @@ let state = {
   lastUnderstanding: null,
   lastResumeJson: null,
   /** Frozen JSON from the master paste — never overwritten by tailored drafts. */
+  resumeFieldsTouched: false,
   masterResumeJson: null,
   lastJdJson: null,
   lastMissingReport: null,
@@ -1269,6 +1274,13 @@ function getActiveJdSession() {
 function persistCurrentJdSession(keywords) {
   const session = getActiveJdSession();
   if (!session) return;
+  if (state.editingResume) {
+    const live = htmlToResumeText($('resumePaper'));
+    if (live) {
+      state.tailoredResume = live;
+      if ($('outputArea')) $('outputArea').textContent = live;
+    }
+  }
   if ($('jdInput')) session.jd = $('jdInput').value;
   session.tailoredResume = state.tailoredResume || ($('outputArea') && $('outputArea').textContent) || '';
   syncJdSessionMeta(session, keywords || state.keywords);
@@ -1308,6 +1320,8 @@ function loadWorkspace() {
     state.activeJdId = data.activeJdId || state.jdSessions[0].id;
     if (data.mode) state.mode = data.mode;
     if (data.track) state.track = data.track;
+    // Stretch UI removed — never restore aggressive mode from saved workspace.
+    state.mode = 'integrity';
   } catch {
     initDefaultWorkspace();
   }
@@ -1321,6 +1335,13 @@ function applyBaseResumeToUi() {
   if ($('baseResumeName')) {
     const name = state.baseResume?.fileName;
     $('baseResumeName').textContent = name || (text.trim() ? 'Uploaded resume' : 'No file loaded — upload a PDF, DOC, or DOCX');
+  }
+  if (text.trim()) {
+    const json = state.baseResume?.fields || parseResumeToJsonLocal(text);
+    state.masterResumeJson = json;
+    renderResumeFields(json);
+  } else if ($('resumeFieldsCard')) {
+    $('resumeFieldsCard').classList.add('hidden');
   }
 }
 
@@ -1466,8 +1487,28 @@ function scheduleSaveWorkspace() {
 
 function onResumeInput() {
   updateCounts();
-  clearManualScoreGate();
-  state.masterResumeJson = null;
+  const text = ($('resumeInput') && $('resumeInput').value) || '';
+  const prev = String((state.baseResume && state.baseResume.text) || '');
+  const hadResults = !!(
+    state.manualScoreUnified
+    || state.lastAtsUnified
+    || String(state.tailoredResume || '').trim()
+    || (state.jdSessions || []).some(s => String(s.tailoredResume || '').trim())
+  );
+  if (state.baseResume) state.baseResume.text = text;
+  // Raw paste/replace of master resume invalidates prior Score + Rewrite.
+  if (hadResults && jdHash(prev) !== jdHash(text)) {
+    resetResultsUi(true, { clearAllSessionDrafts: true });
+    if (state.baseResume) state.baseResume.text = text;
+  } else {
+    clearManualScoreGate();
+  }
+  if (!state.resumeFieldsTouched) {
+    const json = parseResumeToJsonLocal(text);
+    state.masterResumeJson = json;
+    if (state.baseResume) state.baseResume.fields = json;
+    renderResumeFields(json);
+  }
   scheduleSaveWorkspace();
 }
 
@@ -1518,7 +1559,7 @@ async function handleResumeUpload(file) {
     showToast('Upload a PDF, DOC, or DOCX resume', '#e11d48');
     return;
   }
-  showAiProcessing('Reading your resume file…', 'Extracting text from ' + file.name + '…');
+  showAiProcessing('Reading your resume…', 'Extracting text — then verify every field');
   try {
     const data = await fileToBase64(file);
     const payload = await extractResumeOnServer(file.name, data);
@@ -1526,20 +1567,64 @@ async function handleResumeUpload(file) {
       linkedin: payload.links && payload.links.linkedin,
       github: payload.links && payload.links.github,
     });
+    updateAiProcessing(
+      'Verify all details in the fields below',
+      'Check header, summary, skills, experience, education, projects, certs, and other…',
+    );
+    await refreshResumeFields({ useGemini: true });
+    updateAiProcessing(
+      'Almost done — review the extracted fields',
+      'Confirm every section looks right before you Score',
+    );
+    await new Promise(r => setTimeout(r, 600));
     stopAiProcessing();
-    showToast('Base resume loaded · ' + wordCount(payload.text) + ' words');
+    showToast('Verify all details in the fields, then Score');
+    const card = $('resumeFieldsCard');
+    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
     stopAiProcessing();
     showToast(String(err.message || err).slice(0, 140), '#e11d48');
   }
 }
 
+function liftNameAboveLeadingHeading(text) {
+  const lines = String(text || '').split('\n');
+  let headIdx = -1;
+  let nameIdx = -1;
+  let contactIdx = -1;
+  for (let i = 0; i < Math.min(lines.length, 12); i++) {
+    const l = lines[i].trim();
+    if (!l) continue;
+    if (headIdx < 0 && /^(SUMMARY|OBJECTIVE|PROFILE|PROFESSIONAL SUMMARY)\b/i.test(l)) {
+      headIdx = i;
+      continue;
+    }
+    if (nameIdx < 0 && !(typeof isHeaderContactLine === 'function' && isHeaderContactLine(l)) && !(typeof isSectionHeader === 'function' && isSectionHeader(l))) {
+      nameIdx = i;
+      continue;
+    }
+    if (contactIdx < 0 && (typeof isHeaderContactLine === 'function' ? isHeaderContactLine(l) : /@|\d{3}|linkedin|github/i.test(l))) {
+      contactIdx = i;
+      break;
+    }
+  }
+  if (headIdx < 0 || nameIdx < 0 || headIdx > nameIdx) return String(text || '');
+  const heading = lines.splice(headIdx, 1)[0];
+  if (nameIdx > headIdx) nameIdx -= 1;
+  if (contactIdx > headIdx) contactIdx -= 1;
+  const insertAt = (contactIdx >= 0 ? contactIdx : nameIdx) + 1;
+  lines.splice(insertAt, 0, heading);
+  return lines.join('\n');
+}
+
 function normalizeMasterResumeText(text, extra = {}) {
   let t = unstickGluedResumeText(text || '');
+  t = liftNameAboveLeadingHeading(t);
   t = injectLinkedInSlug(t, extra.linkedin);
   t = injectGithubProfile(t, extra.github);
   t = normalizeContactInResume(t);
   t = stripFakeGitHub(t, t);
+  t = stripFakeLinkedIn(t, t);
   const locked = buildLockedContactLine(extractContactFields(t));
   if (locked) t = restoreMasterContact(t, t);
   if (typeof normalizeExperienceRoleLines === 'function') t = normalizeExperienceRoleLines(t);
@@ -1561,11 +1646,13 @@ function setBaseResume(text, fileName, extra = {}) {
   };
   applyBaseResumeToUi();
   updateCounts();
-  state.keywords = null;
-  state.kwHash = '';
-  state.masterResumeJson = null;
-  clearManualScoreGate();
+  state.masterResumeJson = parseResumeToJsonLocal(normalized);
+  state.baseResume.fields = state.masterResumeJson;
+  state.resumeFieldsTouched = false;
+  // New/replaced resume — drop prior Score + Rewrite for every posting.
+  resetResultsUi(true, { clearAllSessionDrafts: true });
   saveWorkspace();
+  renderResumeFields(state.masterResumeJson);
 }
 
 function sanitizeMasterInEditor() {
@@ -1588,9 +1675,502 @@ function sanitizeMasterInEditor() {
   return next;
 }
 
+function rfInput(name, value, extra = '') {
+  return `<input type="text" data-rf="${escapeHtml(name)}" value="${escapeHtml(value || '')}" ${extra} oninput="onResumeFieldInput()">`;
+}
+
+function rfArea(name, value, extra = '') {
+  return `<textarea data-rf="${escapeHtml(name)}" ${extra} oninput="onResumeFieldInput()">${escapeHtml(value || '')}</textarea>`;
+}
+
+/** @param {{ bold?: boolean, span?: string, areaClass?: string, inputClass?: string }} opts */
+function rfField(label, control, opts = {}) {
+  const span = typeof opts === 'string' ? opts : (opts.span || '');
+  const bold = typeof opts === 'object' && !!opts.bold;
+  const badge = bold
+    ? '<span class="rf-badge rf-badge-bold">Bold on page</span>'
+    : '<span class="rf-badge rf-badge-plain">Normal</span>';
+  const cls = `rf-field ${span} ${bold ? 'rf-bold-field' : ''}`.trim();
+  return `<div class="${cls}"><label>${escapeHtml(label)} ${badge}</label>${control}</div>`;
+}
+
+function emptyJob() {
+  return { company: '', role: '', location: '', start_date: '', end_date: '', responsibilities: [] };
+}
+function emptyEdu() {
+  return { degree: '', institution: '', location: '', start_date: '', end_date: '' };
+}
+function emptyProject() {
+  return { name: '', bullets: [] };
+}
+function emptyCert() {
+  return { name: '', date: '' };
+}
+
+const RF_SECTIONS = [
+  { id: 'header', label: 'Header' },
+  { id: 'summary', label: 'Summary' },
+  { id: 'skills', label: 'Skills' },
+  { id: 'experience', label: 'Experience' },
+  { id: 'education', label: 'Education' },
+  { id: 'projects', label: 'Projects' },
+  { id: 'certifications', label: 'Certifications' },
+  { id: 'other', label: 'Other' },
+];
+
+function rfSectionFilled(id, r) {
+  const pi = r.personal_information || {};
+  if (id === 'header') return !!(pi.name || pi.title || pi.email || pi.phone);
+  if (id === 'summary') return !!String(r.professional_summary || '').trim();
+  if (id === 'skills') return (r.skill_lines || []).some(s => s.label || s.value);
+  if (id === 'experience') return (r.professional_experience || []).some(j => j.role || j.company || (j.responsibilities || []).length);
+  if (id === 'education') return (r.education || []).some(e => e.degree || e.institution);
+  if (id === 'projects') return (r.projects || []).some(p => p.name || (p.bullets || []).length);
+  if (id === 'certifications') return (r.certifications || []).some(c => c.name);
+  if (id === 'other') return (r.other_sections || []).some(o => o.section_name || o.heading || o.data);
+  return false;
+}
+
+function renderResumeFieldsNav(r) {
+  const nav = $('resumeFieldsNav');
+  if (!nav) return;
+  nav.innerHTML = `<div class="rf-nav-title">Fields check</div>` + RF_SECTIONS.map((s, i) => {
+    const ok = rfSectionFilled(s.id, r);
+    return `<button type="button" data-rf-nav="${s.id}" class="${ok ? 'ok' : ''}" onclick="scrollToRfSection('${s.id}')">
+      <span class="rf-nav-num">${i + 1}</span><span>${escapeHtml(s.label)}</span>
+    </button>`;
+  }).join('');
+}
+
+function scrollToRfSection(id) {
+  const panel = document.getElementById('rf-sec-' + id);
+  const host = $('resumeFields');
+  if (panel && host) {
+    state._rfNavLock = id;
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setTimeout(() => { if (state._rfNavLock === id) state._rfNavLock = ''; }, 700);
+  }
+  document.querySelectorAll('#resumeFieldsNav [data-rf-nav]').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-rf-nav') === id);
+  });
+}
+
+let rfScrollObserver = null;
+function bindResumeFieldsScrollSpy() {
+  const host = $('resumeFields');
+  if (!host || typeof IntersectionObserver === 'undefined') return;
+  if (rfScrollObserver) {
+    rfScrollObserver.disconnect();
+    rfScrollObserver = null;
+  }
+  const sections = [...host.querySelectorAll('.rf-block[id^="rf-sec-"]')];
+  if (!sections.length) return;
+  rfScrollObserver = new IntersectionObserver((entries) => {
+    if (state._rfNavLock) return;
+    const visible = entries
+      .filter(e => e.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+    if (!visible.length) return;
+    const id = String(visible[0].target.id || '').replace(/^rf-sec-/, '');
+    if (!id) return;
+    document.querySelectorAll('#resumeFieldsNav [data-rf-nav]').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-rf-nav') === id);
+    });
+  }, { root: host, rootMargin: '-10% 0px -55% 0px', threshold: [0.15, 0.35, 0.6] });
+  sections.forEach(sec => rfScrollObserver.observe(sec));
+}
+
+function renderResumeFields(json) {
+  const host = $('resumeFields');
+  const card = $('resumeFieldsCard');
+  if (!host || !card) return;
+  const incoming = json || emptyResumeJson();
+  const r = normalizeResumeJson(incoming);
+  const pi = r.personal_information || {};
+  const jobs = r.professional_experience.length ? r.professional_experience : [emptyJob()];
+  const edus = r.education.length ? r.education : [emptyEdu()];
+  const skills = r.skill_lines.length ? r.skill_lines : [{ label: '', value: '' }];
+  const projects = (Array.isArray(incoming.projects) && incoming.projects.length)
+    ? incoming.projects.map(p => ({ name: String(p?.name || ''), bullets: Array.isArray(p?.bullets) ? p.bullets : [] }))
+    : r.projects;
+  const certs = (Array.isArray(incoming.certifications) && incoming.certifications.length)
+    ? incoming.certifications.map(c => (typeof c === 'string' ? { name: c, date: '' } : { name: String(c?.name || ''), date: String(c?.date || '') }))
+    : r.certifications;
+  const others = Array.isArray(incoming.other_sections)
+    ? incoming.other_sections.map(o => ({
+      section_name: String(o?.section_name || ''),
+      heading: String(o?.heading || ''),
+      data: String(o?.data || ''),
+    }))
+    : (r.other_sections || []).map(o => ({
+      section_name: String(o?.section_name || ''),
+      heading: String(o?.heading || ''),
+      data: String(o?.data || ''),
+    }));
+
+  host.innerHTML = `
+    <div class="rf-block" id="rf-sec-header">
+      <div class="rf-head"><h3>1. Header</h3></div>
+      <p class="rf-block-note">Name and title print <strong>bold</strong>. Phone, email, LinkedIn, GitHub, and location stay normal (contact line).</p>
+      <div class="rf-grid">
+        ${rfField('Name', rfInput('name', pi.name, 'class="rf-input-lg"'), { bold: true })}
+        ${rfField('Title', rfInput('title', pi.title, 'class="rf-input-lg"'), { bold: true })}
+        ${rfField('Phone', rfInput('phone', pi.phone), { bold: false })}
+        ${rfField('Email', rfInput('email', pi.email), { bold: false })}
+        ${rfField('LinkedIn', rfInput('linkedin', pi.linkedin), { bold: false, span: 'rf-span-2' })}
+        ${rfField('GitHub', rfInput('github', pi.github), { bold: false, span: 'rf-span-2' })}
+        ${rfField('Location', rfInput('location', pi.location), { bold: false })}
+      </div>
+    </div>
+    <div class="rf-block" id="rf-sec-summary">
+      <div class="rf-head"><h3>2. Summary</h3></div>
+      <p class="rf-block-note">Body text is normal weight. JD keywords may auto-bold after rewrite.</p>
+      ${rfField('Professional summary', rfArea('summary', r.professional_summary, 'class="rf-area-xl"'), { bold: false, span: 'rf-span-3' })}
+    </div>
+    <div class="rf-block" id="rf-sec-skills">
+      <div class="rf-head">
+        <h3>3. Skills</h3>
+        <button type="button" class="btn-mini" onclick="addResumeField('skill')">Add skill line</button>
+      </div>
+      <p class="rf-block-note">Category labels print <strong>bold</strong>. The skills list after the colon stays normal.</p>
+      ${skills.map((row, i) => `
+        <div class="rf-item" data-kind="skill" data-idx="${i}">
+          <div class="rf-item-top"><span>Line ${i + 1}</span><button type="button" class="btn-mini" onclick="removeResumeField('skill', ${i})">Remove</button></div>
+          <div class="rf-grid rf-grid-2">
+            ${rfField('Category', rfInput(`skill.${i}.label`, row.label, 'class="rf-input-lg"'), { bold: true })}
+            ${rfField('Skills', rfArea(`skill.${i}.value`, row.value, 'class="rf-area-lg"'), { bold: false })}
+          </div>
+        </div>`).join('')}
+    </div>
+    <div class="rf-block" id="rf-sec-experience">
+      <div class="rf-head">
+        <h3>4. Experience</h3>
+        <button type="button" class="btn-mini" onclick="addResumeField('job')">Add role</button>
+      </div>
+      <p class="rf-block-note">Role, company, location, and dates print <strong>bold</strong>. Bullet points stay normal (JD keywords may auto-bold after rewrite).</p>
+      ${jobs.map((job, i) => `
+        <div class="rf-item" data-kind="job" data-idx="${i}">
+          <div class="rf-item-top"><span>${i === 0 ? 'Most recent role' : 'Previous role ' + i}</span><button type="button" class="btn-mini" onclick="removeResumeField('job', ${i})">Remove</button></div>
+          <div class="rf-grid">
+            ${rfField('Role', rfInput(`job.${i}.role`, job.role, 'class="rf-input-lg"'), { bold: true })}
+            ${rfField('Company', rfInput(`job.${i}.company`, job.company, 'class="rf-input-lg"'), { bold: true })}
+            ${rfField('Location', rfInput(`job.${i}.location`, job.location), { bold: true })}
+            ${rfField('Start date', rfInput(`job.${i}.start`, job.start_date), { bold: true })}
+            ${rfField('End date', rfInput(`job.${i}.end`, job.end_date), { bold: true })}
+            ${rfField('Bullet points (one per line)', rfArea(`job.${i}.bullets`, (job.responsibilities || []).join('\n'), 'class="rf-area-xl"'), { bold: false, span: 'rf-span-3' })}
+          </div>
+        </div>`).join('')}
+    </div>
+    <div class="rf-block" id="rf-sec-education">
+      <div class="rf-head">
+        <h3>5. Education</h3>
+        <button type="button" class="btn-mini" onclick="addResumeField('edu')">Add school</button>
+      </div>
+      <p class="rf-block-note">Course / degree prints <strong>bold</strong>. College and dates stay normal.</p>
+      ${edus.map((edu, i) => `
+        <div class="rf-item" data-kind="edu" data-idx="${i}">
+          <div class="rf-item-top"><span>School ${i + 1}</span><button type="button" class="btn-mini" onclick="removeResumeField('edu', ${i})">Remove</button></div>
+          <div class="rf-grid">
+            ${rfField('Course / degree', rfInput(`edu.${i}.degree`, edu.degree, 'class="rf-input-lg"'), { bold: true, span: 'rf-span-2' })}
+            ${rfField('College', rfInput(`edu.${i}.institution`, edu.institution, 'class="rf-input-lg"'), { bold: false, span: 'rf-span-2' })}
+            ${rfField('From', rfInput(`edu.${i}.start`, edu.start_date), { bold: false })}
+            ${rfField('To / passout year', rfInput(`edu.${i}.end`, edu.end_date), { bold: false })}
+          </div>
+        </div>`).join('')}
+    </div>
+    <div class="rf-block" id="rf-sec-projects">
+      <div class="rf-head">
+        <h3>6. Projects</h3>
+        <button type="button" class="btn-mini" onclick="addResumeField('project')">Add project</button>
+      </div>
+      <p class="rf-block-note">Project name prints like a title line. Bullets stay normal.</p>
+      ${projects.length ? projects.map((p, i) => `
+        <div class="rf-item" data-kind="project" data-idx="${i}">
+          <div class="rf-item-top"><span>Project ${i + 1}</span><button type="button" class="btn-mini" onclick="removeResumeField('project', ${i})">Remove</button></div>
+          <div class="rf-grid">
+            ${rfField('Project name', rfInput(`project.${i}.name`, p.name, 'class="rf-input-lg"'), { bold: true, span: 'rf-span-3' })}
+            ${rfField('Bullet points (one per line)', rfArea(`project.${i}.bullets`, (p.bullets || []).join('\n'), 'class="rf-area-xl"'), { bold: false, span: 'rf-span-3' })}
+          </div>
+        </div>`).join('') : '<p class="hint" style="margin:0">None extracted. Add a project if the resume has one.</p>'}
+    </div>
+    <div class="rf-block" id="rf-sec-certifications">
+      <div class="rf-head">
+        <h3>7. Certifications</h3>
+        <button type="button" class="btn-mini" onclick="addResumeField('cert')">Add certificate</button>
+      </div>
+      <p class="rf-block-note">Certification lines print at normal weight (section heading is bold).</p>
+      ${certs.length ? certs.map((c, i) => `
+        <div class="rf-item" data-kind="cert" data-idx="${i}">
+          <div class="rf-item-top"><span>Certificate ${i + 1}</span><button type="button" class="btn-mini" onclick="removeResumeField('cert', ${i})">Remove</button></div>
+          <div class="rf-grid rf-grid-2">
+            ${rfField('Certificate name', rfInput(`cert.${i}.name`, c.name, 'class="rf-input-lg"'), { bold: false })}
+            ${rfField('Date', rfInput(`cert.${i}.date`, c.date), { bold: false })}
+          </div>
+        </div>`).join('') : '<p class="hint" style="margin:0">None extracted. Add one if the resume lists a certificate.</p>'}
+    </div>
+    <div class="rf-block" id="rf-sec-other">
+      <div class="rf-head">
+        <h3>8. Other</h3>
+        <button type="button" class="btn-mini" onclick="addResumeField('other')">Add section</button>
+      </div>
+      <p class="rf-block-note">Add any extra section (Awards, Languages, Volunteer, …). <strong>Section name</strong> prints as the bold ALL-CAPS heading. <strong>Heading</strong> is the bold line under it. <strong>Data</strong> is the body (one bullet per line).</p>
+      ${others.length ? others.map((o, i) => `
+        <div class="rf-item" data-kind="other" data-idx="${i}">
+          <div class="rf-item-top"><span>Other section ${i + 1}</span><button type="button" class="btn-mini" onclick="removeResumeField('other', ${i})">Remove</button></div>
+          <div class="rf-grid">
+            ${rfField('Section name', rfInput(`other.${i}.section_name`, o.section_name, 'class="rf-input-lg" placeholder="e.g. AWARDS"'), { bold: true, span: 'rf-span-3' })}
+            ${rfField('Heading inside it', rfInput(`other.${i}.heading`, o.heading, 'class="rf-input-lg" placeholder="e.g. Dean\'s List"'), { bold: true, span: 'rf-span-3' })}
+            ${rfField('Data (one bullet per line)', rfArea(`other.${i}.data`, o.data, 'class="rf-area-xl"'), { bold: false, span: 'rf-span-3' })}
+          </div>
+        </div>`).join('') : '<p class="hint" style="margin:0">No extra sections yet. Click Add section for Awards, Languages, Volunteer, Publications, etc.</p>'}
+    </div>`;
+  renderResumeFieldsNav(r);
+  card.classList.remove('hidden');
+  const firstOk = RF_SECTIONS.find(s => !rfSectionFilled(s.id, r)) || RF_SECTIONS[0];
+  document.querySelectorAll('#resumeFieldsNav [data-rf-nav]').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-rf-nav') === firstOk.id);
+  });
+  requestAnimationFrame(() => bindResumeFieldsScrollSpy());
+}
+
+function rfGet(name) {
+  const el = Array.from(document.querySelectorAll('#resumeFields [data-rf]'))
+    .find(node => node.getAttribute('data-rf') === name);
+  return el ? String(el.value || '').trim() : '';
+}
+
+function rfBullets(name) {
+  return rfGet(name).split(/\n+/).map(l => l.replace(/^[-•]\s+/, '').trim()).filter(Boolean);
+}
+
+function collectResumeFields() {
+  const json = emptyResumeJson();
+  json.personal_information = {
+    name: rfGet('name'),
+    title: rfGet('title'),
+    phone: rfGet('phone'),
+    email: rfGet('email'),
+    linkedin: shortenLinkedIn(rfGet('linkedin')) || '',
+    github: extractGithubHandle(rfGet('github')) || '',
+    location: rfGet('location'),
+  };
+  json.professional_summary = rfGet('summary');
+  const skillCount = document.querySelectorAll('#resumeFields [data-kind="skill"]').length;
+  json.skill_lines = [];
+  for (let i = 0; i < skillCount; i++) {
+    const label = rfGet(`skill.${i}.label`);
+    const value = rfGet(`skill.${i}.value`);
+    if (label || value) json.skill_lines.push({ label, value });
+  }
+  json.skills = bucketsFromSkillLines(json.skill_lines);
+  const jobCount = document.querySelectorAll('#resumeFields [data-kind="job"]').length;
+  json.professional_experience = [];
+  for (let i = 0; i < jobCount; i++) {
+    const job = {
+      role: rfGet(`job.${i}.role`),
+      company: rfGet(`job.${i}.company`),
+      location: rfGet(`job.${i}.location`),
+      start_date: rfGet(`job.${i}.start`),
+      end_date: rfGet(`job.${i}.end`),
+      responsibilities: rfBullets(`job.${i}.bullets`),
+    };
+    if (job.role || job.company || job.responsibilities.length) json.professional_experience.push(job);
+  }
+  const eduCount = document.querySelectorAll('#resumeFields [data-kind="edu"]').length;
+  json.education = [];
+  for (let i = 0; i < eduCount; i++) {
+    const edu = {
+      degree: rfGet(`edu.${i}.degree`),
+      institution: rfGet(`edu.${i}.institution`),
+      start_date: rfGet(`edu.${i}.start`),
+      end_date: rfGet(`edu.${i}.end`),
+      location: '',
+    };
+    if (edu.degree || edu.institution) json.education.push(edu);
+  }
+  const projCount = document.querySelectorAll('#resumeFields [data-kind="project"]').length;
+  json.projects = [];
+  for (let i = 0; i < projCount; i++) {
+    const p = { name: rfGet(`project.${i}.name`), bullets: rfBullets(`project.${i}.bullets`) };
+    if (p.name || p.bullets.length) json.projects.push(p);
+  }
+  const certCount = document.querySelectorAll('#resumeFields [data-kind="cert"]').length;
+  json.certifications = [];
+  for (let i = 0; i < certCount; i++) {
+    const c = { name: rfGet(`cert.${i}.name`), date: rfGet(`cert.${i}.date`) };
+    if (c.name) json.certifications.push(c);
+  }
+  const otherCount = document.querySelectorAll('#resumeFields [data-kind="other"]').length;
+  json.other_sections = [];
+  for (let i = 0; i < otherCount; i++) {
+    json.other_sections.push({
+      section_name: rfGet(`other.${i}.section_name`),
+      heading: rfGet(`other.${i}.heading`),
+      data: rfGet(`other.${i}.data`),
+    });
+  }
+  const normalized = normalizeResumeJson(json);
+  // Keep blank Other rows visible in the form until the user removes them.
+  if (otherCount > 0) {
+    normalized.other_sections = [];
+    for (let i = 0; i < otherCount; i++) {
+      normalized.other_sections.push({
+        section_name: rfGet(`other.${i}.section_name`),
+        heading: rfGet(`other.${i}.heading`),
+        data: rfGet(`other.${i}.data`),
+      });
+    }
+  }
+  return normalized;
+}
+
+function verifiedResumeJson() {
+  const card = $('resumeFieldsCard');
+  const host = $('resumeFields');
+  if (host && card && !card.classList.contains('hidden') && host.querySelector('[data-rf]')) {
+    return collectResumeFields();
+  }
+  return state.masterResumeJson || (state.baseResume && state.baseResume.fields) || null;
+}
+
+function applyResumeFieldsToMaster(opts = {}) {
+  const json = collectResumeFields();
+  const text = resumeJsonToMasterText(json);
+  const prevText = String(
+    (state.baseResume && state.baseResume.text)
+    || ($('resumeInput') && $('resumeInput').value)
+    || '',
+  ).trim();
+  const nextText = String(text || '').trim();
+  const changed = prevText !== nextText;
+  state.masterResumeJson = json;
+  if (state.baseResume) {
+    state.baseResume.text = text;
+    state.baseResume.fields = json;
+    state.baseResume.linkedin = json.personal_information.linkedin || '';
+    state.baseResume.github = json.personal_information.github || '';
+    state.baseResume.updatedAt = Date.now();
+  }
+  if ($('resumeInput')) $('resumeInput').value = text;
+  updateCounts();
+  // Syncing the same form before Score/Rewrite must not wipe a fresh score.
+  // Real edits still clear the gate (unless keepScoreGate is set).
+  if (changed && !opts.keepScoreGate) clearManualScoreGate();
+  scheduleSaveWorkspace();
+}
+
+let resumeFieldTimer = null;
+function onResumeFieldInput() {
+  state.resumeFieldsTouched = true;
+  clearTimeout(resumeFieldTimer);
+  resumeFieldTimer = setTimeout(() => {
+    applyResumeFieldsToMaster();
+    refreshResumeFieldsNavStatus();
+  }, 250);
+}
+
+function refreshResumeFieldsNavStatus() {
+  const nav = $('resumeFieldsNav');
+  if (!nav || nav.classList.contains('hidden')) return;
+  let r;
+  try { r = collectResumeFields(); } catch { return; }
+  nav.querySelectorAll('[data-rf-nav]').forEach(btn => {
+    const id = btn.getAttribute('data-rf-nav');
+    btn.classList.toggle('ok', rfSectionFilled(id, normalizeResumeJson(r)));
+  });
+}
+
+function addResumeField(kind) {
+  // Prefer live form values; keep empty slots so "Add" can insert blank rows.
+  let json;
+  try {
+    json = collectResumeFields();
+  } catch {
+    json = emptyResumeJson();
+  }
+  if (!Array.isArray(json.other_sections)) json.other_sections = [];
+  if (kind === 'skill') json.skill_lines.push({ label: '', value: '' });
+  if (kind === 'job') json.professional_experience.push(emptyJob());
+  if (kind === 'edu') json.education.push(emptyEdu());
+  if (kind === 'project') json.projects.push(emptyProject());
+  if (kind === 'cert') json.certifications.push(emptyCert());
+  if (kind === 'other') json.other_sections.push(emptyOther());
+  state.resumeFieldsTouched = true;
+  // Pass through without normalize filtering empty other rows
+  renderResumeFields({ ...json, other_sections: json.other_sections.slice() });
+  applyResumeFieldsToMaster({ keepScoreGate: true });
+  if (kind === 'other') {
+    scrollToRfSection('other');
+    showToast('Other section added — fill section name, heading, and data');
+  }
+}
+
+function removeResumeField(kind, idx) {
+  const json = collectResumeFields();
+  if (kind === 'skill') json.skill_lines.splice(idx, 1);
+  if (kind === 'job') json.professional_experience.splice(idx, 1);
+  if (kind === 'edu') json.education.splice(idx, 1);
+  if (kind === 'project') json.projects.splice(idx, 1);
+  if (kind === 'cert') json.certifications.splice(idx, 1);
+  if (kind === 'other') json.other_sections.splice(idx, 1);
+  state.resumeFieldsTouched = true;
+  renderResumeFields(json);
+  applyResumeFieldsToMaster();
+}
+
+async function refreshResumeFields(opts = {}) {
+  const text = (state.baseResume && state.baseResume.text) || ($('resumeInput') && $('resumeInput').value) || '';
+  if (!text.trim()) {
+    if ($('resumeFieldsCard')) $('resumeFieldsCard').classList.add('hidden');
+    return;
+  }
+  let json = parseResumeToJsonLocal(text);
+  state.masterResumeJson = json;
+  if (state.baseResume) state.baseResume.fields = json;
+  renderResumeFields(json);
+  if (opts.useGemini && !state.resumeFieldsTouched) {
+    try {
+      const richer = await parseResumeToJson(text);
+      if (!state.resumeFieldsTouched && richer) {
+        json = richer;
+        state.masterResumeJson = json;
+        if (state.baseResume) state.baseResume.fields = json;
+        renderResumeFields(json);
+        applyResumeFieldsToMaster();
+      }
+    } catch { /* keep local fields */ }
+  }
+  saveWorkspace();
+}
+
 function triggerReplaceResume() {
   const input = $('resumeFileInput');
   if (input) input.click();
+}
+
+function clearBaseResume() {
+  const hasResume = !!(
+    String((state.baseResume && state.baseResume.text) || '').trim()
+    || String(($('resumeInput') && $('resumeInput').value) || '').trim()
+    || (state.baseResume && state.baseResume.fileName)
+  );
+  if (!hasResume) {
+    showToast('No resume to clear', '#d97706');
+    return;
+  }
+  state.baseResume = { text: '', fileName: '', fileType: '', updatedAt: Date.now(), linkedin: '', github: '', fields: null };
+  state.masterResumeJson = null;
+  state.resumeFieldsTouched = false;
+  if ($('resumeInput')) $('resumeInput').value = '';
+  if ($('resumeFileInput')) $('resumeFileInput').value = '';
+  if ($('baseResumeName')) $('baseResumeName').textContent = 'No file loaded — upload a PDF, DOC, or DOCX';
+  if ($('resumeFieldsCard')) $('resumeFieldsCard').classList.add('hidden');
+  if ($('resumeFields')) $('resumeFields').innerHTML = '';
+  if ($('resumeFieldsNav')) $('resumeFieldsNav').innerHTML = '';
+  resetResultsUi(true, { clearAllSessionDrafts: true });
+  updateCounts();
+  saveWorkspace();
+  showToast('Resume cleared');
 }
 
 function initResumeUpload() {
@@ -1729,14 +2309,16 @@ function switchTab(name, btn) {
 }
 
 function setMode(mode) {
-  if (state.mode !== mode) {
+  // Stretch / Role-focus UI removed — always Stay truthful (JD skills only).
+  const next = 'integrity';
+  if (state.mode !== next) {
     state.keywords = null;
     state.kwHash = '';
     clearManualScoreGate();
   }
-  state.mode = mode;
-  $('modeIntegrity').classList.toggle('active', mode === 'integrity');
-  $('modeAggressive').classList.toggle('active', mode === 'aggressive');
+  state.mode = next;
+  if ($('modeIntegrity')) $('modeIntegrity').classList.toggle('active', true);
+  if ($('modeAggressive')) $('modeAggressive').classList.toggle('active', false);
   saveWorkspace();
 }
 
@@ -2092,15 +2674,14 @@ function formatContactLine(line) {
       p = p.replace(/(?:https?:\/\/)?(?:[\w-]+\.)?(linkedin\.com\/(?:mwlite\/)?(?:in|pub)\/[A-Za-z0-9\-_%\.]+)/i, ' ')
         .replace(/(lnkd\.in\/[A-Za-z0-9_-]+)/i, ' ')
         .trim();
-    } else if (/^linkedin$/i.test(p)) {
-      push(p);
-      p = '';
+    } else if (/^(linkedin|linked\s*in)\b/i.test(p)) {
+      continue;
     }
     const gh = typeof extractGithubHandle === 'function' ? extractGithubHandle(p) : '';
     if (gh) {
       push(gh);
       p = p.replace(gh, ' ').replace(/(?:https?:\/\/)?(?:www\.)?github\.com\/[A-Za-z0-9_-]+\b/i, ' ').trim();
-    } else if (/^github$/i.test(p)) {
+    } else if (/^github\b/i.test(p)) {
       continue;
     }
     p = p.replace(/^[\s|,•·-]+|[\s|,•·-]+$/g, '').trim();
@@ -2131,41 +2712,90 @@ function normalizeContactInResume(text) {
 function injectLinkedInSlug(text, slug) {
   const clean = shortenLinkedIn(slug);
   if (!clean) return String(text || '');
-  let t = String(text || '');
-  t = t.replace(/(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/(?:username|jane-doe)\b/gi, clean);
-  if (new RegExp(clean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(t)) return t;
-  if (/\bLinkedIn\b/.test(t)) return t.replace(/\bLinkedIn\b/, clean);
-  if (/\blinkedin\b/i.test(t) && !/linkedin\.com\//i.test(t)) {
-    return t.replace(/\blinkedin\b/i, clean);
+  const lines = String(text || '').split('\n');
+  const slugRe = new RegExp(clean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+  for (let i = 0; i < Math.min(lines.length, 10); i++) {
+    const l = String(lines[i] || '').trim();
+    if (!l) continue;
+    if (typeof isSectionHeader === 'function' && isSectionHeader(l)) break;
+    if (slugRe.test(l) || /linkedin\.com\/in\/(?:username|jane-doe)\b/i.test(l)) {
+      lines[i] = l.replace(/(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/(?:username|jane-doe)\b/gi, clean);
+      if (slugRe.test(lines[i])) return lines.join('\n');
+    }
+    if (isHeaderContactLine(l) || /linkedin/i.test(l)) {
+      let next = l.replace(/\bLinked\s*In\b/i, clean);
+      if (!slugRe.test(next)) next = (next ? next + ' | ' : '') + clean;
+      lines[i] = next;
+      return lines.join('\n');
+    }
   }
-  return t;
+  return lines.join('\n');
+}
+
+function stripLinkedInFromContactLine(line, keepSlug) {
+  const keep = shortenLinkedIn(keepSlug);
+  const parts = String(line || '').split('|').map(p => p.trim()).filter(Boolean);
+  if (parts.length > 1) {
+    const out = [];
+    let keptProfile = false;
+    for (const p of parts) {
+      if (/^(linkedin|linked\s*in)\b/i.test(p) && !shortenLinkedIn(p)) continue;
+      const slug = shortenLinkedIn(p);
+      if (slug || /linkedin\.com\//i.test(p) || /lnkd\.in\//i.test(p)) {
+        if (keep && !keptProfile) {
+          out.push(keep);
+          keptProfile = true;
+        }
+        continue;
+      }
+      out.push(p);
+    }
+    if (keep && !keptProfile) out.push(keep);
+    return out.join(' | ');
+  }
+  let raw = String(line || '');
+  if (keep) {
+    if (shortenLinkedIn(raw)) {
+      return raw
+        .replace(/(?:https?:\/\/)?(?:[\w-]+\.)?(linkedin\.com\/(?:mwlite\/)?(?:in|pub)\/[A-Za-z0-9\-_%\.]+)/i, keep)
+        .replace(/(lnkd\.in\/[A-Za-z0-9_-]+)/i, keep);
+    }
+    return raw.replace(/\bLinked\s*In\b/gi, ' ').replace(/\s{2,}/g, ' ').trim();
+  }
+  return raw
+    .replace(/\s*\|\s*(?:https?:\/\/)?(?:[\w-]+\.)?(linkedin\.com\/(?:mwlite\/)?(?:in|pub)\/[A-Za-z0-9\-_%\.]+)/gi, '')
+    .replace(/(?:https?:\/\/)?(?:[\w-]+\.)?(linkedin\.com\/(?:mwlite\/)?(?:in|pub)\/[A-Za-z0-9\-_%\.]+)/gi, '')
+    .replace(/\s*\|\s*lnkd\.in\/[A-Za-z0-9_-]+/gi, '')
+    .replace(/\blnkd\.in\/[A-Za-z0-9_-]+/gi, '')
+    .replace(/\s*\|\s*Linked\s*In\b/gi, '')
+    .replace(/\bLinked\s*In\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 function stripFakeLinkedIn(text, masterText) {
   const master = String(masterText || ($('resumeInput') && $('resumeInput').value) || (state.baseResume && state.baseResume.text) || '');
-  const token = extractContactFields(master).linkedin
-    || shortenLinkedIn(state.baseResume && state.baseResume.linkedin);
-  const slug = shortenLinkedIn(token);
-  const keepLabel = Boolean(slug) || /\blinkedin\b/i.test(String(token || ''))
-    || /\blinkedin\b/i.test(resumeHeaderLines(master).join('\n'));
-  let out = String(text || '')
-    .replace(/\s*\|\s*(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/(?:username|jane-doe)\b/gi, keepLabel && !slug ? ' | LinkedIn' : '')
-    .replace(/(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/(?:username|jane-doe)\b/gi, keepLabel && !slug ? 'LinkedIn' : '');
-  if (slug) return injectLinkedInSlug(out, slug);
-  out = out
-    .replace(/\s*\|\s*(?:https?:\/\/)?(?:www\.)?linkedin\.com\/(?:in|pub)\/[A-Za-z0-9\-_%]+\b/gi, keepLabel ? ' | LinkedIn' : '')
-    .replace(/(?:https?:\/\/)?(?:www\.)?linkedin\.com\/(?:in|pub)\/[A-Za-z0-9\-_%]+\b/gi, keepLabel ? 'LinkedIn' : '')
-    .replace(/\s*\|\s*lnkd\.in\/[A-Za-z0-9_-]+/gi, keepLabel ? ' | LinkedIn' : '');
-  if (!keepLabel) out = out.replace(/\s*\|\s*LinkedIn\b/gi, '');
-  return out;
+  const slug = shortenLinkedIn(extractContactFields(master).linkedin) || '';
+  const lines = String(text || '').split('\n');
+  let sawContact = false;
+  for (let i = 0; i < Math.min(lines.length, 10); i++) {
+    const l = String(lines[i] || '').trim();
+    if (!l) continue;
+    if (typeof isSectionHeader === 'function' && isSectionHeader(l)) break;
+    if (!(isHeaderContactLine(l) || /linkedin/i.test(l))) continue;
+    sawContact = true;
+    lines[i] = stripLinkedInFromContactLine(lines[i], slug);
+  }
+  if (slug && !sawContact) return injectLinkedInSlug(lines.join('\n'), slug);
+  if (slug) return injectLinkedInSlug(lines.join('\n'), slug);
+  return lines.join('\n');
 }
 
 function restoreMasterLinkedIn(text, master) {
-  const token = extractContactFields(master).linkedin
+  const slug = shortenLinkedIn(extractContactFields(master).linkedin)
     || shortenLinkedIn(state.baseResume && state.baseResume.linkedin);
-  const slug = shortenLinkedIn(token);
   let out = slug ? injectLinkedInSlug(text, slug) : String(text || '');
-  if (!token) out = stripFakeLinkedIn(out);
+  if (!slug) out = stripFakeLinkedIn(out, master);
   return out;
 }
 
@@ -2182,7 +2812,9 @@ function isSchoolishLine(line) {
 
 function extractPlaceToken(text) {
   const m = String(text || '').match(PLACE_RE);
-  return m ? m[0].replace(/\s+/g, ' ').trim() : '';
+  if (m) return m[0].replace(/\s+/g, ' ').trim();
+  const st = String(text || '').match(new RegExp(String.raw`\b(?:${US_STATE_ABBR})\s*,\s*(?:USA|US|United States)\b`, 'i'));
+  return st ? st[0].replace(/\s+/g, ' ').trim() : '';
 }
 
 function resumeHeaderLines(text) {
@@ -2254,6 +2886,7 @@ function applyPersonalLocationFromHeader(resumeJson, text) {
   rj.personal_information.phone = cf.phone || '';
   rj.personal_information.email = cf.email || '';
   rj.personal_information.linkedin = cf.linkedin || '';
+  rj.personal_information.github = cf.github || rj.personal_information.github || '';
   return rj;
 }
 
@@ -2356,9 +2989,7 @@ function stripGithubFromContactLine(line, keepProfile) {
 
 function stripFakeGitHub(text, masterText) {
   const master = String(masterText || ($('resumeInput') && $('resumeInput').value) || (state.baseResume && state.baseResume.text) || '');
-  const profile = githubFromHeader(resumeHeaderLines(master).join('\n'))
-    || extractGithubHandle(state.baseResume && state.baseResume.github)
-    || '';
+  const profile = githubFromHeader(resumeHeaderLines(master).join('\n')) || '';
   const lines = String(text || '').split('\n');
   let sawContact = false;
   for (let i = 0; i < Math.min(lines.length, 10); i++) {
@@ -2380,11 +3011,7 @@ function linkedinFromHeader(header) {
   const raw = (String(header || '').match(/(https?:\/\/)?([\w-]+\.)?linkedin\.com\/(?:in|pub)\/[A-Za-z0-9\-_%]+\/?/i) || [])[0]
     || (String(header || '').match(/lnkd\.in\/[A-Za-z0-9_-]+/i) || [])[0]
     || '';
-  const slug = shortenLinkedIn(raw)
-    || shortenLinkedIn(state.baseResume && state.baseResume.linkedin);
-  if (slug) return slug;
-  if (/\blinkedin\b/i.test(header)) return 'LinkedIn';
-  return '';
+  return shortenLinkedIn(raw) || '';
 }
 
 const GLUED_CITY_RE = 'Los Angeles|New York|San Francisco|San Jose|San Diego|Chicago|Houston|Dallas|Austin|Seattle|Boston|Denver|Atlanta|Miami|Phoenix|Portland|Philadelphia|Hyderabad|Bangalore|Bengaluru|Chennai|Pune|Mumbai|Delhi|Noida|Gurgaon|Gurugram|Glassboro';
@@ -2467,32 +3094,79 @@ function buildLockedContactLine(cf) {
   return [cf?.phone, cf?.email, cf?.linkedin, cf?.github, cf?.location].filter(Boolean).join(' | ');
 }
 
+function verifiedContactFields(resumeText) {
+  const rj = frozenMasterResumeJson() || verifiedResumeJson();
+  const pi = rj && rj.personal_information;
+  if (pi) {
+    return {
+      email: String(pi.email || '').trim(),
+      phone: String(pi.phone || '').trim(),
+      linkedin: shortenLinkedIn(pi.linkedin) || '',
+      github: extractGithubHandle(pi.github) || '',
+      location: String(pi.location || '').trim(),
+    };
+  }
+  return extractContactFields(resumeText);
+}
+
+function formatVerifiedOmitBlock(resumeText) {
+  const rj = normalizeResumeJson(frozenMasterResumeJson() || verifiedResumeJson() || parseResumeToJsonLocal(resumeText || ''));
+  const pi = rj.personal_information || {};
+  const omit = [];
+  if (!pi.phone) omit.push('phone number');
+  if (!pi.email) omit.push('email');
+  if (!pi.linkedin) omit.push('LinkedIn (no linkedin.com/in URL — do not write LinkedIn or invent a slug)');
+  if (!pi.github) omit.push('GitHub (no github.com profile — do not write GitHub or invent a handle)');
+  if (!pi.location) omit.push('personal city / location');
+  if (!pi.title) omit.push('header title line other than the most recent EXPERIENCE job title on Line 2');
+  if (!rj.professional_summary) omit.push('the entire SUMMARY section');
+  if (!(rj.skill_lines || []).length) omit.push('the entire SKILLS / TECHNICAL SKILLS section');
+  if (!(rj.professional_experience || []).length) omit.push('the entire PROFESSIONAL EXPERIENCE section');
+  if (!(rj.education || []).length) omit.push('the entire EDUCATION section');
+  if (!(rj.projects || []).length) omit.push('the entire PROJECTS section');
+  if (!(rj.certifications || []).length) omit.push('the entire CERTIFICATIONS section');
+  (rj.professional_experience || []).forEach((job, i) => {
+    const label = job.company || job.role || `role ${i + 1}`;
+    if (!job.location) omit.push(`location on ${label}`);
+    if (!job.start_date && !job.end_date) omit.push(`dates on ${label}`);
+  });
+  (rj.education || []).forEach((edu, i) => {
+    const label = edu.degree || edu.institution || `school ${i + 1}`;
+    if (!edu.institution) omit.push(`college for ${label}`);
+    if (!edu.start_date && !edu.end_date) omit.push(`dates for ${label}`);
+  });
+  if (!omit.length) {
+    return 'VERIFIED FIELDS: every filled field on the verified form may appear. Still do not invent missing employers, degrees, or metrics.';
+  }
+  return `VERIFIED EMPTY FIELDS — these were blank on the verified resume form. Do NOT add them to the tailored resume. Fill them on the form and Score again if they should appear.
+${omit.map(item => `  - OMIT ${item}`).join('\n')}
+Empty sections get no heading. Empty contact tokens (LinkedIn, GitHub, phone, email, city) must not appear on Line 3.`;
+}
+
 function formatContactLineInstruction(resumeText) {
   const master = ($('resumeInput') && $('resumeInput').value) || resumeText || '';
-  const line = buildLockedContactLine(extractContactFields(master));
+  const line = buildLockedContactLine(verifiedContactFields(master));
   if (!line) {
-    return 'Line 3: omit — the master has no phone, email, LinkedIn, GitHub profile, or city. Do NOT invent any of them.';
+    return 'Line 3: omit — the verified resume has no phone, email, LinkedIn, GitHub profile, or city. Do NOT invent any of them.';
   }
-  return `Line 3: ${line}  (copy exactly; include ONLY these master fields; if LinkedIn is on the master keep it; if a github.com/username profile is on the master keep that URL; never invent a phone, LinkedIn slug, GitHub, email, or city. Do not put the word GitHub without a github.com/handle.)`;
+  return `Line 3: ${line}  (copy exactly; include ONLY these verified fields; keep linkedin.com/in/… or github.com/username only when filled on the form; never invent a phone, LinkedIn slug, GitHub, email, or city. Do not put the word LinkedIn or GitHub without a real profile URL.)`;
 }
 
 function formatLockedContactBlock(resumeText) {
   const master = ($('resumeInput') && $('resumeInput').value) || resumeText || '';
-  const cf = extractContactFields(master);
+  const cf = verifiedContactFields(master);
   const line = buildLockedContactLine(cf);
-  const li = cf.linkedin
-    ? (shortenLinkedIn(cf.linkedin) ? cf.linkedin : 'LinkedIn — KEEP this word on Line 3. Do not omit it. Do not invent a slug.')
-    : 'OMIT — master has no LinkedIn';
+  const li = shortenLinkedIn(cf.linkedin);
   const gh = extractGithubHandle(cf.github);
-  return `LOCKED CONTACT — copy only what is on the master header. Never invent a phone, email, LinkedIn slug, GitHub, or city.
-  Email: ${cf.email || 'OMIT — master has no email'}
-  Phone: ${cf.phone || 'OMIT — master has no phone number'}
-  LinkedIn: ${li}
-  GitHub: ${gh ? gh + ' — KEEP this github.com profile on Line 3' : 'OMIT — master has no github.com/username profile. Do not add the word GitHub or invent a handle. GitHub Actions in SKILLS is not a profile.'}
-  Location: ${cf.location || 'OMIT — master header has no personal city'}
-  Line 3 must be exactly: ${line || '[no contact fields — omit them]'}
-  If LinkedIn is on the master (URL or the word LinkedIn), it MUST stay on Line 3.
-  If a github.com/username profile is on the master, it MUST stay on Line 3. The word GitHub alone is not a profile.
+  return `LOCKED CONTACT — copy only what is filled on the verified resume form. Never invent a phone, email, LinkedIn slug, GitHub, or city.
+  Email: ${cf.email || 'OMIT — verified email is empty'}
+  Phone: ${cf.phone || 'OMIT — verified phone is empty'}
+  LinkedIn: ${li ? li + ' — KEEP this LinkedIn URL on Line 3' : 'OMIT — LinkedIn field is empty. Do not add the word LinkedIn or invent a slug.'}
+  GitHub: ${gh ? gh + ' — KEEP this github.com profile on Line 3' : 'OMIT — GitHub field is empty. Do not add the word GitHub or invent a handle. GitHub Actions in SKILLS is not a profile.'}
+  Location: ${cf.location || 'OMIT — verified location is empty'}
+  Line 3 must be exactly: ${line || '[no contact fields — omit Line 3]'}
+  If a linkedin.com/in/… (or lnkd.in) value is filled on the form, it MUST stay on Line 3. The word LinkedIn alone is not a profile.
+  If a github.com/username value is filled on the form, it MUST stay on Line 3. The word GitHub alone is not a profile.
   Personal city only — do NOT substitute a college city, university city, or employer office city.`;
 }
 
@@ -2506,7 +3180,7 @@ function isHeaderContactLine(l) {
 }
 
 function restoreMasterContact(text, master) {
-  const cf = extractContactFields(master);
+  const cf = verifiedContactFields(master);
   const locked = buildLockedContactLine(cf);
   const lines = String(text || '').split('\n');
   let seenName = false;
@@ -2543,8 +3217,145 @@ function restoreMasterContact(text, master) {
     if (insertAt >= 0) lines.splice(insertAt, 0, locked);
     return lines.join('\n');
   }
+  if (!locked) {
+    lines.splice(idx, 1);
+    return lines.join('\n').replace(/\n{3,}/g, '\n\n');
+  }
   lines[idx] = locked;
   return lines.join('\n');
+}
+
+/** Drop any tailored content that was blank on the verified form (unless filled before score). */
+function enforceVerifiedEmptyFields(text, master) {
+  const rj = normalizeResumeJson(
+    frozenMasterResumeJson()
+    || verifiedResumeJson()
+    || parseResumeToJsonLocal(master || text || ''),
+  );
+  const pi = rj.personal_information || {};
+  let t = String(text || '');
+
+  // Contact: only filled verified tokens.
+  t = restoreMasterContact(t, master || t);
+  t = stripFakeLinkedIn(t, master || '');
+  t = stripFakeGitHub(t, master || '');
+  if (!pi.linkedin) {
+    t = t.replace(/(?:https?:\/\/)?(?:[\w-]+\.)?linkedin\.com\/(?:mwlite\/)?(?:in|pub)\/[A-Za-z0-9\-_%\.]+/gi, '')
+      .replace(/(?:https?:\/\/)?(?:www\.)?lnkd\.in\/[A-Za-z0-9_-]+/gi, '');
+  }
+  if (!pi.github) {
+    t = t.replace(/(?:https?:\/\/)?(?:www\.)?github\.com\/[A-Za-z0-9_-]+/gi, '');
+  }
+  if (!pi.location) {
+    const lines = t.split('\n');
+    for (let i = 0; i < Math.min(lines.length, 8); i++) {
+      if (!isHeaderContactLine(lines[i])) continue;
+      lines[i] = lines[i]
+        .split('|')
+        .map(p => p.trim())
+        .filter(p => {
+          if (!p) return false;
+          if (/@/.test(p) || /\d{3}/.test(p) || /linkedin|github|lnkd\.in/i.test(p)) return true;
+          return !extractPlaceToken(p) && !/^(remote|hybrid|onsite|on-site)$/i.test(p);
+        })
+        .join(' | ');
+      break;
+    }
+    t = lines.join('\n');
+  }
+
+  // Whole sections that were empty on the form — never invent headings.
+  if (!rj.professional_summary) {
+    t = stripSectionsByHeader(t, l => /^(summary|professional summary|objective|profile)$/i.test(normalizeHeader(l))).lines.join('\n');
+  }
+  if (!(rj.skill_lines || []).length && !skillsFromResumeJson(rj).length) {
+    t = stripSectionsByHeader(t, l => /^(skills|technical skills)$/i.test(normalizeHeader(l))).lines.join('\n');
+  }
+  if (!(rj.projects || []).length) {
+    t = stripSectionsByHeader(t, isProjectsHeader).lines.join('\n');
+  }
+  if (!(rj.certifications || []).length) {
+    t = stripSectionsByHeader(t, l => /^certif/i.test(normalizeHeader(l))).lines.join('\n');
+  }
+  if (!(rj.education || []).length) {
+    t = stripSectionsByHeader(t, l => /^education$/i.test(normalizeHeader(l))).lines.join('\n');
+  }
+
+  // Experience: strip location / dates that were blank on the verified form.
+  const jobs = rj.professional_experience || [];
+  if (jobs.length) {
+    const masterRoles = jobs.map(j => ({
+      company: j.company || '',
+      title: j.role || '',
+      location: j.location || '',
+      dates: [j.start_date, j.end_date].filter(Boolean).join(' – '),
+    }));
+    const lines = t.split('\n');
+    const { start, end } = experienceBounds(lines);
+    for (let i = start; i < end; i++) {
+      if (!isRoleLine(lines[i], 'EXPERIENCE')) continue;
+      const p = parseRoleLineParts(lines[i]);
+      if (!p.company) continue;
+      const hit = matchMasterExperienceRole(p, masterRoles);
+      if (!hit) {
+        if (p.location) {
+          p.location = '';
+          const next = formatRoleLineFromParts(p);
+          if (next) lines[i] = next;
+        }
+        continue;
+      }
+      p.location = String(hit.location || '').trim();
+      p.dates = String(hit.dates || '').trim();
+      if (!p.title && hit.title) p.title = hit.title;
+      const next = formatRoleLineFromParts(p);
+      if (next) lines[i] = next;
+    }
+    t = lines.join('\n');
+  }
+
+  // Cert dates: drop trailing dates when the verified cert had no date.
+  if ((rj.certifications || []).length) {
+    const certMap = (rj.certifications || []).map(c => ({
+      name: String(c.name || '').toLowerCase(),
+      date: String(c.date || '').trim(),
+    }));
+    const rebuilt = [];
+    let inCerts = false;
+    for (const line of t.split('\n')) {
+      if (isAnySectionHeader(line)) {
+        inCerts = /^certif/i.test(normalizeHeader(line));
+        rebuilt.push(line);
+        continue;
+      }
+      if (!inCerts) {
+        rebuilt.push(line);
+        continue;
+      }
+      const raw = String(line || '').replace(/^[-•]\s*/, '').trim();
+      if (!raw) {
+        rebuilt.push(line);
+        continue;
+      }
+      const m = raw.match(/[,|]?\s*((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}|(?:19|20)\d{2})\s*$/i);
+      const name = (m ? raw.slice(0, m.index) : raw).replace(/[|,]\s*$/, '').trim();
+      const key = name.toLowerCase();
+      const hit = certMap.find(c => c.name && (key === c.name || key.includes(c.name) || c.name.includes(key)));
+      if (hit && !hit.date && m) {
+        rebuilt.push(String(line).replace(m[0], '').replace(/[|,]\s*$/, '').trim());
+      } else {
+        rebuilt.push(line);
+      }
+    }
+    t = rebuilt.join('\n');
+  }
+
+  return t
+    .replace(/\|\s*\|/g, '|')
+    .replace(/^\s*\|\s*/gm, '')
+    .replace(/\s*\|\s*$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function extractRolesFromResume(resumeText) {
@@ -3942,12 +4753,15 @@ async function analyzeJdWithAiRag(jd) {
     if (!jdAi?.jdPrimary?.length) throw new Error('Gemini returned no JD skills');
 
     let internetAi = null;
-    try {
-      if (typeof setProgress === 'function') setProgress(16, 'AI is analysing the job description…', 'Researching market skills on job boards…');
-      const netRaw = await callGemini(buildInternetSkillsPrompt(jd, jdAi), { json: true, maxTokens: 2000 });
-      internetAi = parseInternetSkills(parseJsonLoose(netRaw));
-    } catch (err) {
-      internetError = err;
+    // Stretch mode removed — never burn a Gemini call on market/job-board skills.
+    if (state.mode === 'aggressive') {
+      try {
+        if (typeof setProgress === 'function') setProgress(16, 'AI is analysing the job description…', 'Researching market skills on job boards…');
+        const netRaw = await callGemini(buildInternetSkillsPrompt(jd, jdAi), { json: true, maxTokens: 2000 });
+        internetAi = parseInternetSkills(parseJsonLoose(netRaw));
+      } catch (err) {
+        internetError = err;
+      }
     }
 
     ai = mergeAiExtractions(jdAi, internetAi);
@@ -4058,12 +4872,17 @@ Return JSON with exactly this shape:
 {
   "personal_information": {
     "name": "",
+    "title": "",
     "location": "",
     "phone": "",
     "email": "",
-    "linkedin": ""
+    "linkedin": "",
+    "github": ""
   },
   "professional_summary": "",
+  "skill_lines": [
+    { "label": "Languages", "value": "Python, SQL" }
+  ],
   "education": [
     {
       "degree": "",
@@ -4092,23 +4911,40 @@ Return JSON with exactly this shape:
       "location": "",
       "responsibilities": []
     }
+  ],
+  "projects": [
+    { "name": "", "bullets": [] }
+  ],
+  "certifications": [
+    { "name": "", "date": "" }
   ]
 }
 
 Rules:
 - Put every skill into the best skills.* bucket; leave unused buckets as [].
+- skill_lines = the Skills section as shown (category label + comma list). Keep the master's labels.
 - responsibilities = experience bullets only (no Skills-section dump).
 - professional_summary = SUMMARY paragraph only.
+- personal_information.title = headline under the name. If none, use the most recent job role. Never a section heading.
 - personal_information.linkedin = the exact linkedin.com/in/slug if present. Never invent linkedin.com/in/username. Empty string if there is no real profile URL.
+- personal_information.github = github.com/username if present. Empty if only the word GitHub.
 - personal_information.location = the candidate's home/current city from the HEADER only (under the name or on the phone/email line). Never use a college, university, or employer city.
 - professional_experience[].location = city/state/Remote ONLY if that role header already has it. Empty string if the role has no location. Never copy the header city, never guess company HQ.
+- education.end_date = passout year when there is no from–to range.
+- projects = PROJECTS section only. Empty [] if none.
+- certifications = CERTIFICATIONS section as name + date. Empty [] if none. Do not invent certificates.
 - Empty string / [] when unknown — never guess.`;
+}
+
+function emptyOther() {
+  return { section_name: '', heading: '', data: '' };
 }
 
 function emptyResumeJson() {
   return {
-    personal_information: { name: '', location: '', phone: '', email: '', linkedin: '' },
+    personal_information: { name: '', title: '', location: '', phone: '', email: '', linkedin: '', github: '' },
     professional_summary: '',
+    skill_lines: [],
     education: [],
     skills: {
       languages: [],
@@ -4121,7 +4957,61 @@ function emptyResumeJson() {
       certifications: [],
     },
     professional_experience: [],
+    projects: [],
+    certifications: [],
+    other_sections: [],
   };
+}
+
+function normalizeSkillLines(list) {
+  return (Array.isArray(list) ? list : []).map(row => {
+    if (typeof row === 'string') {
+      const idx = row.indexOf(':');
+      if (idx > 0 && idx < 60) return { label: row.slice(0, idx).trim(), value: row.slice(idx + 1).trim() };
+      return { label: '', value: String(row).trim() };
+    }
+    return {
+      label: String(row?.label || '').trim(),
+      value: String(row?.value || '').trim(),
+    };
+  }).filter(r => r.label || r.value);
+}
+
+function skillLinesFromBuckets(sk) {
+  const labels = {
+    languages: 'Languages',
+    frameworks_and_tools: 'Tools',
+    databases: 'Databases',
+    cloud_platforms: 'Cloud',
+    visualization: 'Visualization',
+    ai_ml: 'AI / ML',
+    version_control_and_devops: 'DevOps',
+    certifications: 'Certifications',
+  };
+  return Object.keys(labels).map(key => {
+    const value = uniqTerms(sk?.[key] || []).join(', ');
+    return value ? { label: labels[key], value } : null;
+  }).filter(Boolean);
+}
+
+function bucketsFromSkillLines(lines) {
+  const buckets = emptyResumeJson().skills;
+  const blob = (lines || []).map(r => [r.label, r.value].filter(Boolean).join(': ')).join('\n');
+  const parts = blob.split(/[:|•,;/]|\n/)
+    .map(s => s.replace(/^[-•\s]+/, '').trim())
+    .filter(s => s.length > 1 && s.length < 48 && !/^(languages?|packages?|tools?|cloud|databases?|frameworks?|visualization|management|other skills)$/i.test(s));
+  for (const s of uniqTerms(parts).slice(0, 80)) {
+    if (/\b(python|java|scala|sql|javascript|typescript|bash|shell|php|go|r\b|hack|graphql|rest)\b/i.test(s)) buckets.languages.push(s);
+    else if (/\b(aws|gcp|azure|google cloud)\b/i.test(s)) buckets.cloud_platforms.push(s);
+    else if (/\b(mysql|postgres|snowflake|redshift|bigquery|mongodb|cassandra|dynamodb|netezza|hive)\b/i.test(s)) buckets.databases.push(s);
+    else if (/\b(tableau|power bi|looker|streamlit|metabase|quicksight)\b/i.test(s)) buckets.visualization.push(s);
+    else if (/\b(tensorflow|pytorch|scikit|langchain|rag|llm|ml|nlp|xgboost)\b/i.test(s)) buckets.ai_ml.push(s);
+    else if (/\b(git|docker|jenkins|ci\/cd|kubernetes|terraform|composer|step functions)\b/i.test(s)) buckets.version_control_and_devops.push(s);
+    else if (/certif/i.test(s)) buckets.certifications.push(s);
+    else buckets.frameworks_and_tools.push(s);
+  }
+  for (const k of Object.keys(buckets)) buckets[k] = uniqTerms(buckets[k]);
+  return buckets;
 }
 
 function normalizeResumeJson(parsed) {
@@ -4130,10 +5020,12 @@ function normalizeResumeJson(parsed) {
   const pi = parsed.personal_information || {};
   base.personal_information = {
     name: String(pi.name || '').trim(),
+    title: String(pi.title || '').trim(),
     location: String(pi.location || '').trim(),
     phone: String(pi.phone || '').trim(),
     email: String(pi.email || '').trim(),
-    linkedin: String(pi.linkedin || '').trim(),
+    linkedin: shortenLinkedIn(pi.linkedin) || (/^linkedin$/i.test(String(pi.linkedin || '').trim()) ? '' : String(pi.linkedin || '').trim()),
+    github: extractGithubHandle(pi.github) || '',
   };
   base.professional_summary = String(parsed.professional_summary || '').trim();
   base.education = (Array.isArray(parsed.education) ? parsed.education : []).map(e => ({
@@ -4147,6 +5039,9 @@ function normalizeResumeJson(parsed) {
   for (const key of Object.keys(base.skills)) {
     base.skills[key] = uniqTerms(sk[key] || []).map(s => String(s).trim()).filter(Boolean);
   }
+  base.skill_lines = normalizeSkillLines(parsed.skill_lines);
+  if (!base.skill_lines.length) base.skill_lines = skillLinesFromBuckets(base.skills);
+  else base.skills = bucketsFromSkillLines(base.skill_lines);
   base.professional_experience = (Array.isArray(parsed.professional_experience) ? parsed.professional_experience : [])
     .map(job => ({
       company: String(job?.company || '').trim(),
@@ -4155,17 +5050,94 @@ function normalizeResumeJson(parsed) {
       end_date: String(job?.end_date || '').trim(),
       location: String(job?.location || '').trim(),
       responsibilities: (Array.isArray(job?.responsibilities) ? job.responsibilities : [])
-        .map(b => String(b || '').trim())
+        .map(b => String(b || '').trim().replace(/^[-•]\s+/, ''))
         .filter(Boolean),
     }))
     .filter(j => j.company || j.role || j.responsibilities.length);
+  base.projects = (Array.isArray(parsed.projects) ? parsed.projects : []).map(p => ({
+    name: String(p?.name || '').trim(),
+    bullets: (Array.isArray(p?.bullets) ? p.bullets : [])
+      .map(b => String(b || '').trim().replace(/^[-•]\s+/, ''))
+      .filter(Boolean),
+  })).filter(p => p.name || p.bullets.length);
+  base.certifications = (Array.isArray(parsed.certifications) ? parsed.certifications : []).map(c => {
+    if (typeof c === 'string') return { name: c.trim(), date: '' };
+    return { name: String(c?.name || '').trim(), date: String(c?.date || '').trim() };
+  }).filter(c => c.name);
+  base.other_sections = (Array.isArray(parsed.other_sections) ? parsed.other_sections : []).map(o => ({
+    section_name: String(o?.section_name || o?.name || '').trim(),
+    heading: String(o?.heading || '').trim(),
+    data: String(o?.data || '').trim(),
+  })).filter(o => o.section_name || o.heading || o.data);
   return base;
+}
+
+function resumeJsonToMasterText(rj) {
+  const r = normalizeResumeJson(rj);
+  const pi = r.personal_information || {};
+  const contact = [pi.phone, pi.email, pi.linkedin, pi.github, pi.location].filter(Boolean).join(' | ');
+  const skills = (r.skill_lines || []).map(row => row.label ? `${row.label}: ${row.value}` : row.value).filter(Boolean);
+  const jobs = (r.professional_experience || []).map(job => {
+    const dates = [job.start_date, job.end_date].filter(Boolean).join(' – ');
+    const header = typeof formatRoleLineFromParts === 'function'
+      ? formatRoleLineFromParts({ company: job.company, location: job.location, title: job.role, dates })
+      : [job.company, job.location, job.role, dates].filter(Boolean).join(' | ');
+    const bullets = (job.responsibilities || []).map(b => `- ${String(b).replace(/^[-•]\s+/, '')}`);
+    return [header, ...bullets].filter(Boolean).join('\n');
+  }).filter(Boolean);
+  const edu = (r.education || []).map(e => {
+    const years = [e.start_date, e.end_date].filter(Boolean).join(' – ');
+    const school = [e.institution, e.location].filter(Boolean).join(', ');
+    const schoolLine = [school, years].filter(Boolean).join(', ');
+    // Pipe keeps degree as a known field — parser must not re-guess from wording.
+    if (e.degree && schoolLine) return `${String(e.degree).trim()} | ${schoolLine}`;
+    return [e.degree, schoolLine].filter(Boolean).join('\n');
+  }).filter(Boolean);
+  const projects = (r.projects || []).map(p => [
+    p.name,
+    ...(p.bullets || []).map(b => `- ${String(b).replace(/^[-•]\s+/, '')}`),
+  ].filter(Boolean).join('\n')).filter(Boolean);
+  const certs = (r.certifications || []).map(c => [c.name, c.date].filter(Boolean).join(' | ')).filter(Boolean);
+  const others = (r.other_sections || []).map(o => {
+    const name = String(o.section_name || '').trim().toUpperCase().replace(/\s+/g, ' ');
+    const heading = String(o.heading || '').trim();
+    const dataLines = String(o.data || '').split(/\n+/).map(l => l.trim()).filter(Boolean)
+      .map(l => (/^[-•]/.test(l) ? `- ${l.replace(/^[-•]\s+/, '')}` : l));
+    return [name, heading, ...dataLines].filter(Boolean).join('\n');
+  }).filter(Boolean);
+  return [
+    pi.name,
+    pi.title,
+    contact,
+    '',
+    r.professional_summary ? 'SUMMARY' : '',
+    r.professional_summary,
+    '',
+    skills.length ? 'TECHNICAL SKILLS' : '',
+    ...skills,
+    '',
+    jobs.length ? 'PROFESSIONAL EXPERIENCE' : '',
+    jobs.join('\n\n'),
+    '',
+    edu.length ? 'EDUCATION' : '',
+    edu.join('\n'),
+    '',
+    projects.length ? 'PROJECTS' : '',
+    projects.join('\n\n'),
+    '',
+    certs.length ? 'CERTIFICATIONS' : '',
+    certs.join('\n'),
+    '',
+    others.join('\n\n'),
+  ].filter((line, i, arr) => !(line === '' && (i === 0 || arr[i - 1] === ''))).join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /** Flat skill list from structured JSON (Skills section only). */
 function skillsFromResumeJson(rj) {
   const sk = (rj && rj.skills) || {};
-  return uniqTerms(Object.values(sk).flat().map(s => String(s || '').trim()).filter(Boolean));
+  const fromBuckets = uniqTerms(Object.values(sk).flat().map(s => String(s || '').trim()).filter(Boolean));
+  const fromLines = (rj?.skill_lines || []).flatMap(row => String(row.value || '').split(/[,;|]/)).map(s => s.trim()).filter(Boolean);
+  return uniqTerms([...fromBuckets, ...fromLines]);
 }
 
 /** Experience bullet corpus from structured JSON. */
@@ -4181,12 +5153,16 @@ function corpusFromResumeJson(rj) {
   if (!rj) return '';
   const pi = rj.personal_information || {};
   const edu = (rj.education || []).map(e => [e.degree, e.institution, e.location].filter(Boolean).join(' '));
+  const projects = (rj.projects || []).flatMap(p => [p.name, ...(p.bullets || [])]);
+  const certs = (rj.certifications || []).map(c => [c.name, c.date].filter(Boolean).join(' '));
   return [
-    pi.name, pi.location, pi.email, pi.phone, pi.linkedin,
+    pi.name, pi.title, pi.location, pi.email, pi.phone, pi.linkedin, pi.github,
     rj.professional_summary,
     ...skillsFromResumeJson(rj),
     experienceTextFromResumeJson(rj),
     ...edu,
+    ...projects,
+    ...certs,
   ].filter(Boolean).join('\n');
 }
 
@@ -4256,9 +5232,11 @@ function seedUnifiedFromJson(resumeJson, jdJson, keywords) {
  */
 function parseResumeToJsonLocal(resume) {
   const text = String(resume || '');
-  const lines = text.split(/\r?\n/).map(l => l.trim());
+  const lines = (typeof mergeHangingRoleDates === 'function'
+    ? mergeHangingRoleDates(text.split(/\r?\n/).map(l => l.trim()))
+    : text.split(/\r?\n/).map(l => l.trim()));
   const out = emptyResumeJson();
-  const headerIdx = (re) => lines.findIndex(l => re.test(l));
+  const headerIdx = (re) => lines.findIndex(l => re.test(l) && String(l).length < 60);
   const nextHeader = (from) => {
     for (let i = from + 1; i < lines.length; i++) {
       if (/^(SUMMARY|PROFESSIONAL SUMMARY|OBJECTIVE|SKILLS|TECHNICAL SKILLS|PROFESSIONAL EXPERIENCE|WORK EXPERIENCE|EXPERIENCE|EDUCATION|PROJECTS|CERTIFICATIONS)\b/i.test(lines[i])
@@ -4272,22 +5250,20 @@ function parseResumeToJsonLocal(resume) {
     return lines.slice(s + 1, nextHeader(s)).filter(Boolean);
   };
 
-  const top = lines.slice(0, 8).filter(Boolean);
-  out.personal_information.name = top[0] || '';
-  for (const l of top) {
-    if (/@/.test(l) && !out.personal_information.email) {
-      const m = l.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
-      if (m) out.personal_information.email = m[0];
-    }
-    if (/\d{3}[-.\s)]?\d{3}[-.\s]?\d{4}/.test(l) && !out.personal_information.phone) {
-      const m = l.match(/\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/);
-      if (m) out.personal_information.phone = m[0];
-    }
-    if (/linkedin/i.test(l) && !out.personal_information.linkedin) {
-      const slug = shortenLinkedIn(l) || (l.match(/(https?:\/\/)?([\w-]+\.)?linkedin\.com\/\S+/i) || [])[0] || '';
-      if (slug && !/^linkedin$/i.test(slug)) out.personal_information.linkedin = shortenLinkedIn(slug) || slug;
-    }
+  const top = [];
+  for (const l of lines.slice(0, 10)) {
+    if (!l) continue;
+    if (typeof isSectionHeader === 'function' ? isSectionHeader(l) : /^(SUMMARY|SKILLS|EXPERIENCE|EDUCATION)\b/i.test(l)) break;
+    top.push(l);
   }
+  const cf = typeof extractContactFields === 'function' ? extractContactFields(text) : {};
+  out.personal_information.name = (top.find(l => !(typeof isHeaderContactLine === 'function' && isHeaderContactLine(l))) || '').replace(/,$/, '');
+  const titleLine = top.find(l => l !== out.personal_information.name && !(typeof isHeaderContactLine === 'function' && isHeaderContactLine(l)));
+  out.personal_information.title = titleLine && titleLine.length < 70 ? titleLine : '';
+  out.personal_information.email = cf.email || '';
+  out.personal_information.phone = cf.phone || '';
+  out.personal_information.linkedin = cf.linkedin || '';
+  out.personal_information.github = cf.github || githubFromHeader(top.join('\n')) || '';
   const headerLoc = extractPersonalLocation(text, null);
   if (headerLoc) out.personal_information.location = headerLoc;
 
@@ -4295,23 +5271,12 @@ function parseResumeToJsonLocal(resume) {
   out.professional_summary = sumLines.filter(l => !/^[-•]/.test(l)).join(' ').trim();
 
   const skillLines = sliceSection(/^(SKILLS|TECHNICAL SKILLS)\b/i);
-  const skillBlob = skillLines.join(' ');
-  const skillParts = skillBlob
-    .split(/[:|•,;/]|\n/)
-    .map(s => s.replace(/^[-•\s]+/, '').trim())
-    .filter(s => s.length > 1 && s.length < 48 && !/^(languages?|tools?|cloud|databases?|frameworks?)$/i.test(s));
-  const buckets = out.skills;
-  for (const s of uniqTerms(skillParts).slice(0, 80)) {
-    if (/\b(python|java|scala|sql|javascript|typescript|bash|shell|php|go|r\b|hack|graphql|rest)\b/i.test(s)) buckets.languages.push(s);
-    else if (/\b(aws|gcp|azure|google cloud)\b/i.test(s)) buckets.cloud_platforms.push(s);
-    else if (/\b(mysql|postgres|snowflake|redshift|bigquery|mongodb|cassandra|dynamodb|netezza|hive)\b/i.test(s)) buckets.databases.push(s);
-    else if (/\b(tableau|power bi|looker|streamlit|metabase|quicksight)\b/i.test(s)) buckets.visualization.push(s);
-    else if (/\b(tensorflow|pytorch|scikit|langchain|rag|llm|ml|nlp|xgboost)\b/i.test(s)) buckets.ai_ml.push(s);
-    else if (/\b(git|docker|jenkins|ci\/cd|kubernetes|terraform|composer|step functions)\b/i.test(s)) buckets.version_control_and_devops.push(s);
-    else if (/certif/i.test(s)) buckets.certifications.push(s);
-    else buckets.frameworks_and_tools.push(s);
-  }
-  for (const k of Object.keys(buckets)) buckets[k] = uniqTerms(buckets[k]);
+  out.skill_lines = skillLines.map(l => {
+    const idx = l.indexOf(':');
+    if (idx > 1 && idx < 55) return { label: l.slice(0, idx).trim(), value: l.slice(idx + 1).trim() };
+    return { label: '', value: l.replace(/^[-•]\s*/, '') };
+  }).filter(r => r.value);
+  out.skills = bucketsFromSkillLines(out.skill_lines);
 
   const expLines = sliceSection(/^(PROFESSIONAL EXPERIENCE|WORK EXPERIENCE|EXPERIENCE)\b/i);
   let cur = null;
@@ -4320,15 +5285,20 @@ function parseResumeToJsonLocal(resume) {
     if (dateRe.test(l) || (/\|/.test(l) && !/^[-•]/.test(l) && l.length < 120)) {
       if (cur) out.professional_experience.push(cur);
       const dm = l.match(dateRe);
-      const parsed = parseRoleLineParts(l);
+      const parsed = typeof parseRoleLineParts === 'function' ? parseRoleLineParts(l) : { company: l, title: '', location: '', dates: '' };
       cur = {
         company: parsed.company || '',
         role: parsed.title || '',
         location: parsed.location || '',
-        start_date: dm ? dm[1] : '',
+        start_date: dm ? dm[1] : (parsed.dates || '').split(/[–—-]/)[0]?.trim() || '',
         end_date: dm ? dm[2] : '',
         responsibilities: [],
       };
+      if (!dm && parsed.dates) {
+        const bits = String(parsed.dates).split(/\s*[–—-]\s*/);
+        cur.start_date = bits[0] || '';
+        cur.end_date = bits[1] || '';
+      }
       continue;
     }
     if (/^[-•]/.test(l) || (cur && l.length > 40)) {
@@ -4341,35 +5311,97 @@ function parseResumeToJsonLocal(resume) {
   if (cur) out.professional_experience.push(cur);
 
   const eduLines = sliceSection(/^EDUCATION\b/i);
+  const eduRangeRe = /((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}|\d{1,2}\/\d{4}|\d{4})\s*(?:[-–—]|to)\s*((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}|\d{1,2}\/\d{4}|\d{4}|Present)/i;
   for (let i = 0; i < eduLines.length; i++) {
-    const l = eduLines[i];
-    if (/bachelor|master|b\.?s\.?|m\.?s\.?|b\.?tech|m\.?tech|ph\.?d/i.test(l)) {
-      const dm = l.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}|\d{4})\s*[-–—to]+\s*((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}|\d{4}|Present)/i);
+    const l = eduLines[i].replace(/^[-•]\s*/, '');
+    if (!l) continue;
+    const range = l.match(eduRangeRe);
+    const year = !range && l.match(/\b((?:19|20)\d{2})\b/);
+    const stripped = l.replace(range?.[0] || '', '').replace(/[.,]+$/, '').trim();
+    if (/university|college|school|institute|polytechnic/i.test(stripped) && out.education.length && !out.education[out.education.length - 1].institution) {
+      const last = out.education[out.education.length - 1];
+      last.institution = stripped.replace(/,\s*$/, '').trim();
+      if (!last.end_date) last.end_date = range ? range[2] : (year ? year[1] : '');
+      if (!last.start_date && range) last.start_date = range[1];
+      continue;
+    }
+    if (/bachelor|master|b\.?s\.?|m\.?s\.?|b\.?tech|m\.?tech|ph\.?d|mba|diploma|associate|degree|sciences?/i.test(stripped) || /[|—–]/.test(l)) {
+      const next = eduLines[i + 1] || '';
+      const schoolNext = next && /university|college|school|institute|polytechnic/i.test(next) ? next.replace(/^[-•]\s*/, '').replace(/[.,]+$/, '') : '';
+      const parts = stripped.split(/\s*[|—–]\s+|\s+-\s+/).map(s => s.trim()).filter(Boolean);
+      let degree = parts[0] || stripped;
+      let institution = parts[1] || '';
+      let location = parts[2] || '';
+      if (!institution) {
+        const uni = degree.match(/^(.*?)[,]\s+((?:University|College|Institute|School|Polytechnic)\b.*)$/i);
+        if (uni) {
+          degree = uni[1].trim();
+          institution = uni[2].trim();
+        }
+      }
+      if (!institution && schoolNext) institution = schoolNext.replace(eduRangeRe, '').replace(/[.,]+$/, '').trim();
       out.education.push({
-        degree: l.replace(dm?.[0] || '', '').replace(/\|/g, ' ').trim(),
-        start_date: dm ? dm[1] : '',
-        end_date: dm ? dm[2] : '',
-        institution: eduLines[i + 1] && !/bachelor|master|b\.?s/i.test(eduLines[i + 1]) ? eduLines[i + 1] : '',
-        location: '',
+        degree,
+        start_date: range ? range[1] : '',
+        end_date: range ? range[2] : (year ? year[1] : ''),
+        institution,
+        location,
       });
+      if (schoolNext && !parts[1]) i += 1;
     }
   }
+
+  const projLines = sliceSection(/^PROJECTS?\b/i);
+  let pcur = null;
+  for (const l of projLines) {
+    if (/^[-•]/.test(l) || (pcur && l.length > 90)) {
+      if (!pcur) pcur = { name: '', bullets: [] };
+      pcur.bullets.push(l.replace(/^[-•\s]+/, '').trim());
+      continue;
+    }
+    if (pcur) out.projects.push(pcur);
+    pcur = { name: l.replace(/[.,]+$/, ''), bullets: [] };
+  }
+  if (pcur) out.projects.push(pcur);
+  if (!out.personal_information.title && out.professional_experience[0]?.role) {
+    out.personal_information.title = out.professional_experience[0].role;
+  }
+
+  const certLines = sliceSection(/^CERTIF/i);
+  for (const l of certLines) {
+    const t = l.replace(/^[-•]\s*/, '');
+    const m = t.match(/[,|]?\s*((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}|(?:19|20)\d{2})\s*$/i);
+    out.certifications.push({
+      name: (m ? t.slice(0, m.index) : t).replace(/[|,]\s*$/, '').trim(),
+      date: m ? m[1] : '',
+    });
+  }
+
   return applyPersonalLocationFromHeader(normalizeResumeJson(out), text);
 }
 
 async function parseResumeToJson(resume) {
   const text = String(resume || '');
+  const local = parseResumeToJsonLocal(text);
   try {
     const raw = await callGemini(buildResumeJsonPrompt(text), { json: true, maxTokens: 4000 });
     const parsed = normalizeResumeJson(parseJsonLoose(raw));
     const hasSignal = parsed.personal_information.name
       || parsed.professional_experience.length
       || skillsFromResumeJson(parsed).length;
-    if (hasSignal) return applyPersonalLocationFromHeader(parsed, text);
+    if (hasSignal) {
+      const merged = applyPersonalLocationFromHeader(parsed, text);
+      if (!merged.personal_information.github) merged.personal_information.github = local.personal_information.github;
+      if (!merged.personal_information.title) merged.personal_information.title = local.personal_information.title;
+      if (!merged.skill_lines.length) merged.skill_lines = local.skill_lines;
+      if (!merged.projects.length) merged.projects = local.projects;
+      if (!merged.certifications.length) merged.certifications = local.certifications;
+      return merged;
+    }
   } catch (err) {
     console.warn('Resume JSON parse (Gemini) failed:', err);
   }
-  return parseResumeToJsonLocal(text);
+  return local;
 }
 
 function buildScorePrompt(jd, resume, locked, understanding) {
@@ -4526,7 +5558,8 @@ function resumeJsonToScoreText(resumeJson) {
   ).join('\n');
   return [
     pi.name,
-    [pi.location, pi.phone, pi.email, pi.linkedin].filter(Boolean).join(' | '),
+    pi.title,
+    [pi.location, pi.phone, pi.email, pi.linkedin, pi.github].filter(Boolean).join(' | '),
     'SUMMARY',
     r.professional_summary || '',
     'SKILLS',
@@ -4535,6 +5568,10 @@ function resumeJsonToScoreText(resumeJson) {
     jobs,
     'EDUCATION',
     edu,
+    (r.projects || []).length ? 'PROJECTS' : '',
+    (r.projects || []).map(p => [p.name, ...(p.bullets || []).map(b => `- ${b}`)].join('\n')).join('\n\n'),
+    (r.certifications || []).length ? 'CERTIFICATIONS' : '',
+    (r.certifications || []).map(c => [c.name, c.date].filter(Boolean).join(' | ')).join('\n'),
   ].filter(Boolean).join('\n');
 }
 
@@ -5136,6 +6173,8 @@ ${formatExternalAtsBlock(jd, keywords)}
 LOCKED CONTACT — use exactly these formatted values:
 ${formatLockedContactBlock(resume)}
 
+${formatVerifiedOmitBlock(resume)}
+
 EXPERIENCE TENURE / SUMMARY YEARS:
 ${formatLockedTenureBlock(resume, frozenMasterResumeJson())}
 
@@ -5173,11 +6212,10 @@ PROFESSIONAL EXPERIENCE
 Company | <exact master title> Month YYYY – Month YYYY
 (or Company | Location | <exact master title> ... ONLY if that same role already has a location on the master — never invent one)
 - Bullet ending with a period.
-EDUCATION
-Degree + field on one line (Master of Science, Data Science). School, City, ST on the next line.
-Do not split "Master of Science" and "Data Science" onto two lines. Do not glue Graduated onto the field.
-Then keep every extra master section in the same place it already sits (before or after these cores). Headings stay ALL CAPS.
-If the master has PROJECTS, output that section once: project name, then hyphen bullets only — no dates, no location/role line. Keep the same projects and facts. Do not add another PROJECTS heading. If the master has no PROJECTS section, do not create one.
+
+STOP after PROFESSIONAL EXPERIENCE. Do NOT print EDUCATION, PROJECTS, or CERTIFICATIONS — the app injects those once from verified fields (format only).
+
+${formatVerifiedStaticLockBlock()}
 
 HR SCAN — SUMMARY AND EXPERIENCE (these are what recruiters actually read):
 The SUMMARY opens as ${pageTitle || 'the most recent EXPERIENCE job title'} — keep that title. Do not rename the person to ${headline ? headline.split('|')[0].trim() : 'the JD title'}.
@@ -5212,12 +6250,8 @@ ROLE LINE FORMAT (Anirudh template — mandatory):
   Do NOT put dates on a second line. Do NOT write Company | Title | Location | Dates.
   Never output the placeholder words "Job Title" or "Month YYYY" — use the real title and dates from the master.
 
-PROJECTS FORMAT (only if the master already has PROJECTS):
-  Heading, then each project name on its own line, then "- " bullets. No dates, no location, no role line.
-  Example:
-  Fraud Detection Pipeline
-  - Built an XGBoost classifier using Python and Spark to flag fraudulent claims and cut false positives by 18%.
-  Keep only the master's projects.
+PROJECTS / EDUCATION / CERTIFICATIONS:
+- Do not print these sections. The app injects verified fields once after you write (format only — no content changes).
 
 BULLETS:
 - Start with hyphen-space "- "
@@ -5232,8 +6266,9 @@ BULLETS:
 Do NOT use tables, columns, icons, photos, skill bars, or ALL-CAPS name.
 
 CERTIFICATIONS AND EXTRA SECTIONS:
-- Include CERTIFICATIONS only if they already exist in the master resume. If the master has none, omit that section.
-- Keep every other extra master section (Projects, Awards, Volunteer, Languages, Publications, Leadership, and any other heading on the master) in the same relative place. Do not drop them.
+- Do not print EDUCATION, PROJECTS, or CERTIFICATIONS.
+- Do not invent certificates, schools, or projects.
+- Awards / Volunteer / Languages only if already on the master — once, unchanged facts.
 
 TARGET SCORE: ${SCORE_THRESHOLD}+ / ${SCORE_MAX} on ${SCORE_RULE_NAME} (Push aims for ${SCORE_TARGET}+). Write with the 20 rules so score-rule categories pass.
 
@@ -5287,11 +6322,11 @@ ${formatExternalAtsBlock(jd, keywords)}
 ${profileBlock}
 
 Mode: ${aggressive ? 'AGGRESSIVE' : 'INTEGRITY / HONEST'}
-Preserve name, contact, companies, PAST titles, dates, education, and every extra section already on this resume (Projects, Awards, Volunteer, Languages, and any other heading). Keep those extra sections in the same place. Do not drop them. Do not invent new extra sections. If PROJECTS is already on the resume, keep those same projects once as a name plus hyphen bullets — no dates, no location/role line. Do not create another Projects heading.
-Keep the master's skill categories. Put JD must-haves first on each line. Do not invent a new Technical Skills line.
-Each role must have 6 or 7 bullets. If a role has fewer than 6, add bullets. If it has more than 7, keep the strongest 7.
-Line 2 = most recent EXPERIENCE job title (${masterExperienceRoleTitle(master) || 'see master'}). Do not put the JD title on Line 2 or in the SUMMARY opener. Tailor skills order and bullets to the JD.
-Keep the Anirudh template format exactly (ALL-CAPS headers, Company | Title Dates, location only if already on that master role, "- " bullets).
+Preserve name, contact, companies, PAST titles, and dates. Tailor ONLY SUMMARY, SKILLS, and EXPERIENCE.
+Do NOT print EDUCATION, PROJECTS, or CERTIFICATIONS — the app injects verified fields once (format only).
+Do not invent new schools, projects, or certificates.
+
+${formatVerifiedStaticLockBlock()}
 
 HR SCAN: SUMMARY must contain 8-9 of these important skills (exact spelling) — only stack-aligned tools: ${summaryKw.join(', ') || 'keep current summary stack'}
 SUMMARY must start with the most recent EXPERIENCE job title, not a number and not the JD title. Tenure comes after the title (example: "${masterExperienceRoleTitle(master) || 'the experience job title'} with 7+ years of experience" if calculated tenure is 7.2 — never "7.2 years").
@@ -5310,7 +6345,7 @@ ${aggressive
 MUST ADD THESE SKILLS (stack-aligned): ${mustAdd.join(', ') || 'none — already covered'}
 MUST WEAVE THESE JD ATS PHRASES naturally (only if they fit the candidate stack): ${atsMissing.join(' · ') || 'none — already covered'}
 
-CERTIFICATIONS: never add a certification that is not already on this resume. Never treat missing certs as a gap. If none exist, do not create a CERTIFICATIONS section.
+CERTIFICATIONS: never invent certificates. Do not print EDUCATION / PROJECTS / CERTIFICATIONS — injected from verified fields.
 
 MISSING IMPORTANT (PRIMARY / JD must-have — add in Stay truthful): ${missingP.join(', ') || 'none'}
 MISSING EXTRA (SECONDARY / STRETCH — ${aggressive ? 'ADD in Stretch mode' : 'DO NOT ADD in Stay truthful'}): ${missingS.join(', ') || 'none'}
@@ -5435,12 +6470,17 @@ function sanitizeBoldTerms(list, resume) {
   }).sort((a, b) => b.length - a.length);
 }
 
-async function finalizeBolding(jd, resume) {
+async function finalizeBolding(jd, resume, { useGemini = false } = {}) {
   state.boldTerms = [];
   state.boldFinalized = false;
   if (!resume || resume.length < 80) return;
   const pool = buildBoldTermPool(state.keywords || {}, resume);
   const seeded = pool.slice();
+  if (!useGemini) {
+    state.boldTerms = seeded;
+    state.boldFinalized = seeded.length > 0;
+    return;
+  }
   const matchesPool = (term) => pool.some(k => {
     const a = String(term).toLowerCase();
     const b = String(k).toLowerCase();
@@ -6806,7 +7846,7 @@ async function scoreWithUnderstandingAndAiRubric(jd, resume) {
   const masterPaste = (typeof $ === 'function' && $('resumeInput') && $('resumeInput').value) || '';
   const scoringMaster = !!(masterPaste && text.trim() === String(masterPaste).trim());
   // Gemini JSON convert — silent (no loader convert copy, no UI dump)
-  let resumeJson = scoringMaster ? (state.masterResumeJson || null) : null;
+  let resumeJson = scoringMaster ? (verifiedResumeJson() || state.masterResumeJson || null) : null;
   let jdJson = state.lastJdJson;
   try {
     const tasks = [];
@@ -6819,7 +7859,7 @@ async function scoreWithUnderstandingAndAiRubric(jd, resume) {
   }
   state.lastResumeJson = resumeJson;
   state.lastJdJson = jdJson;
-  if (scoringMaster) state.masterResumeJson = resumeJson;
+  if (scoringMaster && !verifiedResumeJson()) state.masterResumeJson = resumeJson;
 
   let understanding = null;
   try {
@@ -6924,11 +7964,20 @@ function cacheKeywords(jd, keywords, cacheKey) {
 async function lockKeywordsFromJd(jd) {
   const h = jdHash(jd);
   const cacheKey = skillsetCacheKey(jd);
-  if (state.keywords?.primary?.length && state.kwHash === h && state.keywords.role && state.keywords._mode === state.mode) {
+  // Score already locked JD skills — do not re-run Gemini JD analysis / market research.
+  if (state.keywords?.primary?.length && state.kwHash === h) {
     ensureAliasMap(state.keywords);
+    state.keywords._mode = state.mode;
+    if (state.lastJdJson) state.keywords.jdJson = state.lastJdJson;
     if (!state.keywords.eligibility) {
       state.keywords.eligibility = mergeEligibility(null, extractLocalEligibilityFromJd(jd));
     }
+    return state.keywords;
+  }
+  if (state.lastJdJson && state.kwHash === h) {
+    const fromScore = keywordsFromJdJson(state.lastJdJson);
+    fromScore._mode = state.mode;
+    cacheKeywords(jd, fromScore, cacheKey);
     return state.keywords;
   }
   const built = await analyzeJdWithAiRag(jd);
@@ -7819,69 +8868,45 @@ function renderAtsPanel(unified) {
   const score = aligned.atsScore;
   const color = scoreHue(score);
   const kw = state.keywords || aligned;
-  const roleLabel = (kw.role && kw.role.label) || aligned.title || 'Read from posting';
+  const roleLabel = (kw.role && kw.role.label) || aligned.title || 'this job';
   state.preTailor = snapshotScore(aligned);
   $('freeAtsPanel').classList.remove('hidden');
   if ($('postRewriteScore')) $('postRewriteScore').classList.add('hidden');
   if ($('scoreSection')) $('scoreSection').classList.add('hidden');
   if ($('optimizeBoard')) $('optimizeBoard').classList.add('hidden');
-  $('scoreSourceLabel').textContent = roleLabel;
+  if ($('scoreSourceLabel')) $('scoreSourceLabel').textContent = roleLabel;
+
   const resumeText = ($('resumeInput') && $('resumeInput').value.trim()) || aligned.resumeUsed || '';
-  paintRoleCompare(aligned, resumeText);
-  if ($('roleDetectLine')) {
-    $('roleDetectLine').classList.add('hidden');
-    $('roleDetectLine').textContent = '';
-  }
-  const jdText = ($('jdInput') && $('jdInput').value.trim()) || '';
   const candidateProfile = detectCandidateProfile(resumeText);
-  renderStackDetectLine(candidateProfile);
-  const jj = aligned.jdJson || state.lastJdJson || kw.jdJson || null;
-  const eligibility = mergeEligibility(
-    kw.eligibility,
-    mergeEligibility(
-      jj ? {
-        minYears: jj.years_of_experience?.minimum,
-        maxYears: jj.years_of_experience?.maximum,
-        yearsNote: jj.years_of_experience?.note || jj.requirements?.experience || '',
-      } : null,
-      extractLocalEligibilityFromJd(jdText),
-    ),
-  );
-  renderEligibilityPanel(buildEligibilityReport(eligibility, resumeText));
+
   const knockEl = $('hardKnockoutBanner');
   if (knockEl) {
-    knockEl.innerHTML = renderHardKnockoutBanner(sc);
-    knockEl.classList.toggle('hidden', !renderHardKnockoutBanner(sc));
+    const banner = renderHardKnockoutBanner(sc);
+    knockEl.innerHTML = banner || '';
+    knockEl.classList.toggle('hidden', !banner);
   }
   if ($('atsDonut')) $('atsDonut').innerHTML = svgDonut(score);
-  $('freeAtsScore').textContent = score;
-  $('freeAtsScore').style.color = color;
-  const workHistoryHits = Number.isFinite(Number(sc.keywordMatch))
-    ? Number(sc.keywordMatch)
-    : (sc.keywordsFound || []).length;
-  $('freeKwMatch').textContent = `${workHistoryHits}/${Math.max((unified.primary || []).length, 1)}`;
-  $('freeKwMatchSub').textContent = 'JD tools shown in work history';
-  $('freeFmtCheck').textContent = sc.formatCheck || '--';
-  $('freeFmtCheck').style.color = sc.formatCheck === 'PASS' ? '#16a34a' : '#d97706';
-  $('freeBulletScore').textContent = `${sc.bulletsWithMetrics || 0}/${sc.bulletsTotal || 0}`;
-  if ($('scoreDisclaimer')) {
-    $('scoreDisclaimer').textContent = SCORE_UI_BLURB;
+  if ($('freeAtsScore')) {
+    $('freeAtsScore').textContent = score;
+    $('freeAtsScore').style.color = color;
   }
+  if ($('scoreDisclaimer')) {
+    $('scoreDisclaimer').textContent = SCORE_UI_BLURB || '9-point alignment to this posting.';
+  }
+
   state.lastAtsUnified = {
     ...unified,
     understanding: unified.understanding || state.lastUnderstanding || null,
     resumeJson: unified.resumeJson || state.lastResumeJson || null,
     jdJson: unified.jdJson || state.lastJdJson || state.keywords?.jdJson || null,
   };
+  // 9-point bars + detail report only
   syncAiCategoryPanel(state.lastAtsUnified);
-  renderTen('tenSecondList', sc.tenSecondTest || {});
-  if ($('glanceChart')) $('glanceChart').innerHTML = renderGlanceChart(sc.tenSecondTest || {});
-  renderKeywordGrid('freeKwGrid', unified.primary, unified.secondary, sc.keywordsFound, sc.secondaryFound, sc);
+
+  // Keep gap data for Rewrite — do not dump it into the Score UI
   const missingImportant = filterTermsForCandidateProfile(dropCertTerms(sc.keywordsMissing || []), resumeText, candidateProfile);
   const missingExtra = filterTermsForCandidateProfile(dropCertTerms(sc.secondaryMissing || []), resumeText, candidateProfile);
-  if ($('atsFlow')) $('atsFlow').innerHTML = renderFlow(atsStory(unified));
   const missing = uniqTerms([...missingImportant, ...missingExtra]);
-  const found = [...(sc.keywordsFound || []), ...(sc.secondaryFound || [])];
   const ats = atsPhraseReport(kw, resumeText);
   const atsMissingFiltered = filterAtsPhrasesForCandidate(ats.missing, resumeText, candidateProfile);
   state.lastMissingReport = {
@@ -7893,39 +8918,6 @@ function renderAtsPanel(unified) {
     atsMissing: atsMissingFiltered,
     candidateProfile,
   };
-  renderGaps('freeGaps', [
-    missing.length ? `Adds JD skills that match your stack — tuned for ChatGPT, Claude, Grok, and enterprise ATS.` : 'No skill gaps against this locked set.',
-    ats.phrases.length ? `ATS phrases on page: ${ats.found.length}/${ats.phrases.length}${atsMissingFiltered.length ? ' — rewrite will weave: ' + atsMissingFiltered.slice(0, 5).join(' · ') + (atsMissingFiltered.length > 5 ? '…' : '') : ''}.` : '',
-    ...(sc.gaps || []).filter(g => !/keyword/i.test(g)),
-  ].filter(Boolean));
-  if ($('missingReport')) {
-    const jdPrimary = kw.jdPrimary || [];
-    const jdSecondary = kw.jdSecondary || [];
-    const atsKeywords = kw.atsKeywords || [];
-    const internetSkills = kw.internetSkills || kw.marketSkills || [];
-    const internetKeywords = kw.internetKeywords || [];
-    const jdList = kw.jdSkills || unified.primary || [];
-    const srcJd = kw.geminiUsed ? 'Gemini AI · from JD' : 'Local RAG · from JD';
-    const srcNet = kw.internetUsed ? 'Gemini AI · job boards' : 'Local RAG fallback';
-    $('missingReport').innerHTML = renderRewritePlanReport({
-      roleLabel,
-      score,
-      ats,
-      found,
-      missingImportant,
-      missingExtra,
-      jdPrimary,
-      jdSecondary,
-      jdList,
-      atsKeywords,
-      internetSkills,
-      internetKeywords,
-      srcJd,
-      srcNet,
-    });
-  }
-  const cta = $('tailorCta');
-  if (cta) cta.innerHTML = renderRewriteCta(score, roleLabel);
 }
 
 function renderPostRewriteScore(unified, before) {
@@ -8055,6 +9047,7 @@ function renderResults(unified, resumeText) {
   }
 
   $('outputArea').textContent = resumeText;
+  stopResumeEdit({ resetPaper: true });
   showFormattedResume(resumeText);
   setResumeView('formatted');
   state.lastAtsUnified = {
@@ -8142,6 +9135,19 @@ function renderRuleHtml(scores) {
 
 function getInputs() {
   const jd = $('jdInput').value.trim();
+  const card = $('resumeFieldsCard');
+  const fieldsOpen = !!(card && !card.classList.contains('hidden') && $('resumeFields') && $('resumeFields').querySelector('[data-rf]'));
+  if (fieldsOpen) {
+    // Flush a pending field edit (should invalidate score if content changed).
+    if (resumeFieldTimer) {
+      clearTimeout(resumeFieldTimer);
+      resumeFieldTimer = null;
+      applyResumeFieldsToMaster();
+    } else {
+      // Quiet sync before Score/Rewrite — do not wipe a fresh score.
+      applyResumeFieldsToMaster({ keepScoreGate: true });
+    }
+  }
   const resume = sanitizeMasterInEditor().trim();
   if (!jd) { showToast('Paste the posting first', '#e11d48'); return null; }
   if (!resume) { showToast('Upload your base resume as PDF, DOC, or DOCX', '#e11d48'); return null; }
@@ -8294,15 +9300,18 @@ async function runAtsCheck() {
     'Comparing resume to the posting',
   );
   try {
+    const verified = verifiedResumeJson();
     const [resumeJson, jdJson] = await Promise.all([
-      parseResumeToJson(resume),
+      verified ? Promise.resolve(verified) : parseResumeToJson(resume),
       parseJdToJson(jd),
     ]);
     state.lastResumeJson = resumeJson;
-    state.masterResumeJson = resumeJson;
+    if (!verified) state.masterResumeJson = resumeJson;
+    else state.masterResumeJson = verified;
     state.lastJdJson = jdJson;
 
     const kw = keywordsFromJdJson(jdJson);
+    kw._mode = state.mode;
     state.keywords = { ...(state.keywords || {}), ...kw };
     state.kwHash = jdHash(jd);
     syncJdSessionMeta(getActiveJdSession(), kw);
@@ -8349,8 +9358,8 @@ function missingAndUnwoven(unified, resumeText) {
 }
 
 function rewriteStillNeedsWork(unified, resumeText) {
-  if (Number(unified?.atsScore || 0) < SCORE_THRESHOLD) return true;
-  return missingAndUnwoven(unified, resumeText).length > 0;
+  // Gap-close target is 90+ on the score rule.
+  return Number(unified?.atsScore || 0) < SCORE_THRESHOLD;
 }
 
 async function runAnalysis() {
@@ -8362,6 +9371,8 @@ async function runAnalysis() {
     showToast('Check the score first', '#d97706');
     return;
   }
+  // Keep gate aligned with the synced master text used for this rewrite.
+  state.manualScoreKey = scorePairKey(jd, resume);
 
   const baselineUnified = state.manualScoreUnified || state.lastAtsUnified;
   $('analyzeBtn').disabled = true;
@@ -8379,9 +9390,10 @@ async function runAnalysis() {
   );
 
   try {
+    // Reuse Score JD skills / JSON — no second JD Gemini analysis.
     await lockKeywordsFromJd(jd);
     if (state.lastJdJson) {
-      state.keywords = { ...(state.keywords || {}), jdJson: state.lastJdJson };
+      state.keywords = { ...(state.keywords || {}), ...keywordsFromJdJson(state.lastJdJson), jdJson: state.lastJdJson, _mode: state.mode };
     }
     syncJdSessionMeta(getActiveJdSession(), state.keywords);
     renderJdTabs();
@@ -8397,7 +9409,7 @@ async function runAnalysis() {
     state.lastMissingReport = missingReport;
     updateAiProcessing('Rewriting as the JD role — adding missing skills and weaving them into experience…');
 
-    // 1) Rewrite with 20 rules + score-rule failure report
+    // 1) Rewrite with Score gaps
     const tailored = cleanupResume(await callGemini(
       buildRewritePrompt(jd, resume, state.keywords, missingReport, baselineUnified),
       { maxTokens: 7000 },
@@ -8408,19 +9420,21 @@ async function runAnalysis() {
 
     setStep(4);
     updateAiProcessing(`Scoring the rewrite with the 9-point ${SCORE_RULE_NAME}…`);
-    let scored = await scoreDraftWithScoreRule(jd, state.tailoredResume, { structureWithGemini: true });
+    let scored = await scoreDraftWithScoreRule(jd, state.tailoredResume, { structureWithGemini: false });
     let unified = scored.unified;
     state.tailoredResume = scored.resume;
     $('outputArea').textContent = scored.resume;
 
-    // 2) Loop: weave missing must-haves and close gaps until 90+
+    // 2) Close gaps until 90+ (local score between passes — no Gemini re-parse)
     let pass = 0;
     while (rewriteStillNeedsWork(unified, state.tailoredResume) && pass < MAX_BOOST_PASSES) {
       pass += 1;
       const liveMissing = missingSkillReport(state.keywords || {}, state.tailoredResume);
       const mustWeave = missingAndUnwoven(unified, state.tailoredResume);
       state.lastMissingReport = liveMissing;
-      updateAiProcessing(`Closing remaining gaps — pass ${pass} of ${MAX_BOOST_PASSES} (now ${unified.atsScore}; adding missing skills)…`);
+      updateAiProcessing(
+        `Closing gaps to ${SCORE_THRESHOLD}+ — pass ${pass} of ${MAX_BOOST_PASSES} (now ${unified.atsScore})…`
+      );
       const boosted = cleanupResume(await callGemini(
         buildBoostPrompt(jd, state.tailoredResume, {
           ...unified.scorecard,
@@ -8431,77 +9445,16 @@ async function runAnalysis() {
         { maxTokens: 7000 },
       ));
       const nextText = boosted && boosted.length > 200 ? boosted : state.tailoredResume;
-      scored = await scoreDraftWithScoreRule(jd, nextText, { structureWithGemini: pass % 2 === 0 });
+      scored = await scoreDraftWithScoreRule(jd, nextText, { structureWithGemini: false });
       state.tailoredResume = scored.resume;
       unified = scored.unified;
-      state.scorecard = unified.scorecard;
-      state.lastAtsUnified = unified;
-      $('outputArea').textContent = scored.resume;
-    }
-
-    // 3) Extra polish if still under threshold
-    if (rewriteStillNeedsWork(unified, state.tailoredResume)) {
-      updateAiProcessing('Final score-rule polish — adding remaining missing skills…');
-      const liveMissing = missingSkillReport(state.keywords || {}, state.tailoredResume);
-      liveMissing.important = missingAndUnwoven(unified, state.tailoredResume);
-      state.lastMissingReport = liveMissing;
-      const externalPass = cleanupResume(await callGemini(
-        buildExternalAtsPassPrompt(jd, state.tailoredResume, state.keywords, liveMissing),
-        { maxTokens: 7000 },
-      ));
-      if (externalPass && externalPass.length > 200) {
-        state.tailoredResume = externalPass;
-        $('outputArea').textContent = externalPass;
-      }
-      scored = await scoreDraftWithScoreRule(jd, state.tailoredResume, { structureWithGemini: true });
-      unified = scored.unified;
-      state.tailoredResume = scored.resume;
-      state.scorecard = unified.scorecard;
-      state.lastAtsUnified = unified;
-      $('outputArea').textContent = scored.resume;
-    }
-
-    updateAiProcessing('Final read — top to bottom for format, duplicates, and copy…');
-    const proofed = await proofreadTailoredResume(jd, state.tailoredResume);
-    if (proofed && proofed.length > 200) {
-      state.tailoredResume = proofed;
-      $('outputArea').textContent = proofed;
-    }
-    scored = await scoreDraftWithScoreRule(jd, state.tailoredResume, { structureWithGemini: true });
-    unified = scored.unified;
-    state.tailoredResume = scored.resume;
-    state.scorecard = unified.scorecard;
-    state.lastAtsUnified = unified;
-    $('outputArea').textContent = scored.resume;
-
-    if (rewriteStillNeedsWork(unified, state.tailoredResume)) {
-      updateAiProcessing('Weaving remaining missing skills to reach 90+…');
-      const liveMissing = missingSkillReport(state.keywords || {}, state.tailoredResume);
-      const mustWeave = missingAndUnwoven(unified, state.tailoredResume);
-      state.lastMissingReport = liveMissing;
-      const lastBoost = cleanupResume(await callGemini(
-        buildBoostPrompt(jd, state.tailoredResume, {
-          ...unified.scorecard,
-          atsScore: unified.atsScore,
-          ruleScores: unified.ruleScores,
-          keywordsMissing: mustWeave,
-        }, state.keywords || {}),
-        { maxTokens: 7000 },
-      ));
-      if (lastBoost && lastBoost.length > 200) {
-        state.tailoredResume = lastBoost;
-        $('outputArea').textContent = lastBoost;
-      }
-      scored = await scoreDraftWithScoreRule(jd, state.tailoredResume, { structureWithGemini: true });
-      unified = scored.unified;
-      state.tailoredResume = scored.resume;
       state.scorecard = unified.scorecard;
       state.lastAtsUnified = unified;
       $('outputArea').textContent = scored.resume;
     }
 
     updateAiProcessing('Finalizing emphasis and formatting…');
-    await finalizeBolding(jd, state.tailoredResume);
+    await finalizeBolding(jd, state.tailoredResume, { useGemini: false });
     renderResults(unified, state.tailoredResume);
     persistCurrentJdSession();
     saveWorkspace();
@@ -8680,6 +9633,7 @@ function cleanupResume(text, opts = {}) {
   let t = (text || '').replace(/```(?:text|markdown)?/gi, '').trim();
   t = unstickGluedResumeText(t);
   t = t.replace(/^here is[^\n]*\n+/i, '');
+  t = liftNameAboveLeadingHeading(t);
   t = enforceAnirudhTemplate(t);
   t = sanitizeResumeHeadline(t);
   const master = opts.master || ($('resumeInput') && $('resumeInput').value) || '';
@@ -8694,8 +9648,6 @@ function cleanupResume(text, opts = {}) {
   if (master) {
     t = restoreMasterContact(t, master);
     t = restoreMasterExperienceLocations(t, master);
-    t = restoreMasterEducation(t, master);
-    t = restoreMasterCertifications(t, master);
     t = stripFakeLinkedIn(t, master);
   }
   t = stripFakeGitHub(t, master);
@@ -8706,7 +9658,19 @@ function cleanupResume(text, opts = {}) {
   if (state.mode !== 'aggressive' && master && kw) {
     t = scrubSkillsNotOnMaster(t, master, kw);
   }
-  if (master) t = restoreExtraSections(t, master);
+  // EDUCATION / PROJECTS / CERTIFICATIONS: format-only from verified fields (once).
+  t = applyVerifiedStaticSections(t);
+  if (master) {
+    // Other extras (Awards, Volunteer, …) only — projects/certs already handled.
+    t = restoreExtraSections(t, master);
+  }
+  if (master) {
+    t = dropSectionIfMissingOnMaster(t, master, l => /^(summary|professional summary|objective|profile)$/i.test(normalizeHeader(l)));
+    t = dropSectionIfMissingOnMaster(t, master, l => /^(skills|technical skills)$/i.test(normalizeHeader(l)));
+  }
+  t = enforceVerifiedEmptyFields(t, master);
+  // Re-apply static sections last so empty-field enforcement cannot leave model dupes.
+  t = applyVerifiedStaticSections(t);
   return t;
 }
 
@@ -8877,33 +9841,50 @@ function restoreSummaryLeadRole(text, master) {
   return lines.join('\n');
 }
 
-function resetResultsUi(silent) {
+function resetResultsUi(silent, opts = {}) {
+  stopResumeEdit({ resetPaper: true });
   state.keywords = null;
   state.kwHash = '';
   state.tailoredResume = '';
   state.scorecard = null;
+  state.lastAtsUnified = null;
+  state.lastMissingReport = null;
+  state.lastUnderstanding = null;
+  state.lastResumeJson = null;
+  state.selectedRewriteCategory = null;
+  state.selectedAiCategory = null;
   state.boldTerms = [];
   state.boldFinalized = false;
   state.preTailor = null;
+  state.paperEdited = false;
   clearManualScoreGate();
-  $('freeAtsPanel').classList.add('hidden');
+  if ($('freeAtsPanel')) $('freeAtsPanel').classList.add('hidden');
   if ($('postRewriteScore')) $('postRewriteScore').classList.add('hidden');
-  $('scoreSection').classList.add('hidden');
-  $('resultsSection').classList.add('hidden');
-  $('progressSection').classList.add('hidden');
+  if ($('scoreSection')) $('scoreSection').classList.add('hidden');
+  if ($('resultsSection')) $('resultsSection').classList.add('hidden');
+  if ($('progressSection')) $('progressSection').classList.add('hidden');
   if ($('optimizeBoard')) $('optimizeBoard').classList.add('hidden');
   if ($('detailAnalysisBar')) $('detailAnalysisBar').classList.add('hidden');
   if ($('detailAnalysisPanel')) $('detailAnalysisPanel').classList.add('hidden');
   stopAiProcessing();
   state.detailAnalysisOpen = false;
-  $('outputArea').textContent = '';
+  if ($('outputArea')) $('outputArea').textContent = '';
   if ($('resumePaper')) $('resumePaper').innerHTML = '';
-  $('analyzeBtn').disabled = false;
+  if ($('analyzeBtn')) $('analyzeBtn').disabled = false;
   if ($('rerunBtn')) $('rerunBtn').classList.add('hidden');
+  if ($('boostBtn')) $('boostBtn').classList.add('hidden');
+  if ($('editResumeBtn')) $('editResumeBtn').classList.add('hidden');
+  if ($('doneResumeBtn')) $('doneResumeBtn').classList.add('hidden');
   setStep(1);
-  const session = getActiveJdSession();
-  if (session) session.tailoredResume = '';
-  if (!silent) showToast('Results cleared — base resume and postings are still here');
+  if (opts.clearAllSessionDrafts) {
+    (state.jdSessions || []).forEach(s => { s.tailoredResume = ''; });
+  } else {
+    const session = getActiveJdSession();
+    if (session) session.tailoredResume = '';
+  }
+  if (!silent) {
+    showToast(opts.toast || 'Results cleared — base resume and postings are still here');
+  }
 }
 
 function resetAndRun() {
@@ -8994,24 +9975,17 @@ function extraMasterSections(resume) {
 }
 
 function extraSectionsPromptBlock(resume) {
-  const extra = extraMasterSections(resume);
-  const hasProjects = extra.some(s => isProjectsHeader(s.header));
-  const projectRule = hasProjects
-    ? `PROJECTS: keep the master's projects only (same names and facts), output that section once.
-  Heading: PROJECTS (or the master's heading, ALL CAPS)
-  Then project name on its own line, then hyphen-space "- " bullets. No dates, no location, no role line.
-  Example:
-  Fraud Detection Pipeline
-  - Built an XGBoost classifier using Python and Spark to flag fraudulent claims and cut false positives by 18%.
-  Do not add new projects. Do not create a second PROJECTS heading.`
-    : `PROJECTS: the master has no PROJECTS section. Do not create one.`;
-  if (!extra.length) {
-    return `EXTRA SECTIONS: ${projectRule} Do not invent Awards, Volunteer, Languages, or other extra headings.`;
-  }
-  return `EXTRA SECTIONS ON THE MASTER — keep every one, same heading text, same relative order (wherever they sit among Summary / Skills / Experience / Education). Do not drop, merge, rename, or invent extra sections. Keep the original facts; you may tighten wording only.
-${projectRule}
-
-${extra.map(s => s.lines.join('\n').trim()).join('\n\n')}`;
+  const extra = extraMasterSections(resume).filter(s => {
+    if (isProjectsHeader(s.header)) return false;
+    if (/^certif/i.test(normalizeHeader(s.header))) return false;
+    if (/^education$/i.test(normalizeHeader(s.header))) return false;
+    return true;
+  });
+  return `STATIC SECTIONS RULE:
+- Tailor ONLY SUMMARY, SKILLS, and PROFESSIONAL EXPERIENCE.
+- Do NOT output EDUCATION, PROJECTS, or CERTIFICATIONS — the app injects those once from verified fields (format only, no content changes).
+- Do not invent Awards / Volunteer / Languages unless already on the master.
+${extra.length ? `\nOther master extras to keep once if present:\n${extra.map(s => s.lines.join('\n').trim()).join('\n\n')}` : ''}`;
 }
 
 function fuzzyHeaderMatch(a, b) {
@@ -9167,14 +10141,20 @@ function syncProjectsFromMaster(tailored, master) {
 
 function restoreExtraSections(tailored, master) {
   const masterAll = extractResumeSections(master);
-  const extra = masterAll.filter(s => !isCoreSection(s.header) && !isProjectsHeader(s.header));
-  let text = syncProjectsFromMaster(tailored, master);
+  // Projects/certs/education are injected from verified fields — never merge from text.
+  const extra = masterAll.filter(s => {
+    if (isCoreSection(s.header) || isProjectsHeader(s.header)) return false;
+    if (/^certif/i.test(normalizeHeader(s.header))) return false;
+    return true;
+  });
+  let text = String(tailored || '');
   if (!extra.length) return text;
   const presentHeaders = () => extractResumeSections(text).map(s => normalizeHeader(s.header));
   const hasHeader = (header) => presentHeaders().some(h => fuzzyHeaderMatch(h, normalizeHeader(header)));
   for (let i = 0; i < masterAll.length; i++) {
     const sec = masterAll[i];
     if (isCoreSection(sec.header) || isProjectsHeader(sec.header)) continue;
+    if (/^certif/i.test(normalizeHeader(sec.header))) continue;
     if (hasHeader(sec.header)) continue;
     const block = sec.lines.join('\n').replace(/\s+$/, '');
     const prev = [...masterAll.slice(0, i)].reverse().find(s => hasHeader(s.header));
@@ -9228,8 +10208,25 @@ function isRoleLine(l, section) {
 function isEducationLine(l, section) {
   if (!l || isBulletLine(l)) return false;
   if (!/EDUCATION/.test(String(section || '').toUpperCase())) return false;
+  // Left of " | " is the course/degree field when we serialize verified education.
   if (l.includes('|')) return true;
-  return /\b(bachelor|master|b\.?\s?s\.?|m\.?\s?s\.?|mba|ph\.?d|associate|diploma|degree|b\.?\s?tech|m\.?\s?tech)\b/i.test(l);
+  // Legacy plain-text degrees only — never "any short first line".
+  return /\b(bachelor'?s?|master'?s?|b\.?\s?s\.?|m\.?\s?s\.?|mba|ph\.?d|associate|diploma|degree|b\.?\s?tech|m\.?\s?tech)\b/i.test(l)
+    && !/\b(university|college|institute|school|polytechnic)\b/i.test(l);
+}
+
+/** Bold ONLY the course/degree field value — never school/dates. */
+function formatEduBlockFromFields(e) {
+  const degree = String((e && e.degree) || '').trim().replace(/[.,]+$/, '');
+  const school = [e && e.institution, e && e.location].filter(Boolean).join(', ').replace(/[.,]+$/, '').trim();
+  const years = [e && e.start_date, e && e.end_date].filter(Boolean).join(' – ');
+  const schoolLine = [school, years].filter(Boolean).join(', ');
+  if (!degree && !schoolLine) return '';
+  let html = `<div class="r-entry r-entry-edu"><div class="r-edu-block">`;
+  if (degree) html += `<div class="r-edu-degree"><b>${escapeHtml(degree)}</b></div>`;
+  if (schoolLine) html += `<div class="r-edu-school">${escapeHtml(schoolLine)}</div>`;
+  html += `</div></div>`;
+  return html;
 }
 
 function formatEduHtml(line) {
@@ -9238,22 +10235,25 @@ function formatEduHtml(line) {
   if (!raw) return '';
   const parts = raw.split('|').map(s => s.trim()).filter(Boolean);
   if (parts.length >= 2) {
+    // parts[0] = course/degree field; rest = college/dates (never bold)
     const degree = escapeHtml(parts[0].replace(/[.,]+$/, ''));
     const school = escapeHtml(parts.slice(1).join(', ').replace(/[.,]+$/, ''));
     return `<div class="r-edu-block">`
-      + `<div class="r-edu-degree">${degree}</div>`
-      + `<div class="r-edu-school">${school}</div>`;
+      + `<div class="r-edu-degree"><b>${degree}</b></div>`
+      + `<div class="r-edu-school">${school}</div>`
+      + `</div>`;
   }
   const comma = raw.indexOf(',');
   const after = comma > 0 ? raw.slice(comma + 1).trim() : '';
   if (comma > 12
-    && /\b(bachelor|master|b\.?\s?s|m\.?\s?s|mba|ph\.?d|b\.?\s?tech|m\.?\s?tech|associate|diploma)\b/i.test(raw.slice(0, comma))
+    && /\b(bachelor'?s?|master'?s?|b\.?\s?s|m\.?\s?s|mba|ph\.?d|b\.?\s?tech|m\.?\s?tech|associate|diploma)\b/i.test(raw.slice(0, comma))
     && /\b(university|college|institute|school|polytechnic)\b/i.test(after)) {
     return `<div class="r-edu-block">`
-      + `<div class="r-edu-degree">${escapeHtml(raw.slice(0, comma).trim())}</div>`
-      + `<div class="r-edu-school">${escapeHtml(after)}</div>`;
+      + `<div class="r-edu-degree"><b>${escapeHtml(raw.slice(0, comma).trim())}</b></div>`
+      + `<div class="r-edu-school">${escapeHtml(after)}</div>`
+      + `</div>`;
   }
-  return `<div class="r-edu-block"><div class="r-edu-degree">${escapeHtml(raw)}</div>`;
+  return `<div class="r-edu-block"><div class="r-edu-degree"><b>${escapeHtml(raw)}</b></div></div>`;
 }
 
 const ROLE_MONTH = '(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
@@ -9289,7 +10289,7 @@ function compactMonthDates(dates, compact) {
 
 function linkify(text) {
   const line = formatContactLine(text);
-  const re = /(https?:\/\/[^\s|]+|linkedin\.com\/(?:in|pub)\/[^\s|]+|lnkd\.in\/[^\s|]+)/gi;
+  const re = /(https?:\/\/[^\s|]+|linkedin\.com\/(?:in|pub)\/[^\s|]+|lnkd\.in\/[^\s|]+|github\.com\/[A-Za-z0-9_-]+)/gi;
   let out = '';
   let last = 0;
   let m;
@@ -9297,7 +10297,9 @@ function linkify(text) {
     out += escapeHtml(line.slice(last, m.index));
     const url = m[0];
     const href = /^https?:\/\//.test(url) ? url : 'https://' + url;
-    const display = /linkedin/i.test(url) ? shortenLinkedIn(url) : url;
+    const display = /linkedin/i.test(url)
+      ? (shortenLinkedIn(url) || url)
+      : (/github\.com/i.test(url) ? (extractGithubHandle(url) || url) : url);
     out += `<a href="${escapeHtml(href)}">${escapeHtml(display)}</a>`;
     last = m.index + m[0].length;
   }
@@ -9501,12 +10503,15 @@ function formatExperienceLocationLock(resumeText) {
   }
   const lines = roles.map((r, i) => {
     const title = r.title || 'the master job title';
-    const dates = r.dates || 'dates from the master';
+    const dates = r.dates || '';
+    const dateBit = dates ? ` ${dates}` : '';
     if (r.location) {
-      return `  ${i + 1}. ${r.company} — KEEP location "${r.location}". Write: ${r.company} | ${r.location} | ${title} ${dates}`.replace(/\s+/g, ' ').trim();
+      return `  ${i + 1}. ${r.company} — KEEP location "${r.location}". Write: ${r.company} | ${r.location} | ${title}${dateBit}`.replace(/\s+/g, ' ').trim()
+        + (dates ? '' : '  Dates are empty on the verified form — omit dates.');
     }
-    return `  ${i + 1}. ${r.company} — NO location on master. Write: ${r.company} | ${title} ${dates}`.replace(/\s+/g, ' ').trim()
-      + '  Do NOT add Remote, a city, a state, or HQ.';
+    return `  ${i + 1}. ${r.company} — NO location on master. Write: ${r.company} | ${title}${dateBit}`.replace(/\s+/g, ' ').trim()
+      + '  Do NOT add Remote, a city, a state, or HQ.'
+      + (dates ? '' : '  Dates are empty on the verified form — omit dates.');
   });
   return `LOCKED EXPERIENCE LOCATIONS (copy from master; never invent):\n${lines.join('\n')}\nNever write the placeholder words "Job Title" or "Month YYYY" on the page.`;
 }
@@ -9559,6 +10564,7 @@ function restoreMasterExperienceLocations(text, master) {
       continue;
     }
     p.location = String(hit.location || '').trim();
+    p.dates = String(hit.dates || '').trim();
     if (!p.title && hit.title) p.title = hit.title;
     const next = formatRoleLineFromParts(p);
     if (next) lines[i] = next;
@@ -9584,11 +10590,177 @@ function restoreMasterNamedSection(text, master, headerTest) {
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+function dropSectionIfMissingOnMaster(text, master, headerTest) {
+  const has = extractResumeSections(master).some(s => headerTest(s.header));
+  if (has) return text;
+  const stripped = stripSectionsByHeader(text, headerTest);
+  return stripped.lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function verifiedResumeSource() {
+  return normalizeResumeJson(
+    frozenMasterResumeJson()
+    || verifiedResumeJson()
+    || (state.baseResume && state.baseResume.fields)
+    || emptyResumeJson(),
+  );
+}
+
+/** Format-only blocks from verified fields — never invent or tailor content. */
+function formatVerifiedEducationText(rj) {
+  const edus = (rj && rj.education) || [];
+  if (!edus.length) return '';
+  const seen = new Set();
+  const blocks = [];
+  for (const e of edus) {
+    const degree = String(e.degree || '').trim().replace(/[.,]+$/, '');
+    const school = [e.institution, e.location].filter(Boolean).join(', ').replace(/[.,]+$/, '').trim();
+    const years = [e.start_date, e.end_date].filter(Boolean).join(' – ');
+    const key = `${degree}|${school}|${years}`.toLowerCase();
+    if (!degree && !school) continue;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const schoolLine = [school, years].filter(Boolean).join(', ');
+    // Emit degree | school so HTML always treats degree as bold (no wording heuristics).
+    if (degree && schoolLine) blocks.push(`${degree} | ${schoolLine}`);
+    else blocks.push([degree, schoolLine].filter(Boolean).join('\n'));
+  }
+  return blocks.length ? `EDUCATION\n${blocks.join('\n\n')}` : '';
+}
+
+function formatVerifiedProjectsText(rj) {
+  const projects = (rj && rj.projects) || [];
+  if (!projects.length) return '';
+  const seen = new Set();
+  const blocks = [];
+  for (const p of projects) {
+    const name = String(p.name || '').trim();
+    const key = name.toLowerCase();
+    if (!name && !(p.bullets || []).length) continue;
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    const bullets = (p.bullets || []).map(b => `- ${String(b).replace(/^[-•]\s+/, '')}`);
+    blocks.push([name, ...bullets].filter(Boolean).join('\n'));
+  }
+  return blocks.length ? `PROJECTS\n${blocks.join('\n\n')}` : '';
+}
+
+function formatVerifiedCertificationsText(rj) {
+  const certs = (rj && rj.certifications) || [];
+  if (!certs.length) return '';
+  const seen = new Set();
+  const lines = [];
+  for (const c of certs) {
+    const name = String(c.name || '').trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    lines.push([name, c.date].filter(Boolean).join(' | '));
+  }
+  return lines.length ? `CERTIFICATIONS\n${lines.join('\n')}` : '';
+}
+
+function formatVerifiedOtherText(rj) {
+  const others = (rj && rj.other_sections) || [];
+  if (!others.length) return '';
+  const blocks = [];
+  for (const o of others) {
+    const name = String(o.section_name || '').trim().toUpperCase().replace(/\s+/g, ' ');
+    const heading = String(o.heading || '').trim();
+    const dataLines = String(o.data || '').split(/\n+/).map(l => l.trim()).filter(Boolean)
+      .map(l => (/^[-•]/.test(l) ? `- ${l.replace(/^[-•]\s+/, '')}` : `- ${l}`));
+    if (!name && !heading && !dataLines.length) continue;
+    blocks.push([name, heading, ...dataLines].filter(Boolean).join('\n'));
+  }
+  return blocks.join('\n\n');
+}
+
+function formatVerifiedStaticLockBlock() {
+  const rj = verifiedResumeSource();
+  const edu = formatVerifiedEducationText(rj);
+  const projects = formatVerifiedProjectsText(rj);
+  const certs = formatVerifiedCertificationsText(rj);
+  const other = formatVerifiedOtherText(rj);
+  return `STATIC SECTIONS — FORMAT ONLY (from verified fields). Do NOT rewrite, tailor, expand, shrink, or invent these.
+Do NOT output EDUCATION, PROJECTS, CERTIFICATIONS, or OTHER custom sections — the app injects them once after you write.
+Tailor ONLY: SUMMARY, SKILLS / TECHNICAL SKILLS, PROFESSIONAL EXPERIENCE.
+${edu ? `\nVERIFIED EDUCATION (injected later — do not print):\n${edu}` : '\nNo verified EDUCATION — omit it.'}
+${projects ? `\nVERIFIED PROJECTS (injected later — do not print):\n${projects}` : '\nNo verified PROJECTS — omit it.'}
+${certs ? `\nVERIFIED CERTIFICATIONS (injected later — do not print):\n${certs}` : '\nNo verified CERTIFICATIONS — omit it.'}
+${other ? `\nVERIFIED OTHER SECTIONS (injected later — do not print):\n${other}` : '\nNo verified OTHER sections — omit them.'}`;
+}
+
+/** Strip model EDUCATION/PROJECTS/CERTS/OTHER and inject verified fields once (format-only). */
+function applyVerifiedStaticSections(text) {
+  const rj = verifiedResumeSource();
+  let t = String(text || '');
+  t = stripSectionsByHeader(t, l => /^education$/i.test(normalizeHeader(l))).lines.join('\n');
+  t = stripSectionsByHeader(t, isProjectsHeader).lines.join('\n');
+  t = stripSectionsByHeader(t, l => /^certif/i.test(normalizeHeader(l))).lines.join('\n');
+  const otherNames = new Set(
+    ((rj.other_sections || []).map(o => normalizeHeader(o.section_name)).filter(Boolean)),
+  );
+  if (otherNames.size) {
+    t = stripSectionsByHeader(t, l => otherNames.has(normalizeHeader(l))).lines.join('\n');
+  }
+  t = t.replace(/\n{3,}/g, '\n\n').trim();
+
+  const edu = formatVerifiedEducationText(rj);
+  const projects = formatVerifiedProjectsText(rj);
+  const certs = formatVerifiedCertificationsText(rj);
+  const other = formatVerifiedOtherText(rj);
+
+  const insertAfter = (haystack, afterTest, block) => {
+    if (!block) return haystack;
+    const lines = haystack.split('\n');
+    let insertAt = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (!isAnySectionHeader(lines[i])) continue;
+      if (afterTest(lines[i])) {
+        let end = lines.length;
+        for (let j = i + 1; j < lines.length; j++) {
+          if (isAnySectionHeader(lines[j])) { end = j; break; }
+        }
+        insertAt = end;
+      }
+    }
+    const chunk = block.split('\n');
+    if (insertAt >= 0) {
+      lines.splice(insertAt, 0, '', ...chunk);
+      return lines.join('\n');
+    }
+    return `${haystack}\n\n${block}`.trim();
+  };
+
+  // Order: after EXPERIENCE → EDUCATION → PROJECTS → CERTIFICATIONS → OTHER
+  t = insertAfter(t, l => /experience|work history/i.test(normalizeHeader(l)), edu);
+  t = insertAfter(t, l => /^education$/i.test(normalizeHeader(l)) || /experience|work history/i.test(normalizeHeader(l)), projects);
+  t = insertAfter(
+    t,
+    l => isProjectsHeader(l) || /^education$/i.test(normalizeHeader(l)) || /experience|work history/i.test(normalizeHeader(l)),
+    certs,
+  );
+  if (other) t = `${t}\n\n${other}`.trim();
+  return t.replace(/\n{3,}/g, '\n\n').trim();
+}
+
 function restoreMasterEducation(text, master) {
+  // Prefer verified fields; fall back to master text only if fields empty.
+  const rj = verifiedResumeSource();
+  if ((rj.education || []).length) return applyVerifiedStaticSections(text);
+  const masterSec = extractResumeSections(master).find(s => /^education$/i.test(normalizeHeader(s.header)));
+  if (!masterSec) return dropSectionIfMissingOnMaster(text, master, l => /^education$/i.test(normalizeHeader(l)));
   return restoreMasterNamedSection(text, master, l => /^education$/i.test(normalizeHeader(l)));
 }
 
 function restoreMasterCertifications(text, master) {
+  const rj = verifiedResumeSource();
+  if ((rj.certifications || []).length || (rj.projects || []).length || (rj.education || []).length || (rj.other_sections || []).length) {
+    return applyVerifiedStaticSections(text);
+  }
+  const masterSec = extractResumeSections(master).find(s => /^certif/i.test(normalizeHeader(s.header)));
+  if (!masterSec) return dropSectionIfMissingOnMaster(text, master, l => /^certif/i.test(normalizeHeader(l)));
   return restoreMasterNamedSection(text, master, l => /^certif/i.test(normalizeHeader(l)));
 }
 
@@ -9632,18 +10804,19 @@ function normalizeExperienceRoleLines(text) {
 
 function formatRoleHtml(line, opts = {}) {
   const { company, location, title, dates } = parseRoleLineParts(line);
-  const leftHtml = escapeHtml(company) + (title ? ' | <i>' + escapeHtml(title) + '</i>' : '');
+  // Always bold: company, role, location, dates (contact line is never bold).
+  const leftHtml = `<b>${escapeHtml(company)}</b>`
+    + (title ? ` | <i><b>${escapeHtml(title)}</b></i>` : '');
   const dateStr = compactMonthDates(dates, !!opts.compactDates);
   const rightBits = [location, dateStr].filter(Boolean);
-  const rightHtml = rightBits.join(' | ');
-  // Always use left | right table so location + years stay on the right (1-page and 2-page).
+  const rightHtml = rightBits.map(escapeHtml).join('&nbsp;|&nbsp;');
   if (!rightHtml && !company) return '';
   if (!rightHtml) return `<p class="r-role">${leftHtml}</p>`;
   return `<table class="r-job" width="100%" cellspacing="0" cellpadding="0">`
     + `<colgroup><col class="r-col-left" /><col class="r-col-right" /></colgroup>`
     + `<tr>`
     + `<td class="r-job-left">${leftHtml}</td>`
-    + `<td class="r-dates">${escapeHtml(rightHtml).replace(/ \| /g, '&nbsp;|&nbsp;')}</td>`
+    + `<td class="r-dates"><b>${rightHtml}</b></td>`
     + `</tr></table>`;
 }
 
@@ -9765,9 +10938,11 @@ function parseResumeToHtml(text, opts = {}) {
   let i = 0;
   let currentSection = '';
   let entryOpen = false;
+  let expectOtherHeading = false;
+  const isCoreResumeSection = (sec) =>
+    /SUMMARY|SKILL|EXPERIENCE|EDUCATION|PROJECT|CERTIF|OBJECTIVE|PROFILE|COMPETENC/.test(String(sec || ''));
   const closeEntry = () => {
     if (entryOpen) {
-      if (/EDUCATION/.test(currentSection)) html += '</div>';
       html += '</div>';
       entryOpen = false;
     }
@@ -9776,7 +10951,7 @@ function parseResumeToHtml(text, opts = {}) {
   if (i < lines.length) {
     const rawName = lines[i].trim();
     const displayName = rawName === rawName.toUpperCase() && rawName.length > 1 ? toTitleCase(rawName) : rawName;
-    html += `<div class="r-name">${escapeHtml(displayName)}</div>`;
+    html += `<div class="r-name"><b>${escapeHtml(displayName)}</b></div>`;
     i++;
   }
   let headerCount = 0;
@@ -9791,7 +10966,7 @@ function parseResumeToHtml(text, opts = {}) {
       || /\bgithub\b/i.test(l)
       || /lnkd\.in/i.test(l);
     if (!sawHeadline && !isContact && l.length < 70) {
-      html += `<div class="r-headline">${escapeHtml(stripPlaceFromJobTitle(cleanJobTitle(l) || l, ($('resumeInput') && $('resumeInput').value) || '') || l)}</div>`;
+      html += `<div class="r-headline"><b>${escapeHtml(stripPlaceFromJobTitle(cleanJobTitle(l) || l, ($('resumeInput') && $('resumeInput').value) || '') || l)}</b></div>`;
       sawHeadline = true;
     } else {
       html += `<div class="r-contact">${linkify(l)}</div>`;
@@ -9805,16 +10980,39 @@ function parseResumeToHtml(text, opts = {}) {
     if (isAnySectionHeader(l)) {
       closeEntry();
       currentSection = l.toUpperCase();
-      html += `<div class="r-section">${escapeHtml(currentSection)}</div>`;
+      html += `<div class="r-section"><b>${escapeHtml(currentSection)}</b></div>`;
+      expectOtherHeading = !isCoreResumeSection(currentSection);
+      // EDUCATION: render bold ONLY from verified Course/degree fields — skip text heuristics.
+      if (/^EDUCATION$/.test(currentSection)) {
+        const edus = ((verifiedResumeSource().education) || []).filter(e =>
+          String(e.degree || '').trim() || String(e.institution || '').trim()
+        );
+        if (edus.length) {
+          for (const e of edus) html += formatEduBlockFromFields(e);
+          while (i + 1 < lines.length) {
+            const peek = lines[i + 1].trim();
+            if (peek && isAnySectionHeader(peek)) break;
+            i++;
+          }
+          expectOtherHeading = false;
+          continue;
+        }
+      }
+    } else if (expectOtherHeading && !isBulletLine(l)) {
+      expectOtherHeading = false;
+      closeEntry();
+      html += `<p class="r-other-heading"><b>${escapeHtml(l)}</b></p>`;
     } else if (isBulletLine(l)) {
+      expectOtherHeading = false;
       const body = /EXPERIENCE|PROJECT|AWARD|VOLUNTEER|LEADERSHIP|PUBLICATION/.test(currentSection)
+        || !isCoreResumeSection(currentSection)
         ? boldResumeKeywords(bulletText(l))
         : escapeHtml(bulletText(l));
       html += `<p class="r-bullet" align="left"><span class="r-bmark">•</span><span class="r-btext">${body}</span></p>`;
     } else if (/SKILL/.test(currentSection) && /^[A-Za-z][A-Za-z0-9 &\/+.#-]{1,50}:\s*\S/.test(l)) {
       closeEntry();
       const idx = l.indexOf(':');
-      html += `<p class="r-skill-line"><span class="r-skill-label">${escapeHtml(l.slice(0, idx))}:</span> ${escapeHtml(l.slice(idx + 1).trim())}</p>`;
+      html += `<p class="r-skill-line"><span class="r-skill-label"><b>${escapeHtml(l.slice(0, idx))}:</b></span> ${escapeHtml(l.slice(idx + 1).trim())}</p>`;
     } else if (isEducationLine(l, currentSection)) {
       closeEntry();
       entryOpen = true;
@@ -9894,10 +11092,13 @@ function resumeCss() {
     .r-rule { font-family: Calibri, Arial, sans-serif; font-size: 1pt; line-height: 1pt; mso-line-height-rule: exactly; margin: 0; padding: 0; height: 1pt; border: none; border-top: 0.5pt solid #000000; overflow: hidden; }
     .r-dates { text-align: right !important; white-space: normal; width: 42%; vertical-align: bottom; font-weight: bold; }
     .r-edu-degree { font-weight: bold; }
+    .r-other-heading { font-weight: bold; color: #000000; margin: 1.5pt 0 0 4.55pt; padding: 0; text-align: left; }
     .r-edu-school { font-weight: normal !important; }
     .r-bmark, .r-btext { text-align: left; }
     .r-skill-label { font-weight: bold; color: #000000; }
     b, strong { font-weight: bold; color: #000000; }
+    i, em { font-style: italic; }
+    u { text-decoration: underline; }
     a { color: #1a56c4; text-decoration: underline; }
     .r-page-break { page-break-before: always; break-before: page; height: 0 !important; margin: 0; padding: 0; border: 0; }
     .r-page-start { page-break-before: always; break-before: page; padding-top: ${PAGE_MARGINS.page2Top}in; }
@@ -10226,12 +11427,516 @@ function insertVisualPageBreak(paper) {
 }
 
 function currentResumeText() {
+  if (state.editingResume) {
+    const live = htmlToResumeText($('resumePaper'));
+    if (live) return live;
+  }
   return (state.tailoredResume || $('outputArea').textContent || '').trim();
 }
 
-function showFormattedResume(text) {
+function resumeNodePlain(el) {
+  return String(el?.innerText || '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\s*\n\s*/g, ' ')
+    .trim();
+}
+
+function htmlToResumeText(paper) {
+  if (!paper) return '';
+  const lines = [];
+  const push = (s) => {
+    const t = String(s || '')
+      .replace(/\u00a0/g, ' ')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\s*\n\s*/g, ' ')
+      .trim();
+    if (t) lines.push(t);
+  };
+  const emit = (el) => {
+    if (!el || el.nodeType !== 1) return;
+    if (el.classList.contains('r-page-break') || el.classList.contains('r-rule')) return;
+    if (el.classList.contains('r-entry') || el.classList.contains('r-edu-block') || el.classList.contains('r-page-2')) {
+      [...el.children].forEach(emit);
+      return;
+    }
+    if (el.classList.contains('r-bullet')) {
+      const t = resumeNodePlain(el.querySelector('.r-btext') || el).replace(/^[-•*·◦▸▶]\s*/, '');
+      // Keep empty bullets while editing so Insert • does not vanish on commit.
+      lines.push(t ? ('• ' + t) : '• ');
+      return;
+    }
+    if (el.classList.contains('r-job')) {
+      const left = resumeNodePlain(el.querySelector('.r-job-left, td:first-child'));
+      const right = resumeNodePlain(el.querySelector('.r-dates, td:last-child'));
+      const leftParts = left.split('|').map(s => s.trim()).filter(Boolean);
+      const rightParts = right.split('|').map(s => s.trim()).filter(Boolean);
+      const company = leftParts[0] || '';
+      const title = leftParts.slice(1).join(' | ');
+      let location = '';
+      let dates = '';
+      if (rightParts.length >= 2) {
+        location = rightParts.slice(0, -1).join(' | ');
+        dates = rightParts[rightParts.length - 1];
+      } else if (rightParts.length === 1) {
+        const only = rightParts[0];
+        if (new RegExp(`\\b${ROLE_MONTH_YEAR}\\b`, 'i').test(only) || /\b(19|20)\d{2}\b/.test(only) || /present|current/i.test(only)) {
+          dates = only;
+        } else {
+          location = only;
+        }
+      }
+      push(formatRoleLineFromParts({ company, location, title, dates }));
+      return;
+    }
+    if (el.classList.contains('r-edu-degree')) {
+      const school = el.nextElementSibling && el.nextElementSibling.classList.contains('r-edu-school')
+        ? resumeNodePlain(el.nextElementSibling) : '';
+      push(school ? `${resumeNodePlain(el)} | ${school}` : resumeNodePlain(el));
+      return;
+    }
+    if (el.classList.contains('r-edu-school')) {
+      const prev = el.previousElementSibling;
+      if (prev && prev.classList.contains('r-edu-degree')) return;
+      push(resumeNodePlain(el));
+      return;
+    }
+    push(resumeNodePlain(el));
+  };
+  [...paper.children].forEach(emit);
+  return lines.join('\n');
+}
+
+function setResumeEditChrome(on) {
+  const paper = $('resumePaper');
+  if (paper) {
+    paper.contentEditable = on ? 'true' : 'false';
+    paper.spellcheck = !!on;
+    paper.classList.toggle('editing', !!on);
+    paper.querySelectorAll('.r-page-break').forEach(el => {
+      el.setAttribute('contenteditable', 'false');
+    });
+  }
+  if ($('editResumeBtn')) $('editResumeBtn').classList.toggle('hidden', !!on);
+  if ($('doneResumeBtn')) $('doneResumeBtn').classList.toggle('hidden', !on);
+  if ($('resumeEditBar')) $('resumeEditBar').classList.toggle('hidden', !on);
+  if ($('resumeRuler')) $('resumeRuler').classList.toggle('hidden', !on);
+  if ($('resumeEditHint')) $('resumeEditHint').classList.toggle('hidden', !on);
+  if ($('resumeFitHint')) $('resumeFitHint').classList.toggle('hidden', !!on);
+}
+
+function stopResumeEdit(opts = {}) {
+  if (!state.editingResume && !opts.force) {
+    setResumeEditChrome(false);
+    if (opts.resetPaper) state.paperEdited = false;
+    return;
+  }
+  state.editingResume = false;
+  if (opts.resetPaper) state.paperEdited = false;
+  setResumeEditChrome(false);
+}
+
+let savedEditRange = null;
+
+function editPaperEl() {
+  return $('resumePaper');
+}
+
+function editSelectionInPaper() {
+  const paper = editPaperEl();
+  if (!paper) return null;
+  const sel = window.getSelection();
+  if (sel && sel.rangeCount && sel.anchorNode && paper.contains(sel.anchorNode)) {
+    try { return sel.getRangeAt(0).cloneRange(); } catch { /* ignore */ }
+  }
+  if (savedEditRange) {
+    try {
+      if (paper.contains(savedEditRange.commonAncestorContainer)) return savedEditRange.cloneRange();
+    } catch { /* dead range */ }
+  }
+  return null;
+}
+
+function saveEditSelection() {
+  if (!state.editingResume) return;
+  const paper = editPaperEl();
+  if (!paper) return;
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || !sel.anchorNode || !paper.contains(sel.anchorNode)) return;
+  try { savedEditRange = sel.getRangeAt(0).cloneRange(); } catch { /* ignore */ }
+}
+
+function restoreEditSelection() {
+  const paper = editPaperEl();
+  if (!paper) return false;
+  try { paper.focus({ preventScroll: true }); } catch { paper.focus(); }
+  const range = editSelectionInPaper();
+  if (!range) return false;
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  try {
+    sel.addRange(range);
+    savedEditRange = range.cloneRange();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Preserve caret before toolbar click steals focus. */
+function prepEditToolbarAction(ev) {
+  if (ev) {
+    saveEditSelection();
+    ev.preventDefault();
+  }
+}
+
+function editCaretElement() {
+  restoreEditSelection();
+  const paper = editPaperEl();
+  const sel = window.getSelection();
+  const node = sel && sel.anchorNode;
+  const el = node && (node.nodeType === 1 ? node : node.parentElement);
+  if (!el || !paper || !paper.contains(el)) return null;
+  return el;
+}
+
+function editClosestBlock(el) {
+  if (!el) return null;
+  return el.closest(
+    '.r-bullet, .r-body, .r-skill-line, .r-edu-degree, .r-edu-school, .r-edu-block, '
+    + '.r-section, .r-role, .r-job, .r-headline, .r-name, .r-contact, .r-entry, p, div, table',
+  );
+}
+
+function makeBulletEl(text) {
+  const neu = document.createElement('p');
+  neu.className = 'r-bullet';
+  neu.setAttribute('align', 'left');
+  const body = String(text || '').trim();
+  neu.innerHTML = body
+    ? `<span class="r-bmark">•</span><span class="r-btext">${escapeHtml(body)}</span>`
+    : '<span class="r-bmark">•</span><span class="r-btext"><br></span>';
+  return neu;
+}
+
+function placeCaretIn(el, atEnd = true) {
+  if (!el) return;
+  const paper = editPaperEl();
+  if (paper) {
+    try { paper.focus({ preventScroll: true }); } catch { paper.focus(); }
+  }
+  const sel = window.getSelection();
+  if (!sel) return;
+  const range = document.createRange();
+  try {
+    range.selectNodeContents(el);
+    range.collapse(!atEnd);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    savedEditRange = range.cloneRange();
+  } catch { /* ignore */ }
+}
+
+function resumeEditCommand(cmd, value) {
+  if (!state.editingResume) return;
+  if (!restoreEditSelection()) {
+    showToast('Click in the resume first, then use the toolbar', '#d97706');
+    return;
+  }
+  try { document.execCommand('styleWithCSS', false, true); } catch { /* ignore */ }
+  document.execCommand(cmd, false, value == null ? null : value);
+  state.paperEdited = true;
+  commitPaperEdits();
+  saveEditSelection();
+  syncEditToolbar();
+}
+
+function resumeEditFontName(name) {
+  if (!name) return;
+  resumeEditCommand('fontName', name);
+}
+
+function resumeEditColor(color) {
+  if (!color) return;
+  resumeEditCommand('foreColor', color);
+}
+
+function resumeEditFontSize(pt) {
+  if (!state.editingResume) return;
+  const size = Number(pt);
+  if (!size) return;
+  if (!restoreEditSelection()) {
+    showToast('Click in the resume first, then use the toolbar', '#d97706');
+    return;
+  }
+  try { document.execCommand('styleWithCSS', false, true); } catch { /* ignore */ }
+  document.execCommand('fontSize', false, '7');
+  const paper = editPaperEl();
+  if (paper) {
+    paper.querySelectorAll('font[size="7"], [style*="xxx-large"]').forEach(el => {
+      el.style.fontSize = size + 'pt';
+      if (el.tagName === 'FONT') {
+        const span = document.createElement('span');
+        span.style.cssText = el.style.cssText;
+        span.style.fontSize = size + 'pt';
+        while (el.firstChild) span.appendChild(el.firstChild);
+        el.replaceWith(span);
+      }
+    });
+  }
+  state.paperEdited = true;
+  commitPaperEdits();
+  saveEditSelection();
+  syncEditToolbar();
+}
+
+function resumeEditFontStep(delta) {
+  if (!restoreEditSelection()) {
+    showToast('Click in the resume first, then use the toolbar', '#d97706');
+    return;
+  }
+  const sel = window.getSelection();
+  const node = sel && sel.anchorNode;
+  const el = node && (node.nodeType === 1 ? node : node.parentElement);
+  const px = el ? parseFloat(getComputedStyle(el).fontSize) : 16;
+  const pt = Math.round((px * 72) / 96) || 12;
+  const next = Math.max(8, Math.min(28, pt + Number(delta || 0)));
+  if ($('editFontSize')) $('editFontSize').value = String(next);
+  resumeEditFontSize(next);
+}
+
+/** Insert a new bullet at the caret block (not at end of page). */
+function resumeEditBullet() {
+  if (!state.editingResume) return;
+  const paper = editPaperEl();
+  if (!paper) return;
+  saveEditSelection();
+  restoreEditSelection();
+  let el = editCaretElement();
+  if (!el) {
+    // Fallback: last bullet, else last block, else paper end
+    el = paper.querySelector('.r-bullet:last-of-type')
+      || paper.querySelector('.r-entry:last-of-type')
+      || paper.querySelector('.r-body:last-of-type')
+      || paper;
+  }
+  const block = (el === paper) ? null : editClosestBlock(el);
+  const neu = makeBulletEl('');
+  if (block && paper.contains(block)) {
+    if (block.classList.contains('r-entry') || block.classList.contains('r-edu-block')) {
+      block.appendChild(neu);
+    } else if (block.classList.contains('r-bullet') || block.classList.contains('r-body')
+      || block.classList.contains('r-skill-line') || block.classList.contains('r-other-heading')) {
+      block.after(neu);
+    } else {
+      block.after(neu);
+    }
+  } else {
+    paper.appendChild(neu);
+  }
+  placeCaretIn(neu.querySelector('.r-btext') || neu, false);
+  state.paperEdited = true;
+  // Defer commit so caret sticks before text sync
+  requestAnimationFrame(() => {
+    commitPaperEdits();
+    saveEditSelection();
+    syncEditToolbar();
+  });
+}
+
+function resumeEditIndent(dir) {
+  if (!state.editingResume) return;
+  const el = editCaretElement();
+  if (!el) {
+    showToast('Click a bullet or line first', '#d97706');
+    return;
+  }
+  const block = el.closest('.r-bullet, .r-body, .r-skill-line, .r-other-heading');
+  if (!block) {
+    showToast('Indent works on bullets and body lines', '#d97706');
+    return;
+  }
+  const cur = parseFloat(block.style.marginLeft) || 0;
+  const next = Math.max(0, Math.min(72, cur + (dir > 0 ? 18 : -18)));
+  block.style.marginLeft = next ? (next + 'pt') : '';
+  state.paperEdited = true;
+  commitPaperEdits();
+  saveEditSelection();
+}
+
+/** Turn current line into a bullet, or unwrap a bullet back to body text. */
+function resumeEditToggleBullet() {
+  if (!state.editingResume) return;
+  const paper = editPaperEl();
+  const el = editCaretElement();
+  if (!el || !paper) {
+    showToast('Click a line first', '#d97706');
+    return;
+  }
+  const bullet = el.closest('.r-bullet');
+  if (bullet) {
+    const text = resumeNodePlain(bullet.querySelector('.r-btext') || bullet).replace(/^[-•*·◦▸▶]\s*/, '').trim();
+    const body = document.createElement('p');
+    body.className = 'r-body';
+    body.textContent = text || '';
+    bullet.replaceWith(body);
+    placeCaretIn(body, true);
+  } else {
+    const block = editClosestBlock(el);
+    if (!block || block.classList.contains('r-section') || block.classList.contains('r-name')
+      || block.classList.contains('r-headline') || block.classList.contains('r-contact')
+      || block.classList.contains('r-job') || block.classList.contains('r-role')) {
+      showToast('Place the cursor on a body or skill line to convert', '#d97706');
+      return;
+    }
+    const text = resumeNodePlain(block).trim();
+    const neu = makeBulletEl(text);
+    block.replaceWith(neu);
+    placeCaretIn(neu.querySelector('.r-btext') || neu, true);
+  }
+  state.paperEdited = true;
+  commitPaperEdits();
+  syncEditToolbar();
+}
+
+function resumeEditRemoveBullet() {
+  if (!state.editingResume) return;
+  const el = editCaretElement();
+  const bullet = el && el.closest && el.closest('.r-bullet');
+  if (!bullet) {
+    showToast('Click inside a bullet first', '#d97706');
+    return;
+  }
+  const next = bullet.nextElementSibling || bullet.previousElementSibling;
+  bullet.remove();
+  if (next) {
+    const target = next.classList?.contains('r-bullet')
+      ? (next.querySelector('.r-btext') || next)
+      : next;
+    placeCaretIn(target, true);
+  }
+  state.paperEdited = true;
+  commitPaperEdits();
+  syncEditToolbar();
+}
+
+function resumeEditInsertLine() {
+  if (!state.editingResume) return;
+  const paper = editPaperEl();
+  const el = editCaretElement();
+  if (!el || !paper) {
+    showToast('Click where you want a blank line', '#d97706');
+    return;
+  }
+  const block = editClosestBlock(el);
+  const neu = document.createElement('p');
+  neu.className = 'r-body';
+  neu.innerHTML = '<br>';
+  if (block && paper.contains(block)) block.after(neu);
+  else paper.appendChild(neu);
+  placeCaretIn(neu, false);
+  state.paperEdited = true;
+  commitPaperEdits();
+  syncEditToolbar();
+}
+
+function syncEditToolbar() {
+  if (!state.editingResume) return;
+  const bar = $('resumeEditBar');
+  if (!bar) return;
+  bar.querySelectorAll('[data-cmd]').forEach(btn => {
+    const cmd = btn.getAttribute('data-cmd');
+    let on = false;
+    try { on = document.queryCommandState(cmd); } catch { on = false; }
+    btn.classList.toggle('active', !!on);
+  });
+  const sel = window.getSelection();
+  const node = sel && sel.anchorNode;
+  const el = node && (node.nodeType === 1 ? node : node.parentElement);
+  const paper = editPaperEl();
+  if (!el || !paper || !paper.contains(el)) return;
+  const cs = getComputedStyle(el);
+  const pt = Math.round((parseFloat(cs.fontSize) * 72) / 96);
+  if ($('editFontSize') && [...$('editFontSize').options].some(o => Number(o.value) === pt)) {
+    $('editFontSize').value = String(pt);
+  }
+  const fam = String(cs.fontFamily || '').split(',')[0].replace(/['"]/g, '').trim();
+  if ($('editFontName') && [...$('editFontName').options].some(o => o.value.toLowerCase() === fam.toLowerCase())) {
+    $('editFontName').value = fam;
+  }
+}
+
+function commitPaperEdits() {
+  const paper = $('resumePaper');
+  if (!paper || !paper.innerHTML.trim()) return '';
+  const text = htmlToResumeText(paper);
+  if (!text) return '';
+  state.tailoredResume = text;
+  if (state.editingResume) state.paperEdited = true;
+  if ($('outputArea')) $('outputArea').textContent = text;
+  persistCurrentJdSession();
+  scheduleSaveWorkspace();
+  return text;
+}
+
+function startResumeEdit() {
+  const text = currentResumeText();
+  if (!text) { showToast('Nothing to edit yet', '#e11d48'); return; }
+  setResumeView('formatted');
   const paper = $('resumePaper');
   if (!paper) return;
+  if (!paper.innerHTML.trim()) showFormattedResume(text);
+  state.editingResume = true;
+  setResumeEditChrome(true);
+  paper.focus();
+  saveEditSelection();
+  syncEditToolbar();
+  showToast('Use the Word-style bar, then Done or Save PDF');
+}
+
+function finishResumeEdit() {
+  commitPaperEdits();
+  state.editingResume = false;
+  state.paperEdited = true;
+  setResumeEditChrome(false);
+  showToast('Edits saved');
+}
+
+function onResumePaperInput() {
+  if (!state.editingResume) return;
+  commitPaperEdits();
+}
+
+function onResumePaperKeydown(e) {
+  if (!state.editingResume) return;
+  if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+    const k = e.key.toLowerCase();
+    if (k === 'b') { e.preventDefault(); resumeEditCommand('bold'); return; }
+    if (k === 'i') { e.preventDefault(); resumeEditCommand('italic'); return; }
+    if (k === 'u') { e.preventDefault(); resumeEditCommand('underline'); return; }
+  }
+  if (e.key !== 'Enter' || e.shiftKey) return;
+  const sel = window.getSelection();
+  const node = sel && sel.anchorNode;
+  const el = node && (node.nodeType === 1 ? node : node.parentElement);
+  const bullet = el && el.closest && el.closest('.r-bullet');
+  e.preventDefault();
+  if (bullet) {
+    const neu = makeBulletEl('');
+    bullet.after(neu);
+    placeCaretIn(neu.querySelector('.r-btext') || neu, false);
+    commitPaperEdits();
+    return;
+  }
+  if (document.execCommand) document.execCommand('insertLineBreak');
+}
+
+function showFormattedResume(text) {
+  if (state.editingResume) return;
+  const paper = $('resumePaper');
+  if (!paper) return;
+  if (state.paperEdited && paper.innerHTML.trim()) return;
   const cleaned = sanitizeResumeHeadline(text || currentResumeText());
   if (cleaned && state.tailoredResume && cleaned !== state.tailoredResume) {
     state.tailoredResume = cleaned;
@@ -10270,17 +11975,35 @@ function showFormattedResume(text) {
 }
 
 function setResumeView(mode) {
+  if (mode === 'raw' && state.editingResume) {
+    commitPaperEdits();
+    state.editingResume = false;
+    setResumeEditChrome(false);
+  }
   const formatted = mode !== 'raw';
   $('resumePaperWrap').classList.toggle('hidden', !formatted);
   $('outputArea').classList.toggle('hidden', formatted);
   $('viewFormattedBtn').classList.toggle('active', formatted);
   $('viewRawBtn').classList.toggle('active', !formatted);
+  if ($('editResumeBtn')) $('editResumeBtn').classList.toggle('hidden', !formatted || state.editingResume);
   if (!formatted) $('outputArea').focus();
 }
 
-function buildWordHtml(content, title) {
+function resumeExportBodyHtml(content) {
   const paper = $('resumePaper');
-  const bodyHtml = (paper && paper.innerHTML.trim()) ? paper.innerHTML : parseResumeToHtml(content);
+  if (paper && paper.innerHTML.trim()) {
+    const clone = paper.cloneNode(true);
+    clone.querySelectorAll('.r-page-break').forEach(el => el.remove());
+    clone.querySelectorAll('.r-page-start').forEach(el => el.classList.remove('r-page-start'));
+    clone.classList.remove('editing');
+    clone.removeAttribute('contenteditable');
+    return clone.innerHTML;
+  }
+  return parseResumeToHtml(content);
+}
+
+function buildWordHtml(content, title) {
+  const bodyHtml = resumeExportBodyHtml(content);
   return `<!DOCTYPE html>
 <html xmlns:o="urn:schemas-microsoft-com:office:office"
       xmlns:w="urn:schemas-microsoft-com:office:word"
@@ -10308,6 +12031,7 @@ function buildWordHtml(content, title) {
 }
 
 function downloadDocx() {
+  if (state.editingResume) commitPaperEdits();
   const content = currentResumeText();
   if (!content) { showToast('Nothing to save yet', '#e11d48'); return; }
   updateExportFilename(content);
@@ -10322,6 +12046,7 @@ function downloadDocx() {
 }
 
 function downloadTxt() {
+  if (state.editingResume) commitPaperEdits();
   const text = currentResumeText();
   if (!text) { showToast('Nothing to save yet', '#e11d48'); return; }
   updateExportFilename(text);
@@ -10333,6 +12058,7 @@ function downloadTxt() {
 }
 
 function copyToClipboard() {
+  if (state.editingResume) commitPaperEdits();
   navigator.clipboard.writeText(currentResumeText()).then(() => showToast('Copied to clipboard'));
 }
 
@@ -10437,6 +12163,8 @@ function resumePaperLayoutCss() {
     .resume-paper .r-section + .r-skill-line, .resume-paper .r-section + .r-body { margin-top: var(--sp-body, 1.5pt); }
     .resume-paper .r-skill-label { font-weight: 700; color: #000; }
     .resume-paper b, .resume-paper strong { font-weight: 700; color: #000; }
+    .resume-paper i, .resume-paper em { font-style: italic; }
+    .resume-paper u { text-decoration: underline; }
     .resume-paper a { color: #1a56c4; text-decoration: underline; }
     .resume-paper .r-section + .r-job,
     .resume-paper .r-section + .r-role,
@@ -10476,9 +12204,10 @@ function preparePrintClone(live) {
 }
 
 function printResume() {
+  if (state.editingResume) commitPaperEdits();
   const content = currentResumeText();
   if (!content) { showToast('Nothing to print yet', '#e11d48'); return; }
-  showFormattedResume(content);
+  if (!state.editingResume && !state.paperEdited) showFormattedResume(content);
   const live = $('resumePaper');
   if (!live || !live.innerHTML.trim()) { showToast('Nothing to print yet', '#e11d48'); return; }
   const base = updateExportFilename(content);
@@ -10508,6 +12237,77 @@ window.onload = function() {
   showToast(`US Letter · save PDF as ${base}.pdf`);
 }
 
+let html2pdfLoader = null;
+function loadHtml2Pdf() {
+  if (typeof html2pdf === 'function') return Promise.resolve(html2pdf);
+  if (html2pdfLoader) return html2pdfLoader;
+  html2pdfLoader = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = `lib/html2pdf.bundle.min.js?v=${APP_VERSION}`;
+    s.onload = () => (typeof html2pdf === 'function' ? resolve(html2pdf) : reject(new Error('html2pdf missing')));
+    s.onerror = () => reject(new Error('html2pdf failed to load'));
+    document.head.appendChild(s);
+  });
+  return html2pdfLoader;
+}
+
+async function downloadPdf() {
+  if (state.editingResume) commitPaperEdits();
+  const content = currentResumeText();
+  if (!content) { showToast('Nothing to save yet', '#e11d48'); return; }
+  if (!state.editingResume && !state.paperEdited) showFormattedResume(content);
+  const live = $('resumePaper');
+  if (!live || !live.innerHTML.trim()) { showToast('Nothing to save yet', '#e11d48'); return; }
+  const base = updateExportFilename(content);
+  const clone = live.cloneNode(true);
+  clone.id = 'resumePaperPdf';
+  clone.classList.remove('two-page', 'one-page', 'editing');
+  clone.removeAttribute('contenteditable');
+  clone.querySelectorAll('.r-page-break').forEach(el => {
+    el.style.height = '0';
+    el.style.margin = '0';
+    el.style.padding = '0';
+    el.style.border = '0';
+    el.style.pageBreakAfter = 'always';
+    el.style.breakAfter = 'page';
+  });
+  clone.querySelectorAll('.r-page-start').forEach(el => {
+    el.style.pageBreakBefore = 'always';
+    el.style.breakBefore = 'page';
+  });
+  clone.style.boxShadow = 'none';
+  clone.style.margin = '0';
+  clone.style.maxWidth = 'none';
+  clone.style.width = US_LETTER.widthIn + 'in';
+  clone.style.minHeight = '0';
+  clone.style.height = 'auto';
+  clone.style.background = '#fff';
+  clone.style.padding = `${PAGE_MARGINS.top}in ${PAGE_MARGINS.right}in ${PAGE_MARGINS.bottom}in ${PAGE_MARGINS.left}in`;
+  const host = document.createElement('div');
+  host.setAttribute('aria-hidden', 'true');
+  host.style.cssText = 'position:fixed;left:-10000px;top:0;width:8.5in;background:#fff;z-index:-1;pointer-events:none;';
+  host.appendChild(clone);
+  document.body.appendChild(host);
+  showToast('Saving PDF…');
+  try {
+    const maker = await loadHtml2Pdf();
+    await maker().set({
+      margin: 0,
+      filename: `${base}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, letterRendering: true, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
+      pagebreak: { mode: ['css', 'legacy'] },
+    }).from(clone).save();
+    showToast(`Saved ${base}.pdf`);
+  } catch (err) {
+    showToast('PDF download failed — opening print instead', '#e11d48');
+    printResume();
+  } finally {
+    host.remove();
+  }
+}
+
 function copyFilename() {
   const name = `${state.exportBasename || 'tailored_resume'}.pdf`;
   navigator.clipboard.writeText(name).then(() => showToast('File name copied'));
@@ -10523,7 +12323,9 @@ function updateCounts() {
 }
 
 function initTracks() {
-  $('trackRow').innerHTML = TRACKS.map(t =>
+  const el = $('trackRow');
+  if (!el) return;
+  el.innerHTML = TRACKS.map(t =>
     `<button class="chip ${t.id === state.track ? 'active' : ''}" data-id="${t.id}" onclick="setTrack('${t.id}')">${t.label}</button>`
   ).join('');
 }
@@ -10579,7 +12381,19 @@ $('jdInput').addEventListener('input', onJdInput);
 $('resumeInput').addEventListener('input', onResumeInput);
 $('outputArea').addEventListener('input', () => {
   state.tailoredResume = $('outputArea').textContent;
-  showFormattedResume(state.tailoredResume);
+  state.paperEdited = false;
+  if (!state.editingResume) showFormattedResume(state.tailoredResume);
   scheduleSaveWorkspace();
+});
+if ($('resumePaper')) {
+  $('resumePaper').addEventListener('input', onResumePaperInput);
+  $('resumePaper').addEventListener('keydown', onResumePaperKeydown);
+  $('resumePaper').addEventListener('mouseup', () => { saveEditSelection(); syncEditToolbar(); });
+  $('resumePaper').addEventListener('keyup', () => { saveEditSelection(); syncEditToolbar(); });
+}
+document.addEventListener('selectionchange', () => {
+  if (!state.editingResume) return;
+  saveEditSelection();
+  syncEditToolbar();
 });
 bootstrapApp();

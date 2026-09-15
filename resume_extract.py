@@ -130,12 +130,99 @@ def _inject_emails(text: str, urls: list[str] | None) -> str:
     return "\n".join(lines)
 
 
+def _strip_bare_social_labels(text: str) -> str:
+    """Keep LinkedIn/GitHub on the contact line only when a real profile URL is present."""
+    lines = (text or "").split("\n")
+    out: list[str] = []
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if i >= 16:
+            out.extend(lines[i:])
+            break
+        if re.match(
+            r"^(SKILLS|TECHNICAL SKILLS|EXPERIENCE|PROFESSIONAL EXPERIENCE|EDUCATION|PROJECTS|CERTIF)\b",
+            stripped,
+            re.I,
+        ):
+            out.extend(lines[i:])
+            break
+        if re.search(r"GitHub\s+Actions", line, re.I) and "@" not in line:
+            out.append(line)
+            continue
+        is_contact = (
+            "@" in line
+            or bool(re.search(r"\d{3}[\s.()-]*\d{3}", line))
+            or bool(re.search(r"(?:^|\|)\s*(linkedin|linked\s*in|github)\s*(?:\||$)", line, re.I))
+            or bool(linkedin_slug(line) or github_profile(line))
+        )
+        if not is_contact:
+            out.append(line)
+            continue
+        kept: list[str] = []
+        for part in re.split(r"\s*\|\s*", line):
+            token = part.strip()
+            if not token:
+                continue
+            if re.match(r"^(linkedin|linked\s*in)\b", token, re.I) and not linkedin_slug(token):
+                continue
+            if (
+                re.match(r"^github\b", token, re.I)
+                and not github_profile(token)
+                and not re.search(r"GitHub\s+Actions", token, re.I)
+            ):
+                continue
+            kept.append(token)
+        out.append(" | ".join(kept))
+    return "\n".join(out)
+
+
+def _lift_name_above_leading_heading(text: str) -> str:
+    """Some Word files put SUMMARY above the name; move the heading under contact."""
+    lines = (text or "").split("\n")
+    head_idx = name_idx = contact_idx = -1
+    for i, raw in enumerate(lines[:12]):
+        line = raw.strip()
+        if not line:
+            continue
+        if head_idx < 0 and re.match(
+            r"^(SUMMARY|OBJECTIVE|PROFILE|PROFESSIONAL SUMMARY)\b", line, re.I
+        ):
+            head_idx = i
+            continue
+        if name_idx < 0 and not re.search(r"@|\d{3}[\s.()-]*\d{3}|linkedin|github", line, re.I):
+            if not re.match(
+                r"^(SUMMARY|SKILLS|EXPERIENCE|EDUCATION|PROJECTS|CERTIF|OBJECTIVE|PROFILE)\b",
+                line,
+                re.I,
+            ):
+                name_idx = i
+                continue
+        if contact_idx < 0 and (
+            "@" in line or re.search(r"\d{3}[\s.()-]*\d{3}", line) or "linkedin" in line.lower()
+        ):
+            contact_idx = i
+            break
+    if head_idx < 0 or name_idx < 0 or head_idx > name_idx:
+        return text
+    heading = lines.pop(head_idx)
+    if name_idx > head_idx:
+        name_idx -= 1
+    if contact_idx > head_idx:
+        contact_idx -= 1
+    insert_at = (contact_idx if contact_idx >= 0 else name_idx) + 1
+    lines.insert(insert_at, heading)
+    return "\n".join(lines)
+
+
 def _finalize_extract(text: str, urls: list[str] | None) -> tuple[str, list[str]]:
     urls = list(urls or [])
     blob = _clean_text(text)
+    blob = _lift_name_above_leading_heading(blob)
     blob = _inject_linkedin(blob, urls)
     blob = _inject_github(blob, urls)
     blob = _inject_emails(blob, urls)
+    blob = _strip_bare_social_labels(blob)
+    blob = _lift_name_above_leading_heading(blob)
     return blob, urls
 
 
@@ -217,8 +304,16 @@ def _inject_linkedin(text: str, urls: list[str]) -> str:
         )
     if re.search(re.escape(slug), text, re.I):
         return text
-    if re.search(r"\bLinkedIn\b", text):
-        return re.sub(r"\bLinkedIn\b", slug, text, count=1)
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        if re.search(r"(?:^|\||•)\s*Linked\s*In\s*(?:\||$)", line, re.I) or re.fullmatch(
+            r"Linked\s*In", line.strip(), re.I
+        ):
+            lines[i] = re.sub(r"\bLinked\s*In\b", slug, line, count=1, flags=re.I)
+            return "\n".join(lines)
+        if "@" in line or re.search(r"\d{3}[\s.()-]*\d{3}", line) or "github" in line.lower():
+            lines[i] = line.rstrip() + " | " + slug
+            return "\n".join(lines)
     if re.search(r"\blinkedin\b", text, re.I) and "linkedin.com/" not in text.lower():
         return re.sub(r"\blinkedin\b", slug, text, count=1, flags=re.I)
     return text
